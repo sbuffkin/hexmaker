@@ -22,6 +22,7 @@ import { escapeRegex } from "../textUtils";
 import { oddsText } from "../ui/odds";
 import { renderSaveStatusLine } from "../ui/saveStatusLine";
 import { tableTitle } from "../encounterLinks";
+import { currentText, linkedFolderAllowed, missingRowNotes, renameUpdatedEntries, retireDeletedEntries, syncLinkedFolder } from "./tableEditor/linkedFolder";
 
 /** How the editor writes the die column: ranges are redone when weights or rows change. */
 export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["ranges"] {
@@ -105,13 +106,9 @@ export class RandomTableEditorModal extends HexmakerModal {
 
     // Linked-folder rows whose note is missing are kept and reported, not
     // deleted: the note may have been renamed or moved elsewhere.
-    const missingAtOpen = new Set<string>();
-    if (table.linkedFolder) {
-      const lf = normalizeFolder(table.linkedFolder);
-      for (const e of entries) {
-        if (!this.app.vault.getAbstractFileByPath(`${lf}/${e.result}.md`)) missingAtOpen.add(e.result);
-      }
-    }
+    const missingAtOpen = table.linkedFolder
+      ? missingRowNotes(this.app, normalizeFolder(table.linkedFolder), entries)
+      : new Set<string>();
     if (missingAtOpen.size) {
       const warn = contentEl.createDiv({ cls: "duckmage-table-editor-warning" });
       const names = [...missingAtOpen];
@@ -659,14 +656,19 @@ export class RandomTableEditorModal extends HexmakerModal {
           linkedFolder ? `"[[${linkedFolder}]]"` : undefined,
         );
       }
-      if (linkedFolder) {
-        await this.renameUpdatedEntries(
-          entries,
-          entryOriginalResult,
-          linkedFolder,
-        );
-        await this.retireDeletedEntries(originalResults, entries, linkedFolder);
-        await this.syncLinkedFolder(entries, linkedFolder, missingAtOpen);
+      // Edited elsewhere while this was open (a hand edit, a sync, a
+      // rename rewrite): keep that, write nothing, and say so.
+      const stale = () => new Notice(`${this.file.basename} was changed elsewhere while this was open, so your changes here weren't saved.`);
+      if ((await currentText(this.app, this.file)) !== rawContent) { stale(); return; }
+      let before = rawContent;
+      if (linkedFolder && !linkedFolderAllowed(linkedFolder, this.plugin.settings)) {
+        new Notice(`The linked folder ${linkedFolder} isn't inside the world folder, so its notes weren't synced.`);
+      } else if (linkedFolder) {
+        await renameUpdatedEntries(this.app, entries, entryOriginalResult, linkedFolder);
+        await retireDeletedEntries(this.app, originalResults, entries, linkedFolder);
+        await syncLinkedFolder(this.app, entries, linkedFolder, missingAtOpen);
+        // Renaming a row's note can rewrite its link in this table.
+        before = (await currentText(this.app, this.file)) ?? rawContent;
       }
 
       // ── Table: only its own lines are rewritten, and only if it changed.
@@ -705,12 +707,18 @@ export class RandomTableEditorModal extends HexmakerModal {
 
       if (updatedFm !== frontmatter) next = updatedFm + next.slice(frontmatter.length);
       if (next === rawContent) return;
+      let wrote = false;
       try {
-        await processTableNote(this.app, this.file, () => next);
-        this.onSaved?.();
+        await processTableNote(this.app, this.file, (current) => {
+          if (current !== before) return current;
+          wrote = true;
+          return next;
+        });
       } catch {
-        /* best-effort */
+        return; /* best-effort */
       }
+      if (wrote) this.onSaved?.();
+      else stale();
     };
 
     addBtn.addEventListener("click", doAdd);
@@ -731,95 +739,6 @@ export class RandomTableEditorModal extends HexmakerModal {
     window.setTimeout(() => {
       if (newResult.isConnected && activeDocument.activeElement === nameInput) newResult.focus();
     }, 0);
-  }
-
-  /** Sync entries ↔ notes in linkedFolder. Mutates entries in-place. */
-  private async syncLinkedFolder(
-    entries: RandomTableEntry[],
-    folderPath: string,
-    missingAtOpen: Set<string>,
-  ): Promise<void> {
-    // Ensure folder exists
-    if (!this.app.vault.getAbstractFileByPath(folderPath)) {
-      try {
-        await this.app.vault.createFolder(folderPath);
-      } catch {
-        /* may already exist */
-      }
-    }
-
-    // Notes currently in the folder
-    const existing = this.app.vault
-      .getMarkdownFiles()
-      .filter(
-        (f) => f.parent?.path === folderPath && !f.basename.startsWith("_"),
-      );
-
-    // For each entry: create note if missing
-    for (const entry of entries) {
-      // A row whose note was missing when the editor opened is reported, not recreated.
-      if (missingAtOpen.has(entry.result)) continue;
-      const notePath = `${folderPath}/${entry.result}.md`;
-      const noteFile = this.app.vault.getAbstractFileByPath(notePath);
-      if (!noteFile) {
-        try {
-          await this.app.vault.create(notePath, `# ${entry.result}\n`);
-        } catch {
-          continue;
-        }
-      }
-    }
-
-    // For each note without a matching entry: add entry
-    const entryNames = new Set(entries.map((e) => e.result));
-    for (const noteFile of existing) {
-      if (!entryNames.has(noteFile.basename)) {
-        entries.push({ result: noteFile.basename, weight: 1 });
-      }
-    }
-  }
-
-  /** Rename notes whose entry result text was changed, instead of creating a new note. */
-  private async renameUpdatedEntries(
-    entries: RandomTableEntry[],
-    originalResults: WeakMap<RandomTableEntry, string>,
-    folderPath: string,
-  ): Promise<void> {
-    for (const entry of entries) {
-      const orig = originalResults.get(entry);
-      if (!orig || orig === entry.result) continue;
-      const oldPath = `${folderPath}/${orig}.md`;
-      const newPath = `${folderPath}/${entry.result}.md`;
-      const noteFile = this.app.vault.getAbstractFileByPath(oldPath);
-      if (!(noteFile instanceof TFile)) continue;
-      if (this.app.vault.getAbstractFileByPath(newPath)) continue; // target already exists
-      try {
-        await this.app.fileManager.renameFile(noteFile, newPath);
-      } catch {
-        /* best-effort */
-      }
-    }
-  }
-
-  /** Prepend "_" to notes whose entries were deleted, so they are excluded from future syncs. */
-  private async retireDeletedEntries(
-    originalResults: Set<string>,
-    currentEntries: RandomTableEntry[],
-    folderPath: string,
-  ): Promise<void> {
-    const currentNames = new Set(currentEntries.map((e) => e.result));
-    for (const result of originalResults) {
-      if (currentNames.has(result)) continue;
-      const notePath = `${folderPath}/${result}.md`;
-      const noteFile = this.app.vault.getAbstractFileByPath(notePath);
-      if (!(noteFile instanceof TFile)) continue;
-      const newPath = `${folderPath}/_${result}.md`;
-      try {
-        await this.app.fileManager.renameFile(noteFile, newPath);
-      } catch {
-        /* already renamed or missing */
-      }
-    }
   }
 
   onClose(): void {

@@ -1,7 +1,7 @@
 import { TFile, type App } from "obsidian";
 import { templateFileCandidates, type WorkflowStep } from "./workflow";
 import { dieLabel, parseRandomTable } from "./randomTable";
-import { isNoteInside } from "../vault/safePaths";
+import { isFolderInside, isNoteInside, noteFileName } from "../vault/safePaths";
 import { ensureFolder } from "../vault/ensureFolder";
 import { contentFolder, worldFolderOf } from "../notePickers";
 
@@ -84,6 +84,25 @@ export async function saveWorkflowTemplate(app: App, target: TFile | string, atO
   if (dir) await ensureFolder(app.vault, dir);
   await app.vault.create(path, text);
   return verdict;
+}
+
+/**
+ * Where "Save as note" in the workflow wizard puts a result: the typed
+ * name cleaned into a file name, in the results folder. The folder comes
+ * pre-filled from the workflow note (maybe someone else's pack), so it
+ * must be inside the world folder and not hidden; blank is the vault root.
+ */
+export function resultsNotePlace(
+  folderText: string,
+  nameText: string,
+  settings: { worldFolder?: string },
+): { folder: string; name: string } | { error: string } {
+  const folder = folderText.trim().replace(/\/+/g, "/").replace(/^\/+|\/+$/g, "");
+  const world = worldFolderOf(settings);
+  if (folder && !isFolderInside(folder, [world])) return { error: `Save the note inside the world folder (${world}).` };
+  const name = noteFileName(nameText);
+  if (!name) return { error: "Note name is required." };
+  return { folder, name };
 }
 
 /** A table step's table file (exact path first, then link resolution). */

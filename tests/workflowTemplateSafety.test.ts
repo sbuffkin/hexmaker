@@ -10,7 +10,7 @@ import expect from "expect";
 import { TFile, type App } from "obsidian";
 import { MemVault } from "./helpers/memVault";
 import { readSource } from "./helpers/source";
-import { isWritableTemplate, resolveWorkflowTemplate, saveWorkflowTemplate, templateRoots, templateSave } from "../src/random-tables/workflowFiles";
+import { isWritableTemplate, resolveWorkflowTemplate, resultsNotePlace, saveWorkflowTemplate, templateRoots, templateSave } from "../src/random-tables/workflowFiles";
 
 function appOf(vault: MemVault): App {
 	const app = vault.app();
@@ -124,5 +124,26 @@ describe("workflow editor wiring", () => {
 		// No direct template writes left in the modal.
 		expect(src).not.toMatch(/vault\.process\(tmplFile/);
 		expect(src).not.toMatch(/vault\.create\(templatePath/);
+	});
+});
+
+describe("workflow wizard: where a result is saved (security review #9)", () => {
+	const settings = { worldFolder: "world" };
+	it("a results folder inside the world folder, not hidden; blank is the vault root", () => {
+		expect(resultsNotePlace("world/results/", "Encounter", settings)).toEqual({ folder: "world/results", name: "Encounter" });
+		expect(resultsNotePlace("", "Encounter", settings)).toEqual({ folder: "", name: "Encounter" });
+		expect(resultsNotePlace("Private", "x", settings)).toEqual({ error: "Save the note inside the world folder (world)." });
+		expect(resultsNotePlace("world/.obsidian", "x", settings)).toHaveProperty("error");
+		expect(resultsNotePlace("world/../Private", "x", settings)).toHaveProperty("error");
+	});
+
+	it("the note name is cleaned into a file name, and required", () => {
+		expect(resultsNotePlace("world/r", "../../Session: notes", settings)).toEqual({ folder: "world/r", name: "Session notes" });
+		expect(resultsNotePlace("world/r", " / ", settings)).toEqual({ error: "Note name is required." });
+	});
+
+	it("the wizard saves through it", () => {
+		const src = readSource("src", "random-tables", "WorkflowWizardModal.ts");
+		expect(src.match(/resultsNotePlace\(this\.saveResultsFolderInput\.value, this\.saveNoteNameInput\.value, this\.plugin\.settings\)/g)).toHaveLength(2);
 	});
 });

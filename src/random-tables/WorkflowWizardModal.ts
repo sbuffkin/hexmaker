@@ -19,7 +19,8 @@ import {
 } from "./workflow";
 import { dieLabel, parseRandomTable, rollTable } from "./randomTable";
 import { renderAddToHex, type RollHexTarget } from "./RandomTableModal";
-import { resolveStepTable, resolveWorkflowTemplate } from "./workflowFiles";
+import { resolveStepTable, resolveWorkflowTemplate, resultsNotePlace } from "./workflowFiles";
+import { ensureFolder } from "../vault/ensureFolder";
 import { localIsoDateTime } from "../provenance";
 import { withRepairHint } from "../ui/repairHint";
 import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
@@ -549,37 +550,27 @@ export class WorkflowWizardModal extends HexmakerModal {
   }
 
   private saveAsNote(): Promise<void> {
-    const noteName = this.saveNoteNameInput.value.trim();
-    const folder = normalizeFolder(this.saveResultsFolderInput.value.trim());
+    const place = resultsNotePlace(this.saveResultsFolderInput.value, this.saveNoteNameInput.value, this.plugin.settings);
+    if ("error" in place) return this.writeNote();
+    const { folder, name: noteName } = place;
     // No "Replace note?" (owner Q6): a name that's taken gets a number ("Name 2").
-    if (noteName) {
-      const free = freeNoteName(noteName, (n) => !!this.app.vault.getAbstractFileByPath(folder ? `${folder}/${n}.md` : `${n}.md`));
-      if (free !== noteName) {
-        this.saveNoteNameInput.value = free;
-        new Notice(`"${noteName}" already exists, so this was saved as "${free}".`);
-      }
-    }
+    const free = freeNoteName(noteName, (n) => !!this.app.vault.getAbstractFileByPath(folder ? `${folder}/${n}.md` : `${n}.md`));
+    this.saveNoteNameInput.value = free;
+    if (free !== noteName) new Notice(`"${noteName}" already exists, so this was saved as "${free}".`);
     return this.writeNote();
   }
 
   private async writeNote(): Promise<void> {
-    const noteName = this.saveNoteNameInput.value.trim();
-    if (!noteName) {
+    const place = resultsNotePlace(this.saveResultsFolderInput.value, this.saveNoteNameInput.value, this.plugin.settings);
+    if ("error" in place) {
       this.saveStatusEl.setCssProps({ color: "var(--color-red)" });
-      this.saveStatusEl.setText("Note name is required.");
+      this.saveStatusEl.setText(place.error);
       return;
     }
-
-    const folder = normalizeFolder(this.saveResultsFolderInput.value.trim());
+    const { folder, name: noteName } = place;
     const notePath = folder ? `${folder}/${noteName}.md` : `${noteName}.md`;
 
-    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-      try {
-        await this.app.vault.createFolder(folder);
-      } catch {
-        /* may already exist */
-      }
-    }
+    if (folder) await ensureFolder(this.app.vault, folder);
 
     const noteContent = buildResultsNote(
       this.resultTextarea.value,

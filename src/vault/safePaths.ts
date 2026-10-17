@@ -45,17 +45,19 @@ const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 
 /**
  * Text (a table row, a typed name) as a note's file name: no path
- * separators or characters Obsidian or Windows refuse, no leading dot, no
- * trailing dot or space, at most 120 characters. "" when nothing's left.
+ * separators or characters Windows refuses (`\ / : * ? " < > |`, control
+ * characters), no leading dot, no trailing dot or space, no reserved
+ * device name, at most 120 characters. Text that's already a fine name is
+ * left as it is. "" when nothing's left.
  */
 export function noteFileName(text: string): string {
   let s = text
     // eslint-disable-next-line no-control-regex -- control characters are what's being removed
     .replace(/[\u0000-\u001f\u007f]/g, " ")
-    .replace(/[\\/:*?"<>|#^[\]]/g, " ")
+    .replace(/[\\/:*?"<>|]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/^\.+/, "")
+    .replace(/^[. ]+/, "")
     .replace(/[. ]+$/, "")
     .trim();
   if (s.length > 120) s = s.slice(0, 120).replace(/[. ]+$/, "");

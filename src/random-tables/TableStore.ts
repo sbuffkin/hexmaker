@@ -19,11 +19,15 @@ import { isTableNotePath } from "./tableNotePaths";
 /** Content the plugin last read or wrote, per table note path. */
 const lastContent = new Map<string, string>();
 
-/** vault.process for table notes: the result is recorded as the plugin's own write. */
+/**
+ * vault.process for table notes: the result is recorded as the plugin's own
+ * write. An edit that changes nothing (returns the content as it is) isn't
+ * recorded, so a hand edit it declined to overwrite is still imported.
+ */
 export async function processTableNote(app: App, file: TFile, edit: (content: string) => string): Promise<string> {
   return app.vault.process(file, (content) => {
     const next = edit(content);
-    lastContent.set(file.path, next);
+    if (next !== content) lastContent.set(file.path, next);
     return next;
   });
 }
