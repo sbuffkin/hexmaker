@@ -63,6 +63,7 @@ export type ModeAction =
   | "switch-mode" // the mode switch itself
   | "new-top-map" // a new map that isn't made from a hex of another map
   | "discover" // arrival: make a place where nothing exists yet (only when the world is set to make places)
+  | "explore-grow" // a map the party explores grows (blank hexes only) as the party nears its edge (HF4)
   | "lock-place" // lock a place made on arrival (after that, rerolling it needs God)
   | "show-place-icon" // "Show on map": a linked note's section icon as the hex's icon (SF4; works where linking works)
   // ── Build and God ──
@@ -109,6 +110,7 @@ export const ACTION_POLICY: Record<ModeAction, ActionPolicy> = {
   "switch-mode": { modes: ALL, verb: "switch modes" },
   "new-top-map": { modes: ALL, verb: "make a map" },
   discover: { modes: ALL, verb: "go somewhere new" },
+  "explore-grow": { modes: ALL, verb: "grow the map as the party explores" },
   "lock-place": { modes: ALL, verb: "lock a new submap" },
   "show-place-icon": { modes: ALL, verb: "show a linked place on the map" },
   "paint-terrain": { modes: BUILD, verb: "paint terrain" },
