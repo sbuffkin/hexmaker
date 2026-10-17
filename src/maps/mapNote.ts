@@ -10,6 +10,7 @@ import { registry } from "../modules";
 import { splitRow } from "../md/tableRow";
 import { compareHexKeys, hexKey } from "../hexKey";
 import { parseYamlLoose, toJs, yamlBlocks } from "./yamlLoose";
+import { gridSideFromNote } from "../sizeInput";
 
 /**
  * Map notes: one note per map ("hexes/<map>/_<map>.md") holding the map's
@@ -536,9 +537,8 @@ function readFrontmatter(src: string, opts: MapNoteReadOptions): FmRead {
   const marker = textOf(MAP_NOTE_MARKER);
   const format = Number(marker) >= 2 ? Math.floor(Number(marker)) : 1;
 
-  // grid size and offset
   const cols = num("cols", "gridSize"), rows = num("rows", "gridSize");
-  if (cols !== undefined && rows !== undefined) out.gridSize = { cols, rows };
+  if (cols !== undefined && rows !== undefined) out.gridSize = { cols: gridSideFromNote(cols, (r) => bad("cols", "gridSize", r)), rows: gridSideFromNote(rows, (r) => bad("rows", "gridSize", r)) };
   const ox = num("offset-x", "gridOffset"), oy = num("offset-y", "gridOffset");
   if (ox !== undefined && oy !== undefined) out.gridOffset = { x: ox, y: oy };
 
