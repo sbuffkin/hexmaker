@@ -1,10 +1,11 @@
 /**
  * What exploring adds to the map (ModuleRuntime hooks): the party's step,
- * the hex menu's Roll this hex / Reroll this hex, and the "?" frontier.
+ * the party controls' Reveal 1 · 2 · 3, the hex menu's Roll this hex /
+ * Reroll this hex, and the "?" frontier.
  */
 
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { HexMenuContribution, PartyStep } from "../modules/types";
+import type { HexMenuContribution, PartyAt, PartyControl, PartyStep } from "../modules/types";
 import type { UndoItem } from "../hex-map/undoItems";
 import { exploreOf } from "./context";
 
@@ -16,6 +17,24 @@ export const EXPLORE_MENU = {
 
 export function exploreStep(plugin: HexmakerPlugin, step: PartyStep): Promise<UndoItem[]> {
   return exploreOf(plugin)?.onEnter(step) ?? Promise.resolve([]);
+}
+
+/** The party's Reveal control (owner HF3): fill 1, 2 or 3 rings of blank hexes around it, any time. */
+export const REVEAL_CONTROL_ID = "explore.reveal";
+
+export function explorePartyControls(plugin: HexmakerPlugin, party: PartyAt): PartyControl[] {
+  const ex = exploreOf(plugin);
+  if (!ex?.exploreMap(party.map)) return [];
+  return [{
+    id: REVEAL_CONTROL_ID,
+    label: "Reveal",
+    title: "Fill in the blank hexes around the party, as far as it can see from here",
+    buttons: [1, 2, 3].map((r) => ({
+      label: String(r),
+      title: `Reveal ${r} ring${r === 1 ? "" : "s"} of hexes around the party`,
+      run: () => ex.reveal(party.map, party.hex, r),
+    })),
+  }];
 }
 
 /** Roll this hex (a blank hex of an explored map); Reroll this hex (the latest fill). */

@@ -51,15 +51,15 @@ describe("the Hex flower card", () => {
 		}
 	});
 
-	it("options: Flower (new from this palette first), Start (blank first); Party token and Reveal are Advanced on New map and in the wizard", () => {
+	it("options: Flower (new from this palette first), Start (blank first); Party token and Reveal are main on New map and in the wizard (HF9)", () => {
 		const { kind, store } = setup();
 		expect(kind.options.map((o) => [o.key, o.default])).toEqual([["flower", "new"], ["start", "blank"], ["party", "on"], ["reveal", "entered"]]);
 		void store;
 		const ids = moduleNewMapOptionIds()[HEX_FLOWER_GENERATOR_ID];
 		expect(ids).toEqual({ party: "NewMap.flowerParty", reveal: "NewMap.flowerReveal" });
 		for (const key of ["party", "reveal"]) {
-			expect(layerOf(ids[key])).toBe("advanced");
-			expect(layerOf(wizardOptionId(key, ids[key]))).toBe("advanced");
+			expect(layerOf(ids[key])).toBe("main");
+			expect(layerOf(wizardOptionId(key, ids[key]))).toBe("main");
 		}
 		expect(wizardOptionId("start", undefined)).toBe("Wizard.genOptOther");
 		expect(wizardOptionId("water")).toBe("Wizard.genOptWater");
@@ -88,14 +88,14 @@ describe("the Hex flower card", () => {
 	it("after making the map: a flower note from the palette, explore-with + hex-flower-at + seed, a Party token there", async () => {
 		const s = setup();
 		await s.store.init();
-		const made: ScaleMapMade = { mapName: "m", generatorId: HEX_FLOWER_GENERATOR_ID, options: { flower: "new", start: "blank", party: "on", reveal: "neighbours" }, seed: 9, grid, paletteName: "P", choices: {}, onProgress: () => {} };
+		const made: ScaleMapMade = { mapName: "m", generatorId: HEX_FLOWER_GENERATOR_ID, options: { flower: "new", start: "blank", party: "on", reveal: "2" }, seed: 9, grid, paletteName: "P", choices: {}, onProgress: () => {} };
 		await s.kind.afterCreate!(s.plugin as never, made);
 		const map = s.maps.m;
 		expect(s.store.list().map((e) => e.path)).toEqual(["world/hex flowers/Misty Vale.md"]);
 		expect(readRules(map.exploreWith as string[])).toMatchObject([{ source: "world/hex flowers/Misty Vale", target: { kind: "terrain" } }]);
 		expect([...parseFlowerAt(map.hexFlowerAt as string[]).keys()]).toEqual(["misty vale"]);
 		expect(map.seed).toBe(9);
-		expect(map.exploreReveal).toBe("neighbours");
+		expect(map.exploreReveal).toBe("2 rings");
 		expect(map.visited).toEqual([middleHex(grid)]);
 		const token = s.vault.files.get(`world/tokens/${PARTY_TOKEN_NAME}.md`)!;
 		expect(token).toMatch(/token-party: true/);

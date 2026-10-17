@@ -3,9 +3,9 @@
  * every map scale of the setup wizard and New map, right after Blank.
  *
  * Options: Flower (new from this palette, or one of the vault's flowers),
- * Start (blank, filled as the party explores; or the whole map now), and in
- * Advanced Party token (on) and Reveal (the hex entered, or its neighbours
- * too). The map it makes has only its middle hex filled (or every hex),
+ * Start (blank, filled as the party explores; or the whole map now), Party
+ * token (on) and Reveal (the hex entered, or 1–3 rings around it). All main
+ * (owner HF9, 2026-10-16). The map it makes has only its middle hex filled (or every hex),
  * a "Party" token there, and `explore-with`, `hex-flower-at` and `seed:`
  * in its map note. The flower note is written from the user's palette.
  */
@@ -18,7 +18,7 @@ import { applyTokenFrontmatter } from "../frontmatter";
 import { normalizeFolder } from "../utils";
 import { emptyFlower, isCell, type Flower } from "./flower";
 import { fillFromPalette } from "./fromPalette";
-import { classifyResult, formatFlowerAt, formatRule, planStep, readRules, startCell } from "./explore";
+import { classifyResult, formatFlowerAt, formatReveal, formatRule, parseReveal, planStep, readRules, startCell } from "./explore";
 import { exploreOrder } from "./exploreOrder";
 import { flowerStoreOf } from "./context";
 import type { ExploreMap } from "./exploreFields";
@@ -33,7 +33,17 @@ export const PARTY_TOKEN_NAME = "Party";
 export const FLOWER_OPTIONS = {
   start: { key: "start", label: "Start", choices: [{ value: "blank", label: "Blank, fill as you explore" }, { value: "fill", label: "Fill the whole map now" }], default: "blank" },
   party: { key: "party", label: "Party token", choices: [{ value: "on", label: "On the middle hex" }, { value: "off", label: "None" }], default: "on" },
-  reveal: { key: "reveal", label: "Reveal", choices: [{ value: "entered", label: "The hex entered" }, { value: "neighbours", label: "The hexes around too" }], default: "entered" },
+  reveal: {
+    key: "reveal",
+    label: "Reveal",
+    choices: [
+      { value: "entered", label: "The hex entered" },
+      { value: "1", label: "1 ring around it" },
+      { value: "2", label: "2 rings around it" },
+      { value: "3", label: "3 rings around it" },
+    ],
+    default: "entered",
+  },
 } as const satisfies Record<string, ProcOption>;
 
 function flowerOption(names: readonly string[]): ProcOption {
@@ -120,7 +130,8 @@ async function afterCreate(plugin: HexmakerPlugin, made: ScaleMapMade): Promise<
   map.seed = made.seed;
   map.exploreWith = [formatRule({ source: path.replace(/\.md$/i, ""), target: { kind: "terrain" }, every: false })];
   map.hexFlowerAt = formatFlowerAt(new Map([...at].map(([, c]) => [flower.name, c])));
-  if (made.options.reveal === "neighbours") map.exploreReveal = "neighbours";
+  const reveal = formatReveal(parseReveal(made.options.reveal));
+  if (reveal) map.exploreReveal = reveal;
   if (made.options.party !== "off") {
     await addPartyToken(plugin, made.mapName, start);
     map.visited = [start];
@@ -129,7 +140,7 @@ async function afterCreate(plugin: HexmakerPlugin, made: ScaleMapMade): Promise<
 }
 
 /** A "Party" token note on hex `hex` of map `mapName` (a free name in the tokens folder). */
-async function addPartyToken(plugin: HexmakerPlugin, mapName: string, hex: string): Promise<void> {
+export async function addPartyToken(plugin: HexmakerPlugin, mapName: string, hex: string): Promise<void> {
   const vault = plugin.app.vault;
   const folder = `${normalizeFolder(plugin.settings.worldFolder) || "world"}/tokens`;
   if (!vault.getAbstractFileByPath(folder)) { try { await vault.createFolder(folder); } catch { /* made meanwhile */ } }

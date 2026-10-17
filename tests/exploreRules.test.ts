@@ -8,6 +8,7 @@ import {
 	formatRule,
 	parseFlowerAt,
 	parseReveal,
+	formatReveal,
 	parseRule,
 	planStep,
 	readRules,
@@ -68,9 +69,18 @@ describe("explore-with grammar", () => {
 		const at = parseFlowerAt(["Wilds: 7", "[[Weather]] = 12", "junk", "Bad: 40"]);
 		expect([...at]).toEqual([["wilds", 7], ["weather", 12]]);
 		expect(formatFlowerAt(at, new Map([["wilds", "Wilds"]]))).toEqual(["Wilds: 7", "weather: 12"]);
-		expect(parseReveal(undefined)).toBe("entered");
-		expect(parseReveal("neighbours")).toBe("neighbours");
-		expect(parseReveal("neighbors")).toBe("neighbours");
+		expect(parseReveal(undefined)).toBe(0);
+		expect(parseReveal("entered")).toBe(0);
+		// The older value: one ring.
+		expect(parseReveal("neighbours")).toBe(1);
+		expect(parseReveal("neighbors")).toBe(1);
+		expect(parseReveal("2 rings")).toBe(2);
+		expect(parseReveal(3)).toBe(3);
+		expect(parseReveal("9")).toBe(3);
+		expect(formatReveal(0)).toBeUndefined();
+		expect(formatReveal(1)).toBe("1 ring");
+		expect(formatReveal(3)).toBe("3 rings");
+		for (const n of [0, 1, 2, 3]) expect(parseReveal(formatReveal(n))).toBe(n);
 	});
 });
 

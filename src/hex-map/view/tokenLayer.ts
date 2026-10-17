@@ -13,6 +13,8 @@ import { runPartyEntered } from "../../modules/runtime";
 import { openNoteFocused } from "../../openNote";
 import { markVisited, parseVisited, unmarkVisited } from "../../play/partyTravel";
 import { addToPlayLog } from "../../play/playLogWriter";
+import { onPartyMoved } from "../../play/partyLog";
+import { drawPartyControls } from "./partyControls";
 import { PlayLogModal } from "../../play/PlayLogModal";
 import type { MapData, TokenEntry } from "../../types";
 import { getIconUrl } from "../../utils";
@@ -31,6 +33,8 @@ import { hexKey, hexPair } from "../../hexKey";
 export interface TokenLayerHost {
   activeMapName(): string;
   viewportEl(): HTMLElement | null;
+  /** The overlay for buttons (the party controls go there). */
+  controlsEl(): HTMLElement | null;
   drawingMode(): DrawingMode | null;
   /** The token the Token tool places (picked in its dialog), and its look. */
   pendingTokenNotePath(): string | null;
@@ -111,8 +115,19 @@ export class TokenLayer {
 
   renderTokenLayer(gridContainer: HTMLElement): void {
     this.drawTokenLayer(gridContainer);
-    // The selected party's steps (SF5), after the tokens are read.
+    // The selected party's steps (SF5), after the tokens are read, and its controls (HF3).
     this.markPartySteps(gridContainer);
+    this.drawPartyControls();
+  }
+
+  /** The party controls for the selected party (Play), or none. */
+  private drawPartyControls(): void {
+    const party = this.activeParty();
+    drawPartyControls(this.plugin, {
+      controlsEl: () => this.host.controlsEl(),
+      pushUndo: (item, map) => this.host.undos.pushUndo(item, map),
+      renderGrid: () => this.host.renderGrid(),
+    }, party ? { map: party.map, hex: party.hex, token: party.filePath, title: party.title } : undefined);
   }
 
   private drawTokenLayer(gridContainer: HTMLElement): void {
@@ -261,17 +276,26 @@ export class TokenLayer {
     }
   }
 
-  /** Move the party one step to `hex` (clicked or dragged) and mark both hexes visited; one undo with what modules filled. */
+  /**
+   * Move the party one step to `hex` (clicked or dragged) and mark both
+   * hexes visited; one undo with the visited marks and what modules filled
+   * (P2: undo means it didn't happen). The step goes in the play log (P1).
+   */
   async moveParty(party: TokenEntry, hex: string, dragged = false): Promise<void> {
     if (!guardWrite(party.map, "token")) return;
     const step = { map: party.map, from: party.hex, to: hex, token: party.filePath };
     this.partyMoves.set(party.filePath, hex);
+    const visitedBefore = this.host.getActiveMap().visited;
     this.setVisited([step.from, hex], true);
+    const visitedAfter = this.host.getActiveMap().visited;
     if (!dragged) this.updateTokenLayer();
     const moved = setTokenHex(this.app, party.filePath, hex, party.map);
     const filled = await runPartyEntered(this.plugin, step);
     const token: UndoItem = { kind: "token", path: party.filePath, before: { hex: step.from, map: party.map }, after: { hex, map: party.map } };
-    this.host.undos.pushUndo(filled.length ? { kind: "group", items: [token, ...filled] } : token, party.map);
+    const visited: UndoItem[] = visitedAfter === visitedBefore ? [] : [{ kind: "map-field", mapName: party.map, field: "visited", before: visitedBefore, after: visitedAfter }];
+    const items = [token, ...visited, ...filled];
+    this.host.undos.pushUndo(items.length > 1 ? { kind: "group", items } : token, party.map);
+    void onPartyMoved(this.plugin, step);
     await moved;
     if (filled.length) this.host.renderGrid();
   }

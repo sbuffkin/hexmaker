@@ -13,7 +13,8 @@
  * - `hex-flower-at` (where each flower's walk stands) to the map note.
  *
  * Undo: the map cells and `hex-flower-at` changes are returned as undo
- * entries, which the map view groups with the token's move (one Ctrl+Z).
+ * entries, which the map view groups with the token's move (one Ctrl+Z);
+ * the party's Reveal button (reveal) is one undo the same way.
  * Notes and the play log are a journal: they stay (the notice says so).
  */
 
@@ -30,7 +31,8 @@ import { setTokenHex } from "../frontmatter";
 import { resolveRoll, type ResolveContext, type TableLookup } from "../random-tables/resolve";
 import { flowerStoreOf } from "./context";
 import { logError } from "../log";
-import { exploreOrder } from "./exploreOrder";
+import { exploreOrder, ringOrder } from "./exploreOrder";
+import { markRevealed } from "../hex-map/revealBounce";
 import { isExploreMap, type ExploreMap } from "./exploreFields";
 import {
   describeMove,
@@ -211,8 +213,9 @@ export class ExploreService {
   }
 
   /**
-   * Fill hex `k` (and, with reveal neighbours, the blank hexes around it)
-   * coming from `from`. Returns the undo entries and what to tell the user.
+   * Fill hex `k` (and, with the map's Reveal set to rings, the blank hexes
+   * that far around it) coming from `from`. Returns the undo entries and
+   * what to tell the user. The hexes it fills bounce in (revealBounce).
    */
   async fill(mapName: string, k: string, from: string | undefined, reroll = 0): Promise<{ undo: UndoItem[]; lines: string[]; filled: boolean } | undefined> {
     const map = this.exploreMap(mapName);
@@ -220,29 +223,68 @@ export class ExploreService {
     let at: ReadonlyMap<string, number> = parseFlowerAt(map.hexFlowerAt);
     const undo: UndoItem[] = [];
     const lines: string[] = [];
+    const shown = new Map<string, number>();
     let filled = false;
     const blank = this.isBlank(mapName, k);
     const plan = await this.plan(map, k, from, at, reroll, !blank);
     at = plan.at;
     const cellUndo = await this.write(map, k, plan);
     undo.push(...cellUndo);
-    if (blank && plan.writes.some((w) => w.target.kind !== "log")) filled = true;
+    if (blank && plan.writes.some((w) => w.target.kind !== "log")) { filled = true; shown.set(k, 0); }
     lines.push(this.line(map, k, from, plan));
-    // Reveal neighbours: the blank hexes around, each seen from here.
-    if (parseReveal(map.exploreReveal) === "neighbours") {
-      for (const n of this.neighbours(map, k)) {
-        if (!this.isBlank(mapName, n)) continue;
-        const p = await this.plan(map, n, k, at, reroll, false);
-        // Only what a hex shows from afar: no play log lines for neighbours.
-        p.writes = p.writes.filter((w) => w.target.kind !== "log");
-        at = p.at;
-        undo.push(...await this.write(map, n, p));
-        if (p.writes.length) lines.push(this.line(map, n, k, p));
-      }
-    }
+    // Reveal rings: the blank hexes around, each seen from the hex it was reached from.
+    at = await this.fillRings(map, k, parseReveal(map.exploreReveal), at, reroll, undo, lines, shown);
     undo.push(...this.setFlowerAt(map, at));
     if (filled) this.last.set(mapName, { hex: k, from, reroll, undo: cellUndo });
+    markRevealed(mapName, shown);
     return { undo, lines: lines.filter(Boolean), filled };
+  }
+
+  /**
+   * Fill the blank hexes up to `rings` around `center`, ring by ring, each
+   * seen from the hex it was reached from. Only what a hex shows from afar:
+   * no play log lines. Adds to `undo`, `lines` and `shown` (hex → ring);
+   * returns where the walks stand after.
+   */
+  private async fillRings(
+    map: ExploreMap, center: string, rings: number, at: ReadonlyMap<string, number>, reroll: number,
+    undo: UndoItem[], lines: string[], shown: Map<string, number>,
+  ): Promise<ReadonlyMap<string, number>> {
+    for (const { hex, from, ring } of ringOrder(center, rings, (n) => this.neighbours(map, n))) {
+      if (!this.isBlank(map.name, hex)) continue;
+      const p = await this.plan(map, hex, from, at, reroll, false);
+      p.writes = p.writes.filter((w) => w.target.kind !== "log");
+      at = p.at;
+      undo.push(...await this.write(map, hex, p));
+      if (p.writes.length) { lines.push(this.line(map, hex, from, p)); shown.set(hex, ring); }
+    }
+    return at;
+  }
+
+  /**
+   * The party's Reveal button (owner HF3): fill the blank hexes up to
+   * `rings` (1–3) around `center`, any time after a step. Returns the undo
+   * entries (the caller records them as one undo) and tells the user what
+   * came up; the hexes bounce in.
+   */
+  async reveal(mapName: string, center: string, rings: number): Promise<UndoItem[]> {
+    const map = this.exploreMap(mapName);
+    if (!map || !this.inGrid(map, center)) return [];
+    const undo: UndoItem[] = [];
+    const lines: string[] = [];
+    const shown = new Map<string, number>();
+    const r = Math.max(1, parseReveal(rings));
+    let at: ReadonlyMap<string, number> = parseFlowerAt(map.hexFlowerAt);
+    at = await this.fillRings(map, center, r, at, 0, undo, lines, shown);
+    undo.push(...this.setFlowerAt(map, at));
+    markRevealed(mapName, shown);
+    const [x, y] = hexPair(center);
+    const around = `${r} ring${r === 1 ? "" : "s"} around ${x}, ${y}`;
+    const head = shown.size ? `Revealed ${shown.size} hex${shown.size === 1 ? "" : "es"} (${around}).` : `Nothing new to reveal ${around}.`;
+    try {
+      this.show([head, ...lines.filter(Boolean)].join("\n"), undo.length ? [{ label: "Undo", run: () => void this.undoStep(mapName, undo) }] : []);
+    } catch (e) { logError("hex flower notice", e); }
+    return undo;
   }
 
   /** "4, 5: hills (8 → down-left from grassland). Features: [[Old shrine]]" */

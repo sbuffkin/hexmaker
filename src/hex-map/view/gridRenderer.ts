@@ -25,6 +25,7 @@ import { canAdd } from "../../workMode";
 import { coordHaloColor } from "../../coordStyle";
 import { watchBiomesPathHover } from "../biomesPathHover";
 import { parseVisited } from "../../play/partyTravel";
+import { revealedNow } from "../revealBounce";
 import { regionsViewTip } from "../hexHover";
 import { whenSized } from "../whenSized";
 import type { MapData } from "../../types";
@@ -330,6 +331,8 @@ export class GridRenderer {
 
     // Hexes the party has stood on (SF5): a mark the layers menu can hide.
     const visitedHexes = new Set(parseVisited(region.visited));
+    // Hexes exploring just filled bounce in (HF3; revealBounce.ts).
+    const revealed = revealedNow(region.name);
     const addHex = (parent: HTMLElement, x: number, y: number) => {
       const path = folder ? `${folder}/${hexKey(x, y)}.md` : `${hexKey(x, y)}.md`;
       const exists = existingHexPaths.has(path);
@@ -419,6 +422,11 @@ export class GridRenderer {
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
         hexEl.addClass("is-selected");
       if (visitedHexes.has(hexKey(x, y))) hexEl.addClass("duckmage-hex-visited");
+      const ring = revealed.get(hexKey(x, y));
+      if (ring !== undefined) {
+        hexEl.addClass("duckmage-hex-reveal");
+        hexEl.dataset.revealRing = String(Math.min(ring, 3));
+      }
 
       if (exists && !terrainEntry)
         hexEl.createSpan({ cls: "duckmage-hex-dot" });

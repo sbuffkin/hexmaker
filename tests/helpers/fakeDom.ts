@@ -64,6 +64,15 @@ export class FakeEl {
   dispatchEvent(e: { type: string }) { this.fire(e.type, e); return true; }
   addEventListener(type: string, f: (e: unknown) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), f]); }
   fire(type: string, e: unknown = {}) { for (const f of this.listeners.get(type) ?? []) f(e); }
+  /** Take this element out of its parent. */
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this); this.parent = null; }
+  /** Only `.cls` (any descendant) and `:scope > .cls` (a child). */
+  querySelector(sel: string): FakeEl | null {
+    const child = /^:scope\s*>\s*\.([\w-]+)$/.exec(sel);
+    if (child) return this.children.find((c) => c.classes.has(child[1])) ?? null;
+    const any = /^\.([\w-]+)$/.exec(sel);
+    return any ? this.find(any[1]) ?? null : null;
+  }
   /** Every descendant matching `pred`, in document order. */
   all(pred: (e: FakeEl) => boolean): FakeEl[] {
     return this.children.flatMap((c) => [...(pred(c) ? [c] : []), ...c.all(pred)]);
