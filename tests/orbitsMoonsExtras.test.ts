@@ -7,7 +7,6 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { extraWhere, orbitRoles, orbits, terrainOrType } from "../src/space/orbits";
 import { distance, type ProcGrid } from "../src/worldgen/procedural/common";
@@ -17,6 +16,7 @@ import { notesLookup, resolveEach } from "../src/random-tables/resolve";
 import { parseRandomTableWithReport, readChance, rowInfoOf } from "../src/random-tables/randomTable";
 import { mulberry32 } from "../packages/hex-wfc/src/rng";
 import type { TerrainColor } from "../src/types";
+import { readSource } from "./helpers/source";
 
 const grid = (n: number): ProcGrid => ({ cols: n, rows: n, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" });
 /** What Moons and System extras had to say (the other roles' "no table" notes aside). */
@@ -52,7 +52,7 @@ describe("Moons: the shipped table gives the old odds", () => {
 	});
 
 	it("the code holds no moon or extras odds any more", () => {
-		const code = readFileSync("src/space/orbits.ts", "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+		const code = readSource("src/space/orbits.ts").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
 		expect(code).not.toMatch(/rand\(\) < 0\.|rand\(\) < \(giant/);
 		expect(code).not.toMatch(/roles\.(starport|station|comet|jumpPoint)\b/);
 	});

@@ -28,7 +28,7 @@ import { CONFIRM_LOCKED_HINT } from "../src/overworld/overworldPaths";
 import { PATH_EDIT_LOCKED_HINT } from "../src/paths/editGate";
 import { hexLinkLabel, hexMarkdownLink, mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams, type MapLinkTarget } from "../src/hexLink";
 import type { MapPath } from "../src/types";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 /**
  * The owner's UI worksheet (2026-10-11) for the map surfaces: hex map view,
@@ -68,7 +68,6 @@ const codeText = sources("src")
   .filter((p) => !p.replace(/\\/g, "/").endsWith("src/ui/placement.ts"))
   .map((p) => readFileSync(p, "utf8"))
   .join("\n");
-const read = (p: string) => readFileSync(p, "utf8");
 
 describe("map surfaces: every resolved tag is honoured", () => {
   it("covers the five surfaces", () => {
@@ -96,7 +95,7 @@ describe("dropped controls are gone", () => {
     expect(view).not.toMatch(/registerDomEvent\(contentEl, "dblclick"/);
   });
   it("Locations.openButton: rows open by name, with no Open button", () => {
-    expect(read("src/hex-map/LocationsModal.ts")).not.toMatch(/text: "Open"/);
+    expect(readSource("src/hex-map/LocationsModal.ts")).not.toMatch(/text: "Open"/);
   });
 });
 
@@ -253,7 +252,7 @@ describe("hex links round-trip", () => {
     const editor = readSurface("hex-editor");
     expect(editor).toMatch(/centre\.addEventListener\("click", \(\) => this\.copyHexLink\(\)\)/);
     expect(editor).toMatch(/copyHexLink\(this\.plugin, this\.mapName, this\.x, this\.y\)/);
-    expect(read("src/hex-map/copyHexLink.ts")).toMatch(/hexMarkdownLink\(/);
+    expect(readSource("src/hex-map/copyHexLink.ts")).toMatch(/hexMarkdownLink\(/);
     const plugin = readSurface("plugin");
     expect(plugin).toMatch(/registerObsidianProtocolHandler\(OPEN_MAP_ACTION/);
     expect(plugin).toMatch(/view\.goToHex\(target\.map, target\.hex\.x, target\.hex\.y/);

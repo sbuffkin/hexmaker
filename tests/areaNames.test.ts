@@ -17,6 +17,7 @@ import { buildBiomeNote, parseBiomeNote, updateBiomeNote } from "../src/overworl
 import { ARRIVAL_MODE_WORDS, parseArrivalMode } from "../src/arrival/arrival";
 import { migrateMapData } from "../src/compat";
 import { CONTENT_FOLDER_DEFAULTS, pickerFolders } from "../src/notePickers";
+import { readSource } from "./helpers/source";
 
 const FORMAT_5 = readFileSync("tests/fixtures/compat/map-note-formats/format-5.md", "utf8").replace(/\r\n/g, "\n");
 
@@ -135,9 +136,9 @@ describe("MG5: the areas folder", () => {
     expect(CONTENT_FOLDER_DEFAULTS.regionsFolder).toBe("areas");
     expect(pickerFolders({ worldFolder: "World" }, "token")).toEqual(expect.arrayContaining(["World/areas", "World/regions"]));
     expect(pickerFolders({ worldFolder: "World", regionsFolder: "World/regions" }, "token")).not.toContain("World/areas");
-    const wizard = readFileSync("src/SetupWizardView.ts", "utf8");
+    const wizard = readSource("src/SetupWizardView.ts");
     expect(wizard).toMatch(/key: "regionsFolder",\s+label: "Areas",\s+suffix: "areas"/);
-    const tab = readFileSync("src/HexmakerSettingTab.ts", "utf8");
+    const tab = readSource("src/HexmakerSettingTab.ts");
     expect(tab).toContain('["regionsFolder", `${world}/areas`]');
   });
 });

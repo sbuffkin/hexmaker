@@ -4,6 +4,8 @@
  * imports.
  */
 
+import { escapeRegex } from "./textUtils";
+
 /** Local date and time as Obsidian's date & time property writes it: 2026-10-10T14:03:00. */
 export function localIsoDateTime(d: Date = new Date()): string {
 	const p = (n: number) => String(n).padStart(2, "0");
@@ -26,7 +28,7 @@ export function withFrontmatterEntries(content: string, entries: [key: string, y
 	const m = /^---\r?\n([\s\S]*?)\r?\n?---[ \t]*(?:\r?\n|$)/.exec(content);
 	const lines = m ? (m[1] === "" ? [] : m[1].split(/\r?\n/)) : [];
 	for (const [key, yaml] of entries) {
-		const keyRe = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`);
+		const keyRe = new RegExp(`^${escapeRegex(key)}\\s*:`);
 		const at = lines.findIndex((l) => keyRe.test(l));
 		const line = `${key}: ${yaml}`;
 		if (at >= 0) lines[at] = line;

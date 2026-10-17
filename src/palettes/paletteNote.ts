@@ -6,7 +6,7 @@ import { findPathTypesTable } from "./pathTypeTable";
 import { ALL_MAP_KINDS, type MapKind } from "../mapKinds";
 import { pathLink, refBasename } from "../noteFormats";
 import { registry } from "../modules";
-import { splitRow } from "../md/tableRow";
+import { SEPARATOR_ROW, splitRow } from "../md/tableRow";
 
 // Plain-text palette notes.
 //
@@ -67,8 +67,6 @@ export function paletteFileName(name: string): string {
     .replace(/^\.+/, "");
   return cleaned || "Palette";
 }
-
-const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
 interface TableSpan {
   start: number; // index of the header line

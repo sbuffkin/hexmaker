@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 /**
  * Fresh-eyes round 3: the README named commands that don't exist
@@ -19,7 +19,7 @@ const core = [...plugin.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id
 // Modules add theirs as command contributions (src/modules/<id>/runtime.ts).
 const moduleRuntimes = readdirSync(new URL("../src/modules", import.meta.url), { withFileTypes: true })
 	.filter((d) => d.isDirectory() && existsSync(new URL(`../src/modules/${d.name}/runtime.ts`, import.meta.url)))
-	.map((d) => read(`../src/modules/${d.name}/runtime.ts`));
+	.map((d) => readSource(`src/modules/${d.name}/runtime.ts`));
 const fromModules = moduleRuntimes.flatMap((t) => [...t.matchAll(/\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]));
 const registered = [...core, ...fromModules];
 const prefix = `${pluginName}: `;

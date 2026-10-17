@@ -1,7 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { drawPathRows, PATH_COUNT_AUTO, PATHS_AMOUNT_KEY, pathRowCount, pathRowKey, pathRowOptions, pathsAmount } from "../src/worldgen/procedural/pathRows";
 import { OVERLAND_ID, overlandDescription, planetSurface } from "../src/worldgen/procedural/planetSurface";
@@ -11,6 +9,7 @@ import { effectiveTerrainType } from "../src/terrainTypes";
 import type { PathType } from "../src/types";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
+import { readSource } from "./helpers/source";
 
 /**
  * SF8 (owner 2026-10-14, A + note): the Overland generator draws roads and
@@ -20,7 +19,6 @@ import type HexmakerPlugin from "../src/HexmakerPlugin";
  * to water), never its name, and routes with the shared path routing.
  */
 
-const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 const grid: ProcGrid = { cols: 20, rows: 16, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
 const overlandCells = (seed: number) => planetSurface(DEFAULT_TERRAIN_PALETTE, grid, seed, { water: "30", sea: "west", relief: "rugged" }, undefined, "overland").cells;
 
@@ -74,7 +72,7 @@ describe("SF8: one row per path type", () => {
 
 	it("the card no longer says it draws none", () => {
 		expect(overlandDescription(DEFAULT_TERRAIN_PALETTE)).toMatch(/draws your path types too/);
-		expect(read("src", "modules", "world", "runtime.ts")).not.toMatch(/draws no rivers or roads/);
+		expect(readSource("src", "modules", "world", "runtime.ts")).not.toMatch(/draws no rivers or roads/);
 	});
 });
 

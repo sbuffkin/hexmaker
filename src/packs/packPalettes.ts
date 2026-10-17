@@ -19,6 +19,7 @@
 import { parsePaletteNote, readChildPalette, readPaletteKind, readSubmapDefaults, submapDefaultsKey } from "../palettes/paletteNote";
 import { parsePathTypes } from "../palettes/pathTypeTable";
 import { refBasename } from "../noteFormats";
+import { escapeRegex } from "../textUtils";
 
 /** A palette this vault has: its note's path and text. */
 export interface VaultPalette {
@@ -61,8 +62,6 @@ export function noteName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, "");
 }
 
-const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 /**
  * `text` with its references to renamed palettes (`renames`: old name →
  * new, keys lower-case) pointed at the new names: the frontmatter
@@ -88,7 +87,7 @@ export function renamePaletteRefs(text: string, renames: ReadonlyMap<string, str
   }
   const dir = folder.trim().replace(/^\/+|\/+$/g, "");
   if (dir) {
-    out = out.replace(new RegExp(`\\[\\[${esc(dir)}/([^\\]|#/]+?)(\\.md)?(?=[\\]|#])`, "g"), (m, name: string) => {
+    out = out.replace(new RegExp(`\\[\\[${escapeRegex(dir)}/([^\\]|#/]+?)(\\.md)?(?=[\\]|#])`, "g"), (m, name: string) => {
       const to = renames.get(lower(name));
       return to ? `[[${dir}/${to}` : m;
     });

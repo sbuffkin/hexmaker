@@ -12,6 +12,7 @@ import { takeUpgradeReport } from "../src/migrations/upgradeReport";
 import { UPDATE_DEVICES_LINE, changelogPoints, upgradeNoteName, upgradeNoteText, writeUpgradeNote } from "../src/migrations/upgradeNote";
 import { DATA_FORMAT, dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "../src/migrations/stamp";
 import { MemVault } from "./helpers/memVault";
+import { readSource } from "./helpers/source";
 
 const g = globalThis as Record<string, unknown>;
 g.window ??= globalThis;
@@ -159,7 +160,7 @@ describe("MG7: the data stamp", () => {
 	});
 
 	it("is documented in the migrations README exactly as written", () => {
-		const readme = readFileSync(new URL("../src/migrations/README.md", import.meta.url), "utf8");
+		const readme = readSource("src", "migrations", "README.md");
 		expect(readme).toContain('"dataFormat": 2');
 		expect(readme).toContain("hexmaker-map:");
 	});

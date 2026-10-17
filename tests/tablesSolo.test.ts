@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { TFile } from "obsidian";
 import {
   TABLE_KINDS,
@@ -30,7 +29,6 @@ import { readSurface, readSource } from "./helpers/source";
  * are easy to find.
  */
 
-const src = (p: string) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 
 // ── SF2: the tables a hex can roll on ─────────────────────────────────────
 
@@ -127,7 +125,7 @@ describe("one table section per kind (SF2)", () => {
     expect(TABLE_KINDS.weather).toMatchObject({ hexSection: "Weather Table", mapField: "weatherTable", starterFile: "weather.md", rollInto: "weather" });
     expect(TABLE_KINDS["hooks & rumors"]).toMatchObject({ hexSection: "Rumors Table", mapField: "rumorsTable", rollInto: "hooks & rumors" });
     // The section control knows nothing about particular kinds or table names.
-    const control = src("src/random-tables/TableChoice.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const control = readSource("src/random-tables/TableChoice.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(control).not.toMatch(/"(weather|rumou?rs?|encounters?)"/i);
   });
 
@@ -300,7 +298,7 @@ describe("note templates (SX1)", () => {
   });
 
   it("the hex template's prompts are short and lean towards no setting", () => {
-    const template = src("src/defaultHexTemplate.md");
+    const template = readSource("src/defaultHexTemplate.md");
     const prompts = template.split("\n").filter((l) => /^\*.+\*$/.test(l.trim()));
     expect(prompts.length).toBe(6);
     for (const p of prompts) {
@@ -318,7 +316,7 @@ describe("note templates (SX1)", () => {
     expect(tab).toContain(`T("Settings.noteTemplates"`);
     expect(tab).toContain("this.plugin.openNoteTemplate(t.path)");
     // Main, not tucked into Advanced: not listed in the placement map.
-    expect(src("src/ui/placement.ts")).not.toContain("Settings.noteTemplates");
+    expect(readSource("src/ui/placement.ts")).not.toContain("Settings.noteTemplates");
     const editor = readSurface("hex-editor");
     expect(editor).toContain("Edit the ${words.noun} template…");
   });

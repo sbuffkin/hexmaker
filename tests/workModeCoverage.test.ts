@@ -54,7 +54,7 @@ describe("work mode classification covers every entry point", () => {
 	});
 
 	it("every drawing tool is classified (and none is stale)", () => {
-		const union = /export type DrawingMode =([^;]+);/.exec(read("src/hex-map/toolMode.ts"))![1];
+		const union = /export type DrawingMode =([^;]+);/.exec(readSource("src/hex-map/toolMode.ts"))![1];
 		const tools = [...union.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
 		expect(tools.length).toBeGreaterThan(5);
 		expect(Object.keys(TOOL_ACTIONS).sort()).toEqual(tools);
@@ -74,7 +74,7 @@ describe("work mode classification covers every entry point", () => {
 			for (const m of read(f).matchAll(/menuId:\s*"([^"]+)"/g)) used.add(m[1]);
 		}
 		// The overworld menu's ids come from overworldMenu() as `ow.<id>`.
-		const owIds = /id:\s*("[^;]+?");/.exec(read("src/overworld/overworldInput.ts"))![1];
+		const owIds = /id:\s*("[^;]+?");/.exec(readSource("src/overworld/overworldInput.ts"))![1];
 		for (const m of owIds.matchAll(/"([^"]+)"/g)) used.add(`ow.${m[1]}`);
 		const unclassified = [...used].filter((id) => !(id in MENU_ACTIONS));
 		expect(unclassified).toEqual([]);

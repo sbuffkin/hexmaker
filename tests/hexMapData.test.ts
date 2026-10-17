@@ -1,12 +1,12 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { TFile } from "obsidian";
 import { hasMapData, mapDataLines, mapDataSyncMessage, planCalloutImport, readMapData, setMapData, shownValues, type HexMapDataView } from "../src/hexMapData";
 import { getAllSectionData } from "../src/sections";
+import { readSource } from "./helpers/source";
 
 const VIEW: HexMapDataView = { map: "the-coast", mapLabel: "The Coast", x: 0, y: 1, terrain: "desert rocky", region: "Dustbowl" };
-const TEMPLATE = readFileSync("src/defaultHexTemplate.md", "utf8").replace(/\r\n/g, "\n");
+const TEMPLATE = readSource("src/defaultHexTemplate.md").replace(/\r\n/g, "\n");
 
 describe("hex note Map data callout", () => {
 	it("fills the built-in template's callout with what the map has", () => {

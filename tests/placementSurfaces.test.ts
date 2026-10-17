@@ -22,7 +22,7 @@ import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS } from "../src/space/starScatter"
 import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS } from "../src/overworld/worldBiomes";
 import { ORBIT_TYPE_KEY, ROUTE_TYPE_KEY } from "../src/worldgen/generatorPathTypes";
 import { LIST_REFRESH_MS, DETAIL_REFRESH_MS, ListSignatures, listSignature, touchesList } from "../src/random-tables/listRefresh";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 interface Resolved { id: string; group: string; subgroup: string; choice: string }
 
@@ -106,7 +106,7 @@ describe("worksheet placement: maps, new maps, regions, world types, palettes, t
 
 describe("dropped controls are gone", () => {
   it("Link submap: the inline create form", () => {
-    const src = read("src", "hex-map", "SubmapPickerModal.ts");
+    const src = readSource("src", "hex-map", "SubmapPickerModal.ts");
     expect(src).not.toMatch(/Create & link new map|handleCreateAndLink|duckmage-submap-create|Map terrain theme/);
     // Making a map is the New map form's job (New location…).
     expect(src).toMatch(/New location…/);
@@ -125,7 +125,7 @@ describe("dropped controls are gone", () => {
   });
 
   it("Table picker: Open tables view", () => {
-    expect(read("src", "hex-map", "FolderTreePickerModal.ts")).not.toMatch(/Open tables view|onOpenView/);
+    expect(readSource("src", "hex-map", "FolderTreePickerModal.ts")).not.toMatch(/Open tables view|onOpenView/);
     expect(read("styles.css")).not.toMatch(/duckmage-table-picker-(topbar|view-btn)/);
   });
 

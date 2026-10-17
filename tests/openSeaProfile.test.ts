@@ -7,12 +7,12 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { biomeProfiles, OPEN_SEA, profileFromFields } from "../src/overworld/biomes";
 import { BIOME_PRESETS, biomePreset } from "../src/overworld/biomePresets";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { MODELS } from "./overworldFixtures";
 import type { TerrainColor } from "../src/types";
+import { readSource } from "./helpers/source";
 
 describe("Open sea: weights from data, not names", () => {
 	it("water 80% and deep water 20%, as the old ocean 80 / trench 20", () => {
@@ -46,7 +46,7 @@ describe("Open sea: weights from data, not names", () => {
 	});
 
 	it("no terrain names or weights for it are left in the code", () => {
-		const code = readFileSync("src/overworld/biomes.ts", "utf8");
+		const code = readSource("src/overworld/biomes.ts");
 		expect(code).not.toMatch(/OPEN_SEA_TERRAINS|"trench"|weight: 80/);
 		expect(code).not.toMatch(/=== OPEN_SEA \?/);
 	});

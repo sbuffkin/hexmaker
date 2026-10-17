@@ -37,7 +37,7 @@
  */
 
 import { biomeFileName, isUnderground, linkTarget, type BiomeNoteFields } from "./biomeNote";
-import { splitLinkRow as splitRow } from "../md/tableRow";
+import { SEPARATOR_ROW, splitLinkRow as splitRow } from "../md/tableRow";
 
 export const BIOME_POOL_MARKER = "hexmaker-biome-pool";
 export const BIOME_POOL_FORMAT = 1;
@@ -66,7 +66,6 @@ export const BIOME_POOL_HELP = [
   "> The biomes a generated overworld may use. **Biome** links a biome note. **Weight** (optional, 1 if blank) scales how often it's chosen where its climate fits: 0.5 is half as often, 2 twice (up to always), 0 never. Biomes without a climate are only placed where no other biome in the pool fits. Add or delete rows freely.",
 ];
 
-const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 const norm = (h: string) => h.trim().toLowerCase().replace(/\s+/g, " ");
 
 interface Span { start: number; end: number; headers: string[] }

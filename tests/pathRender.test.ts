@@ -1,7 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import type { MapData, PathChain, PathType, TerrainColor } from "../src/types";
 import { PathsService, pathTypeStyle, styleForTypes, type PathsHost } from "../src/paths/PathsService";
 import { storedMapPaths } from "../src/paths/mapPaths";
@@ -133,7 +131,7 @@ describe("paths service: style comes from the explicit type fields, in one place
   });
 
   it("reads avoid/winding only from the explicit PathType fields, in one place", () => {
-    const src = readFileSync(path.join(process.cwd(), "src", "paths", "PathsService.ts"), "utf8");
+    const src = readSource("src", "paths", "PathsService.ts");
     expect(src).not.toMatch(/pathAvoidsImpassable\(|pathMeanders\(/);
     expect(src).toMatch(/return t && \{ avoid: t\.avoidImpassable, winding: t\.autoRoute === "winding" \};/);
     for (const f of ["src/hex-map/HexMapView.ts", "src/export/mapPngRenderer.ts", "src/paths/pathGeometry.ts"]) {

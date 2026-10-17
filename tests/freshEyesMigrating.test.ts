@@ -22,7 +22,7 @@ import {
 import { oneHexPiecesText } from "../src/migrations/v1.5-map-data-to-map-notes";
 import { tableRangesNoticeText } from "../src/migrations/v1.5-table-roll-ranges";
 import { uniqueMapsByName } from "../src/maps/mapTree";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
@@ -90,7 +90,7 @@ describe("F2: upgrade notices at start-up are one notice, in order", () => {
 		const css = read("../styles.css");
 		expect(css).toMatch(/\.notice\.duckmage-bg-notice\s*\{[^}]*pointer-events:\s*none/);
 		expect(css).toMatch(/\.duckmage-bg-notice \.duckmage-bg-notice-close\s*\{[^}]*pointer-events:\s*auto/);
-		const notify = read("../src/ui/notify.ts");
+		const notify = readSource("src/ui/notify.ts");
 		expect(notify).toContain('el.addClass("duckmage-bg-notice")');
 	});
 
@@ -151,7 +151,7 @@ describe("F6: tall modals stay inside the window and scroll inside", () => {
 describe("F9: README and help name the Center hex button", () => {
 	it("no ⌖ toolbar button is described; Center hex is", () => {
 		const readme = read("../README.md");
-		const help = read("../src/hex-map/help.md");
+		const help = readSource("src/hex-map/help.md");
 		expect(readme).not.toMatch(/⌖` button in the toolbar/);
 		expect(help).not.toMatch(/\| \*\*⌖\*\* \|/);
 		expect(readme).toMatch(/\*\*Center hex\*\* \(in the drawing tools panel/);
@@ -168,7 +168,7 @@ describe("F11: duplicate map names count once", () => {
 
 	it("the hex table, generator library and export list use it", () => {
 		expect(readSurface("hex-table").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(3);
-		expect(read("../src/worldgen/GeneratorLibrary.ts").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(2);
+		expect(readSource("src/worldgen/GeneratorLibrary.ts").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(2);
 		expect(readSurface("export-modal")).toContain("uniqueMapsByName(plugin.settings.maps)");
 		expect(readSurface("map-modal")).toContain("const maps = uniqueMapsByName(this.plugin.settings.maps);");
 	});

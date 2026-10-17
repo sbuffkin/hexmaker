@@ -21,6 +21,7 @@ export class FakeEl {
   text = "";
   classes = new Set<string>();
   attrs: Record<string, string> = {};
+  dataset: Record<string, string> = {};
   value = "";
   disabled = false;
   title = "";

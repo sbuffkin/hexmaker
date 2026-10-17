@@ -1,11 +1,9 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { splitMix } from "../src/ui/mixList";
 import { addedMixWeight, setMixRow } from "../src/overworld/biomePage/fields";
 import type { BiomeNoteFields } from "../src/overworld/biomeNote";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 /**
  * O6 (owner 2026-10-14, A + note): the biome page AND the generator page
@@ -13,7 +11,6 @@ import { readSurface } from "./helpers/source";
  * picker with a filter). Both pages use one component (src/ui/mixList.ts).
  */
 
-const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
 describe("O6: splitMix", () => {
 	it("keeps list order, splits shown from addable, drops repeats", () => {
@@ -46,7 +43,7 @@ describe("O6: adding and removing a type on the biome page", () => {
 describe("O6: one component on both pages", () => {
 	const biome = readSurface("biome-page");
 	const gen = readSurface("generator-page");
-	const kit = read("src", "ui", "mixList.ts");
+	const kit = readSource("src", "ui", "mixList.ts");
 
 	it("both pages list only what's in the mix, with × and + Add", () => {
 		for (const page of [biome, gen]) {

@@ -424,7 +424,7 @@ describe("commands and menus follow their placement", () => {
 
   it("every tagged command is registered through addPlaced with its id", () => {
     // Modules' commands are placed through their placementId (src/modules/<id>/runtime.ts).
-    const modules = ["world", "world-maps", "space"].map((m) => { try { return read("src", "modules", m, "runtime.ts"); } catch { return ""; } }).join("\n");
+    const modules = ["world", "world-maps", "space"].map((m) => { try { return readSource("src", "modules", m, "runtime.ts"); } catch { return ""; } }).join("\n");
     for (const r of ROWS.filter((x) => x.id.startsWith("Plugin.cmd."))) expect([r.id, plugin.includes(`addPlaced("${r.id}"`) || modules.includes(`placementId: "${r.id}"`)]).toEqual([r.id, true]);
     for (const id of ["Plugin.fileMenuExportPdf", "Plugin.fileMenuExportMarkdown"]) expect(plugin).toContain(`id: "${id}"`);
   });
@@ -545,7 +545,7 @@ describe("seeds are kept with what they made", () => {
     const src = readSurface("overworld-modals");
     // Its map-note fields come from newOverworldFields (shared with the Biomes scale), seed included.
     expect(src).toMatch(/finishNewOverworld\(this\.plugin, res\.name, this\.result, \{[\s\S]*?seed: this\.seed,/);
-    expect(read("src", "overworld", "overworldGen.ts")).toContain("seed: s.seed,");
+    expect(readSource("src", "overworld", "overworldGen.ts")).toContain("seed: s.seed,");
     expect(src).toContain('if (typeof regen?.seed === "number") this.seed = regen.seed;');
     expect(src).toContain("if (target) target.seed = this.seed;");
   });

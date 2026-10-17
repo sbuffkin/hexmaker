@@ -7,8 +7,9 @@
  */
 
 import { MANIFEST_FILE, inferManifest, parseManifest, type PackManifest } from "./packManifest";
-import { isSafePackPath, keepBothPath, rewriteFolderLinks, vaultPathOf, type PackKind } from "./packKinds";
+import { codeInNote, keepBothPath, packPathProblem, rewriteFolderLinks, vaultPathOf, type PackKind } from "./packKinds";
 import { paletteKey, planPalettes, renamePaletteRefs, type FindPalette } from "./packPalettes";
+import { PACK_LIMITS, packSizeProblem, type PackLimits } from "./zip";
 
 /** A file of the pack (from a zip or a picked folder). */
 export interface PackFile {
@@ -56,6 +57,27 @@ export function loadPack(files: readonly PackFile[], known: readonly { id: strin
   return { manifest: inferManifest(rest.map((f) => f.path), known, name), inferred: true, files: rest };
 }
 
+/** A file of a picked folder: its path in the folder, its size, and a way to read it. */
+export interface FolderFile {
+  path: string;
+  size: number;
+  read(): Promise<Uint8Array>;
+}
+
+/**
+ * The pack files of a picked folder. Only notes (.md) are read: nothing
+ * else is ever imported, so a folder with big pictures or videos in it
+ * costs nothing. Throws when the folder's notes are over `limits` (the
+ * same ones a .zip is held to), before reading any.
+ */
+export async function readFolderPack(list: readonly FolderFile[], limits: PackLimits = PACK_LIMITS): Promise<PackFile[]> {
+  if (list.length > limits.files) throw new Error(`that folder has ${list.length} files; a pack has its notes and a pack.md`);
+  const isNote = (f: FolderFile) => f.path.toLowerCase().endsWith(".md");
+  const problem = packSizeProblem(list.filter(isNote).map((f) => ({ path: f.path, size: f.size })), limits);
+  if (problem) throw new Error(problem);
+  return Promise.all(list.map(async (f): Promise<PackFile> => ({ path: f.path, data: isNote(f) ? await f.read() : new Uint8Array(0) })));
+}
+
 /** UTF-8 text, or null when the bytes aren't readable text. A leading BOM is kept. */
 export function decodeText(data: Uint8Array): string | null {
   try {
@@ -81,6 +103,8 @@ export interface PlanItem {
   alreadyHave?: string;
   /** A palette whose name this vault has, different (K2): imported under `target`'s name instead of this one. */
   renamedFrom?: string;
+  /** Code other plugins run in this note ("Dataview JS", "Templater"): the preview warns. */
+  code?: string[];
 }
 
 export interface ImportPlan {
@@ -105,8 +129,9 @@ export async function planImport(
   const skipped: SkippedFile[] = [];
   const fromOf = new Map(pack.manifest.kinds.map((k) => [k.id, k.from]));
   for (const f of pack.files) {
-    if (!isSafePackPath(f.path)) {
-      skipped.push({ path: f.path, reason: "unsafe path" });
+    const pathProblem = packPathProblem(f.path);
+    if (pathProblem) {
+      skipped.push({ path: f.path, reason: pathProblem });
       continue;
     }
     if (!f.path.toLowerCase().endsWith(".md")) {
@@ -132,7 +157,8 @@ export async function planImport(
     if (where.kind.fixText) text = where.kind.fixText(text);
     const existing = await read(where.path);
     const status: PlanStatus = existing === null ? "new" : existing === text ? "same" : "conflict";
-    items.push({ packPath: f.path, kindId: where.kind.id, target: where.path, text, status });
+    const code = codeInNote(text);
+    items.push({ packPath: f.path, kindId: where.kind.id, target: where.path, text, status, ...(code.length ? { code } : {}) });
   }
   if (findPalette) await settlePalettes(items, kinds, read, findPalette);
   const present = new Set(pack.files.map((f) => f.path));

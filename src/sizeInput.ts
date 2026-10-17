@@ -18,6 +18,21 @@ export function sizeFromInput(
 	return Math.max(opts.min, Math.min(opts.max, n));
 }
 
+/**
+ * Most columns (or rows) a map size field takes. A map note asking for
+ * more is read as this many and its note shows the problem: a note from
+ * someone else with `cols: 100000000` would otherwise freeze the app on
+ * open (every hex is drawn and counted).
+ */
+export const MAX_GRID_SIDE = 200;
+
+/** A map side read from a note, at most MAX_GRID_SIDE; `tooBig` gets the reason when it is cut. */
+export function gridSideFromNote(n: number, tooBig: (reason: string) => void): number {
+	if (n <= MAX_GRID_SIDE) return n;
+	tooBig(`should be ${MAX_GRID_SIDE} or less; the map shows ${MAX_GRID_SIDE}`);
+	return MAX_GRID_SIDE;
+}
+
 /** How long typing in a size field waits before the preview redraws. */
 export const LIVE_PREVIEW_DELAY_MS = 300;
 

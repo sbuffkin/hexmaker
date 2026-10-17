@@ -14,8 +14,6 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { clampNeighbourWeight, paintBiomeHex, planRegionAt, regenerateRegion, storeNeighbourWeight } from "../src/overworld/regionsVault";
 import { createFromDraft, draftGrowth, draftLock, newDraft, previewDraft, startBiome, type NewRegionDraft } from "../src/overworld/newRegion";
 import { combinedBiome, representativeTerrain } from "../src/overworld/biomes";
@@ -23,7 +21,7 @@ import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { ADD_REGION_LOCKED_HINT } from "../src/workMode";
 import type { MapData } from "../src/types";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 import type { NewMapOptions } from "../src/services/MapsService";
 
 type Hex = { terrain?: string; locked?: boolean; biome?: string };
@@ -243,7 +241,6 @@ describe("unchanged: the Biome painter and arrival stay form-free", () => {
 	});
 });
 
-const read = (...p: string[]) => readFileSync(join(...p), "utf8").replace(/\r\n/g, "\n");
 
 describe("every entry point opens Edit region in new-region mode", () => {
 	const view = readSurface("map-view");
@@ -260,7 +257,7 @@ describe("every entry point opens Edit region in new-region mode", () => {
 		const editor = readSurface("hex-editor");
 		expect(editor).toMatch(/new wm\.EditRegionModal\(host, home\.overworld\.name, px, py, \{\s*walk: \{ from: this\.mapName, bearing \}/);
 		// The old walk form is gone (WalkRegionModal is the side-by-side worlds' only).
-		const walk = read("src", "overworld", "WalkRegionModal.ts");
+		const walk = readSource("src", "overworld", "WalkRegionModal.ts");
 		expect(walk).not.toMatch(/renderOverworld|walkIntoHex/);
 	});
 
@@ -269,13 +266,13 @@ describe("every entry point opens Edit region in new-region mode", () => {
 	});
 
 	it("only Create writes: Cancel and × just close", () => {
-		const modal = read("src", "overworld", "EditRegionModal.ts");
+		const modal = readSource("src", "overworld", "EditRegionModal.ts");
 		expect(modal.match(/createFromDraft\(/g)?.length).toBe(1);
 		expect(modal).toMatch(/private async create\([^)]*\): Promise<void> \{[\s\S]*?createFromDraft\(/);
 		// The footer helper: Create is the primary; Cancel only closes.
 		expect(modal).toMatch(/this\.footer\(\{\s*primary: \{ text: createText,[^\n]*this\.create\(fresh, createText\) \},\s*cancel: \(\) => this\.close\(\),/);
 		// Neighbour influence is the shared labelled slider (one control with New map → Next to, SF6).
 		expect(modal).toMatch(/renderNeighbourSlider\(biomeSec, /);
-		expect(read("src", "ui", "neighbourSlider.ts")).toMatch(/renderLabeledSlider\(parent, \{\s*label: "Neighbour influence"/);
+		expect(readSource("src", "ui", "neighbourSlider.ts")).toMatch(/renderLabeledSlider\(parent, \{\s*label: "Neighbour influence"/);
 	});
 });

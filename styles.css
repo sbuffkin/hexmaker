@@ -9799,6 +9799,13 @@ button.is-armed {
     color: var(--text-error);
     margin: 0.4em 0;
 }
+.duckmage-pack-warning {
+    color: var(--text-warning);
+    margin: 0.4em 0;
+}
+.duckmage-pack-tag.duckmage-pack-tag-code {
+    color: var(--text-warning);
+}
 .duckmage-pack-report {
     margin: 0;
     padding-left: 1.2em;

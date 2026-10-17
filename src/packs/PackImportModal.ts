@@ -9,6 +9,7 @@ import {
   CONFLICT_LABELS,
   loadPack,
   planImport,
+  readFolderPack,
   resolveSteps,
   type ConflictChoice,
   type ImportPlan,
@@ -18,9 +19,6 @@ import {
 } from "./packPlan";
 import { runImport, type ImportReport } from "./packIO";
 import { vaultPaletteFinder, vaultWriteHost, zipsInVault } from "./packVault";
-
-/** Most files a picked folder may hold (a wrong pick, like a whole vault, stops here). */
-const MAX_FOLDER_FILES = 5000;
 
 const CHOICES: ConflictChoice[] = ["both", "skip", "replace"];
 
@@ -87,10 +85,12 @@ export class PackImportModal extends HexmakerModal {
       const list = Array.from(dirInput.files ?? []);
       if (!list.length) return;
       const top = (list[0].webkitRelativePath || list[0].name).split("/")[0];
-      void this.load(top, async () => {
-        if (list.length > MAX_FOLDER_FILES) throw new Error(`that folder has ${list.length} files; a pack has its notes and a pack.md`);
-        return Promise.all(list.map(async (f): Promise<PackFile> => ({ path: f.webkitRelativePath || f.name, data: new Uint8Array(await f.arrayBuffer()) })));
-      });
+      // A wrong pick (a whole vault) or a folder over the pack limits stops here, before reading.
+      void this.load(top, async () => readFolderPack(list.map((f) => ({
+        path: f.webkitRelativePath || f.name,
+        size: f.size,
+        read: async () => new Uint8Array(await f.arrayBuffer()),
+      }))));
     });
     this.place("PackImport.pickFolder", dirBtn);
 
@@ -141,6 +141,15 @@ export class PackImportModal extends HexmakerModal {
     el.createDiv({ cls: "duckmage-export-tab-row-hint", text: meta });
     if (pack.inferred) el.createDiv({ cls: "duckmage-export-tab-row-hint", text: "It has no pack.md, so its folders were read by name." });
 
+    const withCode = plan.items.filter((i) => i.code?.length && !i.alreadyHave && i.status !== "same");
+    if (withCode.length) {
+      const kinds = [...new Set(withCode.flatMap((i) => i.code!))].join(" or ");
+      el.createDiv({
+        cls: "duckmage-pack-warning",
+        text: `${withCode.length} note${withCode.length === 1 ? " has" : "s have"} ${kinds} code, which runs when the note is opened if you have that plugin. Only import code from people you trust; the notes are marked below.`,
+      });
+    }
+
     const conflicts = plan.items.filter((i) => i.status === "conflict");
     if (conflicts.length) {
       const row = el.createDiv({ cls: "duckmage-export-tab-row" });
@@ -170,6 +179,7 @@ export class PackImportModal extends HexmakerModal {
         const rel = item.target.slice(kind.folder.length + 1).replace(/\.md$/i, "");
         filterText(r, rel);
         r.createSpan({ cls: "duckmage-pack-item-name", text: rel });
+        if (item.code?.length && !item.alreadyHave && item.status !== "same") r.createSpan({ cls: "duckmage-pack-tag duckmage-pack-tag-code", text: `has ${item.code.join(" and ")} code` });
         if (item.renamedFrom) r.createSpan({ cls: "duckmage-pack-tag", text: `new name: yours called "${item.renamedFrom}" is different` });
         else if (item.alreadyHave) r.createSpan({ cls: "duckmage-pack-tag", text: "already have" });
         else if (item.status === "new") r.createSpan({ cls: "duckmage-pack-tag", text: "new" });

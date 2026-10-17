@@ -10,7 +10,7 @@ import { registry } from "../src/modules";
 
 const SPACE_CHILD_KIND_TEXT = registry.kindInfo("space")!.childKindText!;
 import { allows, MENU_ACTIONS } from "../src/workMode";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 const src = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
@@ -126,7 +126,7 @@ describe("F12: no notices for expected, harmless cases", () => {
 		const plugin = readSurface("plugin");
 		expect(plugin).toMatch(/async ensurePaletteInstalled[\s\S]*?installPalettePreset\(name, undefined, \{ quiet: true \}\)/);
 		expect(plugin).toContain("if (!opts.quiet) new Notice(`Added palette");
-		expect(src("src", "palettes", "AddPaletteModal.ts")).toMatch(/installPalettePreset\(preset\.name\)/);
+		expect(readSource("src", "palettes", "AddPaletteModal.ts")).toMatch(/installPalettePreset\(preset\.name\)/);
 	});
 });
 
@@ -141,7 +141,7 @@ describe("F15: the token form doesn't jump when note suggestions close", () => {
 
 describe("F16: the palette editor's title follows the palette shown", () => {
 	it("updates the header on every render", () => {
-		const view = src("src", "palettes", "PaletteEditorView.ts");
+		const view = readSource("src", "palettes", "PaletteEditorView.ts");
 		const at = view.indexOf("private render(): void {");
 		expect(view.slice(at, at + 400)).toContain("this.refreshHeader();");
 		expect(view).toContain("updateHeader?.()");
