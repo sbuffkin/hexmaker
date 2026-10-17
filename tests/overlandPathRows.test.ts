@@ -3,7 +3,7 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
-import { drawPathRows, PATH_COUNT_AUTO, pathRowCount, pathRowKey, pathRowOptions } from "../src/worldgen/procedural/pathRows";
+import { drawPathRows, PATH_COUNT_AUTO, PATHS_AMOUNT_KEY, pathRowCount, pathRowKey, pathRowOptions, pathsAmount } from "../src/worldgen/procedural/pathRows";
 import { OVERLAND_ID, overlandDescription, planetSurface } from "../src/worldgen/procedural/planetSurface";
 import { kindOptions, optionsWithDefaults, optionsWithTuning } from "../src/worldgen/registry";
 import { worldRuntime } from "../src/modules/world/runtime";
@@ -32,7 +32,7 @@ const WATER = new Set(["water", "deep-water", "shallows"]);
 
 describe("SF8: one row per path type", () => {
 	it("lists the palette's own path types, on (Auto) by default", () => {
-		const rows = pathRowOptions(RENAMED);
+		const rows = pathRowOptions(RENAMED).filter((r) => r.key !== PATHS_AMOUNT_KEY);
 		expect(rows.map((r) => [r.key, r.label, r.default])).toEqual([
 			["paths.Old way", "Old way", PATH_COUNT_AUTO],
 			["paths.Brook", "Brook", PATH_COUNT_AUTO],
@@ -124,5 +124,42 @@ describe("SF8: laid out by each type's options", () => {
 		const dry = planetSurface(LIMITED_TERRAIN_PALETTE, grid, 3, { sea: "none", water: "10" }, undefined, "overland").cells;
 		const paths = drawPathRows(dry, LIMITED_TERRAIN_PALETTE, grid, DEFAULT_PATH_TYPES, {}, 3);
 		expect(paths.length).toBeGreaterThan(0);
+	});
+});
+
+describe("G3: one Paths amount for every type", () => {
+	it("comes first, at ×1, only when the palette has path types", () => {
+		const rows = pathRowOptions(RENAMED);
+		expect(rows[0]).toMatchObject({ key: PATHS_AMOUNT_KEY, label: "Paths amount", default: "1" });
+		expect(rows[0].choices.map((c) => c.value)).toEqual(expect.arrayContaining(["0", "0.5", "1", "2"]));
+		expect(pathRowOptions([]).some((r) => r.key === PATHS_AMOUNT_KEY)).toBe(false);
+	});
+
+	it("scales Auto counts; a type set to a number keeps it; unset reads as ×1", () => {
+		expect(pathsAmount(undefined)).toBe(1);
+		expect(pathsAmount("junk")).toBe(1);
+		expect(pathRowCount(PATH_COUNT_AUTO, 1600, pathsAmount("0.5"))).toBe(4);
+		expect(pathRowCount(PATH_COUNT_AUTO, 1600, 2)).toBe(16);
+		expect(pathRowCount(PATH_COUNT_AUTO, 1600, 0)).toBe(0);
+		expect(pathRowCount(PATH_COUNT_AUTO, 100, 0.5)).toBe(1);
+		expect(pathRowCount("3", 1600, 0)).toBe(3);
+	});
+
+	it("survives into the run: ×0 draws none, ×2 draws more", () => {
+		const overland = worldRuntime.generators!({} as HexmakerPlugin, {
+			toPaths: () => ({ paths: [], missing: [] }),
+			procGrid: (g) => ({ ...g, orientation: "flat" }),
+		}).find((k) => k.id === OVERLAND_ID)!;
+		expect(optionsWithDefaults(overland, { [PATHS_AMOUNT_KEY]: "0.5" })[PATHS_AMOUNT_KEY]).toBe("0.5");
+		const big: ProcGrid = { ...grid, cols: 40, rows: 30 };
+		const run = (options: Record<string, string>) => {
+			const r = overland.generate({ terrains: DEFAULT_TERRAIN_PALETTE, grid: big, seed: 5, options, pathTypes: RENAMED });
+			if (!r.ok) throw new Error(r.message);
+			return r.paths.filter((p) => p.type === "Old way" || p.type === "Brook").length;
+		};
+		const base = run({});
+		expect(run({ [PATHS_AMOUNT_KEY]: "1" })).toBe(base);
+		expect(run({ [PATHS_AMOUNT_KEY]: "0" })).toBe(0);
+		expect(run({ [PATHS_AMOUNT_KEY]: "2" })).toBeGreaterThan(base);
 	});
 });

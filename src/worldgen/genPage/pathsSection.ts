@@ -22,6 +22,23 @@ import {
 import { toggle } from "./controls";
 import type { GeneratorPageCtx } from "./ctx";
 
+/**
+ * The overall Paths amount (G3, owner 2026-10-16): one ×0–×2 multiplier on
+ * every path type's auto count, so a generator learned from a busy map can
+ * be thinned in one go. `onChange` gets undefined at ×1 (not set).
+ */
+export function renderPathsAmount(parent: HTMLElement, value: number | undefined, onChange: (v: number | undefined) => void): void {
+  const row = parent.createDiv({ cls: "duckmage-wfc-mix duckmage-wfc-paths-amount" });
+  renderMultiplierSlider(row, {
+    label: "Paths amount",
+    ariaLabel: "Paths amount",
+    title: "How many paths to draw, all types together. ×0 draws none, ×1 is as learned. A route's own count stays as set.",
+    max: 2,
+    value,
+    onChange,
+  });
+}
+
 /** Paths: one row per learned route (type + what its ends connect to). Nothing when the generator learned none. */
 export function renderPathsSection(ctx: GeneratorPageCtx, main: HTMLElement): void {
   const { plugin, model, s, save, place } = ctx;
@@ -61,6 +78,7 @@ export function renderPathsSection(ctx: GeneratorPageCtx, main: HTMLElement): vo
       save({ drawPaths: v });
       showPathsOn(v);
     });
+    renderPathsAmount(table, model.settings?.pathsAmount, (v) => save({ pathsAmount: v }));
     const mapTypes = plugin.getPathTypes(generatorPageState.paletteName).map((t) => t.name);
     const typeColors = pathColors(plugin, generatorPageState.paletteName);
     const swatchFor = (parent: HTMLElement, type: string) =>

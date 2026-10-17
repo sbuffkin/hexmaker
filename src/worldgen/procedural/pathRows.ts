@@ -30,6 +30,13 @@ export const PATH_ROW_PREFIX = "paths.";
 export const PATH_COUNT_AUTO = "auto";
 /** Hexes per path at Auto. */
 const HEXES_PER_PATH = 200;
+/**
+ * The overall "Paths amount" row (G3, owner 2026-10-16: paths "get out of
+ * hand pretty fast"): a multiplier on every type's Auto count. A type set to
+ * a number keeps it. Unset = ×1, so older saved options draw as before.
+ */
+export const PATHS_AMOUNT_KEY = "paths-amount";
+const AMOUNT_CHOICES = ["0", "0.25", "0.5", "0.75", "1", "1.5", "2"];
 
 /** The option key of a path type's row. */
 export function pathRowKey(typeName: string): string {
@@ -40,6 +47,14 @@ export function pathRowKey(typeName: string): string {
 export function pathRowOptions(pathTypes: readonly Pick<PathType, "name">[] | undefined): ProcOption[] {
   const seen = new Set<string>();
   const out: ProcOption[] = [];
+  if ((pathTypes ?? []).some((t) => t.name)) {
+    out.push({
+      key: PATHS_AMOUNT_KEY,
+      label: "Paths amount",
+      choices: AMOUNT_CHOICES.map((v) => ({ value: v, label: v === "0" ? "None" : `×${v}` })),
+      default: "1",
+    });
+  }
   for (const t of pathTypes ?? []) {
     if (!t.name || seen.has(t.name)) continue;
     seen.add(t.name);
@@ -57,11 +72,21 @@ export function pathRowOptions(pathTypes: readonly Pick<PathType, "name">[] | un
   return out;
 }
 
-/** How many of a type to draw: the row's value (Auto, unset or unreadable: by map size). */
-export function pathRowCount(value: string | undefined, hexCount: number): number {
+/** The Paths amount row's multiplier (unset or unreadable: ×1). */
+export function pathsAmount(value: string | undefined): number {
+  const n = value === undefined || value === "" ? NaN : Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(4, n)) : 1;
+}
+
+/**
+ * How many of a type to draw: the row's value (Auto, unset or unreadable: by
+ * map size, times the Paths amount; at least one unless the amount is ×0).
+ */
+export function pathRowCount(value: string | undefined, hexCount: number, amount = 1): number {
   const n = value === undefined || value === PATH_COUNT_AUTO ? NaN : Number(value);
   if (Number.isFinite(n)) return Math.max(0, Math.min(20, Math.floor(n)));
-  return Math.max(1, Math.round(hexCount / HEXES_PER_PATH));
+  if (amount <= 0) return 0;
+  return Math.max(1, Math.round((hexCount / HEXES_PER_PATH) * amount));
 }
 
 /** How high a terrain type stands, for where rivers rise (water 0 … peaks 5). */
@@ -80,8 +105,8 @@ const WATER = new Set(["deep-water", "water", "shallows"]);
 
 /**
  * The paths a generator's path-type rows ask for, routed over its terrain.
- * `options` holds the rows' values (`paths.<type>`); a type without a row
- * value is drawn at Auto.
+ * `options` holds the rows' values (`paths.<type>`, `paths-amount`); a type
+ * without a row value is drawn at Auto.
  */
 export function drawPathRows(
   cells: ReadonlyMap<string, string>,
@@ -105,8 +130,9 @@ export function drawPathRows(
   const land = hexes.filter(([x, y]) => !isWater(x, y));
   const water = hexes.filter(([x, y]) => isWater(x, y));
   const out: ProcPath[] = [];
+  const amount = pathsAmount(options[PATHS_AMOUNT_KEY]);
   types.forEach((pt, ti) => {
-    const count = pathRowCount(options[pathRowKey(pt.name)], hexes.length);
+    const count = pathRowCount(options[pathRowKey(pt.name)], hexes.length, amount);
     if (!count || land.length < 2) return;
     // Its own random stream per type, so one row's count doesn't move another's paths.
     const rand = mulberry32((seed ^ Math.imul(ti + 1, 0x85ebca6b) ^ 0x5bd1e995) >>> 0);

@@ -32,7 +32,7 @@ export interface PathOutput {
 /** How one learned route fared on a map. */
 export interface RouteStat {
   route: string;
-  /** Learned count scaled to this map: what "auto" means. */
+  /** Learned count scaled to this map and by the overall paths amount: what "auto" means. */
   auto: number;
   /** How many were asked for (0 when the route is off). */
   wanted: number;
@@ -163,6 +163,8 @@ export function routePaths(
   tweaks: Record<string, PathTweak> = {},
   /** Terrains paths may not cross unless their tweak says crossImpassable. */
   impassable: string[] = [],
+  /** Overall paths amount: multiplier on every route's auto count (GeneratorSettings.pathsAmount). */
+  amount = 1,
 ): { paths: PathOutput[]; warnings: string[]; routes: RouteStat[] } {
   const { cols, rows, ox, oy, orientation, stagger } = grid;
   const N = cols * rows;
@@ -324,6 +326,19 @@ export function routePaths(
   const order = [...features].sort((a, b) => Number(a.from === "path") - Number(b.from === "path"));
 
   const routes: RouteStat[] = [];
+  // Auto counts scaled by the overall amount, rounded with a running carry so
+  // the total over all routes follows the amount even when each route only
+  // had 1 (×0.5 on ten single routes draws five, not ten). ×1 is unchanged.
+  const scaleAmount = Number.isFinite(amount) ? Math.max(0, amount) : 1;
+  let wantedSum = 0;
+  let placedSum = 0;
+  const scaledAuto = (auto: number): number => {
+    if (scaleAmount === 1) return auto;
+    wantedSum += auto * scaleAmount;
+    const n = Math.max(0, Math.round(wantedSum) - placedSum);
+    placedSum += n;
+    return n;
+  };
   for (const learned of order) {
     const route = pathRouteKey(learned);
     const tw = tweaks[route] ?? {};
@@ -351,7 +366,8 @@ export function routePaths(
       for (let c = 0; c < N; c++) if (impassableSet.has(terrainOf(c))) blocked[c] = 1;
     }
 
-    const auto = Math.max(1, Math.round(f.count * sizeScale));
+    const learnedAuto = Math.max(1, Math.round(f.count * sizeScale));
+    const auto = tw.off || tw.count !== undefined ? Math.round(learnedAuto * scaleAmount) : scaledAuto(learnedAuto);
     const count = tw.off ? 0 : Math.max(0, Math.round(tw.count ?? auto));
     const stat: RouteStat = { route, auto, wanted: count, placed: 0 };
     routes.push(stat);

@@ -11,7 +11,7 @@ import {
 import { ofType, SIDES, tuneKey, type GenerationContext, type ProcGrid, type ProcOption, type Side, type TuningDef } from "./procedural/common";
 import { generatorMapKind, isGeneratorShown, kindOfTerrains, type MapKind } from "../mapKinds";
 import { routeContextPaths } from "./procedural/contextPaths";
-import { PATH_ROW_PREFIX } from "./procedural/pathRows";
+import { PATH_ROW_PREFIX, PATHS_AMOUNT_KEY } from "./procedural/pathRows";
 import { registry } from "../modules";
 import { blendFromNeighbours, generateConnected, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { neighbourShare } from "./neighbourWeight";
@@ -386,13 +386,14 @@ export function kindOptions(
 
 /**
  * A generator's options at their defaults, overridden by `chosen`. The
- * path-type rows (`paths.<type>`, SF8) depend on the palette, so they
- * aren't in the static list: a chosen one is kept as chosen (unset = Auto).
+ * path-type rows (`paths.<type>`, SF8, and the Paths amount) depend on the
+ * palette, so they aren't in the static list: a chosen one is kept as chosen
+ * (unset = Auto, ×1).
  */
 export function optionsWithDefaults(kind: Pick<TerrainGeneratorKind, "options">, chosen: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
   for (const o of kind.options) out[o.key] = chosen[o.key] ?? o.default;
-  for (const [k, v] of Object.entries(chosen)) if (k.startsWith(PATH_ROW_PREFIX) && v !== undefined) out[k] = v;
+  for (const [k, v] of Object.entries(chosen)) if ((k.startsWith(PATH_ROW_PREFIX) || k === PATHS_AMOUNT_KEY) && v !== undefined) out[k] = v;
   return out;
 }
 
