@@ -50,7 +50,7 @@ Each coding session:
 
 ## Feature switches (release slices)
 
-Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space` and `hexflower` today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
+Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space`, `genpage` (the generator page) and `hexflower` (needs `genpage`) today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
 
 | Variable | Meaning |
 |---|---|
@@ -93,7 +93,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'cd /mnt/c/Users/markr/Documents/KB/journ
 
 `main.ts` re-exports `src/HexmakerPlugin.ts`; esbuild bundles everything into `main.js` (`.md` files import as text: `loader: { '.md': 'text' }` in `esbuild.config.mjs`). The plugin id is `hexmaker`; view types, CSS classes and protocol actions keep the old `duckmage-` prefix. See `ARCHITECTURE.md` for the module table, the data formats and the modules/slices system.
 
-**Modules and release slices.** World (released), World maps (`src/overworld/`) and Space (`src/space/`) are modules (`src/modules/`); one module is one release slice (`release-slices.json`, esbuild defines `__SLICE_WORLDMAPS__` / `__SLICE_SPACE__` / `__SLICE_HEXFLOWER__`). The core never value-imports a module's code: it asks `registry` (data), the runtime contributions in `src/modules/runtime.ts`, or World maps' hooks via `worldMaps()` (undefined without the slice; type-only imports). `tests/moduleBoundary.test.ts` holds the import edges at 0. A module's settings keys get no `DEFAULT_SETTINGS` entry (written only once set); its user-visible names go in its `owns.strings`, and Space- or World-maps-only help text goes inside `<!-- slice:<id> -->…<!-- /slice -->` in `help.md`. Run `npm run check:release` after touching a module. Comments inside object literals and class bodies reach `main.js`: don't name a module's features in core comments there.
+**Modules and release slices.** World (released), World maps (`src/overworld/`) and Space (`src/space/`) are modules (`src/modules/`); one module is one release slice (`release-slices.json`, esbuild defines `__SLICE_WORLDMAPS__` / `__SLICE_SPACE__` / `__SLICE_GENPAGE__` / `__SLICE_HEXFLOWER__`). The core never value-imports a module's code: it asks `registry` (data), the runtime contributions in `src/modules/runtime.ts`, World maps' hooks via `worldMaps()` or the generator page via `genPage()` (each undefined without its slice; type-only imports). Module code that needs another module's api (or the list of runtimes) imports `src/modules/active.ts`, never `runtime.ts` (that imports every module: an import cycle). `tests/moduleBoundary.test.ts` holds the import edges at 0. A module's settings keys get no `DEFAULT_SETTINGS` entry (written only once set); its user-visible names go in its `owns.strings`, and Space- or World-maps-only help text goes inside `<!-- slice:<id> -->…<!-- /slice -->` in `help.md`. Run `npm run check:release` after touching a module. Comments inside object literals and class bodies reach `main.js`: don't name a module's features in core comments there.
 
 ### Source layout
 
@@ -128,9 +128,11 @@ src/
                           (hex-note properties both ways), callouts, map tree / navigation / submaps
   migrations/           ← one file per stored-format step, registry.ts, stamp.ts (dataFormat),
                           upgradeNote.ts / upgradeReport.ts; rules in its README.md
-  modules/              ← registry (data half), runtime (plugin half); world/, world-maps/, space/, hex-flower/
-  worldgen/             ← generators, engines (procedural/, builtin/), GeneratorPanel + genPage/ section
-                          renderers (GeneratorPageCtx), generatorPageState.ts, NewMapSetupModal
+  modules/              ← registry (data half), runtime (plugin half), active.ts (the runtimes, for module code);
+                          world/, world-maps/, space/, gen-page/ (the generator page: GeneratorView, GeneratorPanel +
+                          sections/ renderers (GeneratorPageCtx), library, saves, generatorPageState.ts), hex-flower/
+  worldgen/             ← generators, engines (procedural/, builtin/), saveFormat, previews, NewMapSetupModal
+                          (map creation is core: New map and the wizard run generators without the page)
   overworld/ space/ hexflower/ ← module code (World maps, Space, hex flowers)
   random-tables/        ← RandomTableView, table parse/roll (randomTable.ts), TableStore, workflows
   palettes/             ← PaletteStore (palette notes ⇄ settings), paletteNote, pathTypeTable, presets
