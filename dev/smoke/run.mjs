@@ -61,8 +61,8 @@ if (flag("list")) {
   for (const s of SETUPS) console.log(`${s.id.padEnd(16)} ${s.title}`);
   process.exit(0);
 }
-if (process.platform !== "win32") {
-  console.error("dev/smoke/run.mjs drives Windows Obsidian: run it with Windows node, or `npm run smoke` from WSL.");
+if (process.platform !== "win32" && process.platform !== "linux") {
+  console.error("dev/smoke/run.mjs drives Obsidian on Windows or Linux.");
   process.exit(2);
 }
 const jobsPick = pickJobs({ requested: val("jobs", null), ...(await machineLoad()) });
@@ -80,14 +80,20 @@ const toWsl = (p) => path.resolve(p).replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d
 
 // ── 1. build + snapshot ───────────────────────────────────────────────────
 const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "-");
-const work = path.join(os.tmpdir(), "hexmaker-smoke", stamp);
+// Linux: the Flathub Obsidian has a private /tmp, so seeds go under the home folder.
+const work = path.join(process.platform === "linux" ? path.join(os.homedir(), ".cache") : os.tmpdir(), "hexmaker-smoke", stamp);
 fs.mkdirSync(work, { recursive: true });
 let source = val("build", null);
 if (!source) {
   source = ROOT;
   if (!flag("no-build")) {
-    log("building (npm run build through WSL)…");
-    execFileSync("wsl.exe", ["-e", "bash", "-lc", `cd '${toWsl(ROOT)}' && npm run build`], { stdio: "inherit", env: { ...process.env, MSYS_NO_PATHCONV: "1" } });
+    if (process.platform === "linux") {
+      log("building (npm run build)…");
+      execFileSync("npm", ["run", "build"], { cwd: ROOT, stdio: "inherit" });
+    } else {
+      log("building (npm run build through WSL)…");
+      execFileSync("wsl.exe", ["-e", "bash", "-lc", `cd '${toWsl(ROOT)}' && npm run build`], { stdio: "inherit", env: { ...process.env, MSYS_NO_PATHCONV: "1" } });
+    }
   }
 }
 const buildDir = path.join(work, "build");

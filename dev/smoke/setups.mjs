@@ -12,9 +12,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { hostPath } from "./lib/obsidian.mjs";
 
-export const REAL_SEED = process.env.SMOKE_REAL_SEED ?? "C:/Users/markr/work/tmp/migtest/seedF";
-export const REAL_DATA = process.env.SMOKE_REAL_DATA ?? "C:/Users/markr/Documents/KB/journal/.obsidian/plugins/duckmage-plugin/data.json";
+export const REAL_SEED = process.env.SMOKE_REAL_SEED ?? hostPath("C:/Users/markr/work/tmp/migtest/seedF");
+export const REAL_DATA = process.env.SMOKE_REAL_DATA ?? hostPath("C:/Users/markr/Documents/KB/journal/.obsidian/plugins/duckmage-plugin/data.json");
 export const MARKER = ".hexmaker-sandbox";
 
 const write = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };

@@ -13,9 +13,12 @@ import { execFile, execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { stopUntilGone } from "./concurrency.mjs";
 
+/** A default written as a Windows path, as this machine sees it: C:/… is /mnt/c/… on Linux. */
+export const hostPath = (p) => (process.platform === "linux" ? p.replace(/^([A-Za-z]):[\\/]/, (_m, d) => `/mnt/${d.toLowerCase()}/`) : p);
+
 export const TOOLS_DIR = process.env.UX_TOOLS_DIR
   ?? process.env.UX_SANDBOX_DIR
-  ?? "C:/Users/markr/work/tools/skills-share/ux-testing/fresh-eyes-tester/scripts";
+  ?? hostPath("C:/Users/markr/work/tools/skills-share/ux-testing/fresh-eyes-tester/scripts");
 export const SANDBOX = path.join(TOOLS_DIR, "sandbox.mjs");
 
 let commonMod = null;
@@ -60,6 +63,7 @@ export const stopSandbox = (runDir) => stopUntilGone(() => stopSandboxOnce(runDi
  * stable; helper processes come and go on their own.
  */
 export function obsidianProcesses() {
+  if (process.platform === "linux") return linuxObsidianProcesses();
   const ps = "Get-CimInstance Win32_Process -Filter \"Name='Obsidian.exe'\" | ForEach-Object { [pscustomobject]@{ pid = $_.ProcessId; cmd = $_.CommandLine } } | ConvertTo-Json -Compress";
   const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8" }).trim();
   if (!out) return [];
@@ -120,4 +124,26 @@ export async function shot(page, runDir, name) {
     await page.screenshot({ path: file });
     return file;
   } catch { return null; }
+}
+
+/**
+ * Linux (the Flathub build): the Obsidian processes from /proc. `main` is
+ * the Electron browser process (the obsidian binary without `--type=`);
+ * the Flatpak sandbox (bwrap) and launcher script around it are listed
+ * but not main, so a count of main processes means the same as on Windows.
+ */
+function linuxObsidianProcesses() {
+  const out = [];
+  for (const d of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(d) || Number(d) === process.pid) continue;
+    let argv;
+    try { argv = fs.readFileSync(`/proc/${d}/cmdline`, "utf8").split("\0").filter(Boolean); } catch { continue; }
+    const prog = path.basename(argv[0] ?? "");
+    const app = prog === "obsidian" || prog === "Obsidian";
+    const wrapper = prog === "obsidian.sh" || ((prog === "bwrap" || prog === "flatpak") && argv.some((a) => a === "md.obsidian.Obsidian" || a === "obsidian.sh"));
+    if (!app && !wrapper) continue;
+    const cmd = argv.join(" ");
+    out.push({ pid: Number(d), cmd, main: app && !/--type=/.test(cmd) });
+  }
+  return out;
 }
