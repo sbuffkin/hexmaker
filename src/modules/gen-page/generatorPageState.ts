@@ -1,14 +1,14 @@
 /**
  * The generator page's selections, kept for as long as the plugin is loaded
  * (they survive the page's re-renders and its being closed and reopened).
- * One module-level object: the page (GeneratorPanel and its genPage/
- * sections) reads and writes it, and HexmakerPlugin.openTerrainGenerator
- * sets it before showing the page.
+ * One module-level object: the page (GeneratorPanel and its sections/)
+ * reads and writes it, and the page api (./runtime.ts openGenPage) sets it
+ * before showing the page.
  */
 
-import type { HexWfcModel } from "../../packages/hex-wfc/src";
-import type { GeneratorSave } from "./saveFormat";
-import type { Side } from "./world";
+import type { HexWfcModel } from "../../../packages/hex-wfc/src";
+import type { GeneratorSave } from "../../worldgen/saveFormat";
+import type { Side } from "../../worldgen/world";
 
 export interface GeneratorPageState {
   /** The generator shown (its file path; DRAFT_PATH while the unsaved draft is). */

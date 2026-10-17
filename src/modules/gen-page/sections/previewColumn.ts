@@ -16,20 +16,20 @@ import {
   toMapPaths,
   addGeneratedPaths,
   generatorText,
-} from "../generators";
-import { drawPreview, PREVIEW_AUTO_LIMIT } from "../preview";
-import { renderPreviewLegend } from "../../hex-map/terrainLegend";
-import { getIconUrl, linkLabel } from "../../utils";
-import { makeScrubbable } from "../../ui/scrub";
-import { regionBiome, generateConnected, neighbourSpec, placeNewRegion, regionNeighbourNames, type NewRegion } from "../neighbours";
+} from "../../../worldgen/generators";
+import { drawPreview, PREVIEW_AUTO_LIMIT } from "../../../worldgen/preview";
+import { renderPreviewLegend } from "../../../hex-map/terrainLegend";
+import { getIconUrl, linkLabel } from "../../../utils";
+import { makeScrubbable } from "../../../ui/scrub";
+import { regionBiome, generateConnected, neighbourSpec, placeNewRegion, regionNeighbourNames, type NewRegion } from "../../../worldgen/neighbours";
 import { listSaves, writeSave } from "../saves";
 import { loadSaveOntoPage } from "./loadSave";
 import { GeneratorLibrary } from "../GeneratorLibrary";
-import { mapForSave, SAVE_FORMAT, type GeneratorSave } from "../saveFormat";
-import { compareVersions, pluginVersion } from "../../compat";
+import { mapForSave, SAVE_FORMAT, type GeneratorSave } from "../../../worldgen/saveFormat";
+import { compareVersions, pluginVersion } from "../../../compat";
 import { formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "../shares";
 import { generatorPageState } from "../generatorPageState";
-import { pathsEnabled, randomSeed, type HexWfcModel, type RouteStat } from "../../../packages/hex-wfc/src";
+import { pathsEnabled, randomSeed, type HexWfcModel, type RouteStat } from "../../../../packages/hex-wfc/src";
 import type { GeneratorPageCtx } from "./ctx";
 
 /** The preview column's controls that later sections read or wire. */

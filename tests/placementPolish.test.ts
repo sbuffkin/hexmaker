@@ -11,9 +11,10 @@ import { countSet, Disclosure, setLabel } from "../src/ui/disclosure";
 import { setDebugMode, type LocalStore } from "../src/ui/debugMode";
 import { advancedTitle, placedRows, rowIsSet, submenuRows } from "../src/ui/placedMenu";
 import { layerOf, PLACEMENT } from "../src/ui/placement";
-import { ENGINE_TUNING_IDS, engineTuningIsSet } from "../src/worldgen/engineTuningSet";
+import { ENGINE_TUNING_IDS, engineTuningIsSet } from "../src/modules/gen-page/engineTuningSet";
 import { DEFAULT_SETTINGS } from "../packages/hex-wfc/src";
 import { readSurface, readSource } from "./helpers/source";
+import { itWith } from "./helpers/slices";
 
 
 class FakeStore implements LocalStore {
@@ -125,7 +126,7 @@ describe("one-item Advanced dropdowns and sub-sections show inline (owner, round
     expect(host.find("duckmage-disclosure")).toHaveLength(1);
   });
 
-  it("a one-control sub-section folds into plain Advanced; the dropdown stays when more is in it", async () => {
+  itWith("genpage", "a one-control sub-section folds into plain Advanced; the dropdown stays when more is in it", async () => {
     const { host, put } = page(new FakeStore(), "GenPage");
     put("GenPage.clumping"); // Engine tuning
     const seed = put("GenPage.seed"); // Seed (only one)
@@ -169,7 +170,7 @@ describe("Advanced · N set: dropdown headers count the controls that are on", (
     expect(by.get("Seed")).toBeUndefined();
   });
 
-  it("the dropdown and each sub-section say how many are set, and update on a change inside", () => {
+  itWith("genpage", "the dropdown and each sub-section say how many are set, and update on a change inside", () => {
     const store = new FakeStore();
     const { host, put, header, subHeaders } = page(store);
     let clumping = 4;
@@ -272,7 +273,7 @@ describe("engine tuning: which controls are off their default", () => {
     expect(engineTuningIsSet("GenPage.removeSmallPatches", { ...defaults, smoothing: 0.6 })).toBe(true);
   });
 
-  it("every id is an Engine tuning control, and an unknown id is never set", () => {
+  itWith("genpage", "every id is an Engine tuning control, and an unknown id is never set", () => {
     for (const id of ENGINE_TUNING_IDS) expect(PLACEMENT[id]).toBe("advanced/Engine tuning");
     expect(engineTuningIsSet("GenPage.nope", defaults)).toBe(false);
   });
@@ -284,7 +285,7 @@ describe("Advanced · N set is wired on the surfaces where it's practical", () =
     [["src", "hex-map", "TokenModal.ts"], /this\.place\("Token\.description", descSetting\.settingEl, \(\) => !!descInput\?\.value\.trim\(\)\)/],
     // (The hex editor's per-section table source left Advanced: owner SF2
     // made the table choice and "change…" part of the section, tests/tablesSolo.test.ts.)
-    [["src", "worldgen", "GeneratorPanel.ts"], /engineTuningIsSet\(id, s\(\)\)/],
+    [["src", "modules", "gen-page", "GeneratorPanel.ts"], /engineTuningIsSet\(id, s\(\)\)/],
     [["src", "export", "MapExportModal.ts"], /disclosure\.track\("MapExport\.showRegionOverlay", \(\) => showRegionOverlay\.checked\)/],
     [["src", "hex-map", "MapModal.ts"], /at\(\["MapModal\.propsTerrainTheme"\], \(\) => !!currentMap\?\.terrainType\)/],
     [["src", "hex-map", "MapModal.ts"], /disclosure\.track\("MapModal\.propsRumoursTable"/],

@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        set: ["off:worldmaps", "off:space", "off:hexflower", "released", "none"]
+        set: ["off:worldmaps", "off:space", "off:genpage", "off:hexflower", "released", "none"]
     name: slices (${{ matrix.set }})
     steps:
       - uses: actions/checkout@v4

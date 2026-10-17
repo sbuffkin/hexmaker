@@ -45,7 +45,7 @@ describe("map note size: capped at the size fields' maximum (security #4)", () =
 	});
 
 	it("the size fields use the same maximum", () => {
-		for (const f of ["src/SetupWizardView.ts", "src/worldgen/NewMapSetupModal.ts", "src/worldgen/genPage/previewColumn.ts"]) {
+		for (const f of ["src/SetupWizardView.ts", "src/worldgen/NewMapSetupModal.ts", "src/modules/gen-page/sections/previewColumn.ts"]) {
 			const maxes = [...readSource(f).matchAll(/(?:sizeFromInput\(\w+|makeScrubbable\((?:cols|rows)\w*)[^)]*?max: (\d+)/g)].map((m) => Number(m[1]));
 			expect(maxes.length).toBeGreaterThan(0);
 			for (const m of maxes) expect(m).toBe(MAX_GRID_SIDE);

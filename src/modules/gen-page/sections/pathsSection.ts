@@ -5,10 +5,10 @@
  * follow). Hovering a route highlights it on the preview.
  */
 
-import { Fold } from "../../ui/disclosure";
-import { makeScrubbable } from "../../ui/scrub";
-import { renderLabeledSlider, renderMultiplierSlider } from "../../ui/sliders";
-import { pathColors } from "../generators";
+import { Fold } from "../../../ui/disclosure";
+import { makeScrubbable } from "../../../ui/scrub";
+import { renderLabeledSlider, renderMultiplierSlider } from "../../../ui/sliders";
+import { pathColors } from "../../../worldgen/generators";
 import { generatorPageState } from "../generatorPageState";
 import {
   pathsEnabled,
@@ -18,7 +18,7 @@ import {
   type PathTweak,
   type PathTypeTweak,
   type PathFeature,
-} from "../../../packages/hex-wfc/src";
+} from "../../../../packages/hex-wfc/src";
 import { toggle } from "./controls";
 import type { GeneratorPageCtx } from "./ctx";
 

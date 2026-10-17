@@ -10,7 +10,6 @@ import { contentFolder } from "../notePickers";
 import {
   listGenerators,
   generatorsForRegion,
-  type GeneratorFile,
 } from "../worldgen/generators";
 import { SIDES, link, type Side } from "../worldgen/world";
 import {
@@ -31,7 +30,7 @@ import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
 import { armButton } from "../ui/footer";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
 import { renderArrivalSetting, renderRoleTables } from "./mapTablesForm";
-import { moduleMapProperties, worldMaps } from "../modules/runtime";
+import { genPage, moduleMapProperties, worldMaps } from "../modules/runtime";
 import { PlacedMenu } from "../ui/placedMenu";
 import { Disclosure } from "../ui/disclosure";
 import { isDebugMode } from "../ui/debugMode";
@@ -331,16 +330,18 @@ export class MapModal extends HexmakerModal {
           // Generators are Advanced (placement map). Nothing else is in this
           // menu, so they're shown directly rather than under "Advanced ▸".
           const layers = new PlacedMenu(menu, isDebugMode(this.app));
-          if (existing) {
+          // Opening or making one needs the generator page (genPage(): undefined in a build without it).
+          const page = genPage();
+          if (existing && page) {
             layers.add("MapModal.mapRowContextGenerator", {
               label: `Open generator "${existing.model.name}"`,
               icon: "wand-sparkles",
-              onClick: () => void this.openGenerator(map.name, existing),
+              onClick: () => { this.close(); void page.open(this.plugin, { mapName: map.name, generatorPath: existing.file.path, paletteName: existing.model.meta.palette }); },
             });
           }
           // New, or over an existing one (the region's biome's and its parents' first), PR1 (World maps).
           const wmake = worldMaps();
-          if (wmake) {
+          if (wmake && page) {
             layers.add("MapModal.mapRowContextMakeGenerator", {
               label: `Make generator from ${this.plugin.mapLabel(map.name)}…`,
               icon: existing ? "plus" : "wand-sparkles",
@@ -797,18 +798,6 @@ export class MapModal extends HexmakerModal {
       if (backgroundImage) this.view.enterBgCalibration();
     }, undefined, prefill).open();
     this.close();
-  }
-
-  // ── Generator ─────────────────────────────────────────────────────────────
-
-  /** Open a region's existing generator in the terrain generator. */
-  private async openGenerator(mapName: string, g: GeneratorFile): Promise<void> {
-    this.close();
-    await this.plugin.openTerrainGenerator({
-      mapName,
-      generatorPath: g.file.path,
-      paletteName: g.model.meta.palette,
-    });
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────

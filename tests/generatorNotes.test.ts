@@ -10,7 +10,7 @@ import {
   shareCell,
   type HexWfcModel,
 } from "../packages/hex-wfc/src";
-import { exampleShares } from "../src/worldgen/shares";
+import { exampleShares } from "../src/modules/gen-page/shares";
 import { paletteGapMessage } from "../src/worldgen/generators";
 
 const model = (): HexWfcModel => ({

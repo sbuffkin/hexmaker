@@ -226,7 +226,6 @@ export const TOOL_ACTIONS = withModuleRows<string, ModeAction>(CORE_TOOL_ACTIONS
 export const CORE_COMMAND_ACTIONS: Readonly<Record<string, ModeAction>> = {
   "open-hex-map": "view",
   "open-hex-table": "view",
-  "open-terrain-generator": "view",
   "open-palette-editor": "settings",
   "map-go-up": "navigate",
   "map-go-back": "navigate",

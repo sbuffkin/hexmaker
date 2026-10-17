@@ -117,7 +117,7 @@ describe("build flags", () => {
 		expect(resolveSlices({ spec: "all,-space" }).slices).toEqual(all.filter((id) => id !== "space"));
 		expect(resolveSlices({ spec: "none,+space" }).slices).toEqual(["space"]);
 		// ON on top, then OFF, which wins.
-		expect(resolveSlices({ spec: "none", on: "space,hexflower" }).slices).toEqual(["space", "hexflower"]);
+		expect(resolveSlices({ spec: "none", on: "space,genpage,hexflower" }).slices).toEqual(["space", "genpage", "hexflower"]);
 		expect(resolveSlices({ spec: "all", on: "space", off: "space" }).slices).toEqual(all.filter((id) => id !== "space"));
 		// Errors: unknown ids, foundation, an unknown base.
 		expect(() => resolveSlices({ spec: "nope" })).toThrow(/no slice "nope"/);

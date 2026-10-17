@@ -4,7 +4,7 @@
  * sliders' (src/ui/shares.ts); these are its whole-number forms.
  */
 
-import { rebalanceShares, toPercents } from "../ui/shares";
+import { rebalanceShares, toPercents } from "../../ui/shares";
 
 export { toPercents };
 

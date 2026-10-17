@@ -4,6 +4,7 @@
     "foundation": { "define": null, "modules": ["world"], "released": true, "requires": [] },
     "worldmaps": { "docs": true, "define": "__SLICE_WORLDMAPS__", "modules": ["world-maps"], "released": true, "requires": [] },
     "space": { "docs": true, "define": "__SLICE_SPACE__", "modules": ["space"], "released": true, "requires": [] },
-    "hexflower": { "docs": true, "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false, "requires": [] }
+    "genpage": { "docs": true, "define": "__SLICE_GENPAGE__", "modules": ["gen-page"], "released": true, "requires": [] },
+    "hexflower": { "docs": true, "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false, "requires": ["genpage"] }
   }
 }

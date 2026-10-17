@@ -9,7 +9,7 @@ import expect from "expect";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PLACEMENT, layerOf, parsePlacement, partitionSections, subSectionOf, type Layer, type Placement } from "../src/ui/placement";
-import { allPlacement } from "./helpers/slices";
+import { allPlacement, itWith } from "./helpers/slices";
 
 /** Every control\'s placement, the modules\' rows included whichever slices are built (the worksheet lists them all). */
 const ALL_PLACEMENT = allPlacement();
@@ -291,7 +291,7 @@ describe("Advanced sub-sections", () => {
     return { host, d, put };
   }
 
-  it("renders plain Advanced controls, then each sub-section as a closed nested collapsible, then Debug", () => {
+  itWith("genpage", "renders plain Advanced controls, then each sub-section as a closed nested collapsible, then Debug", () => {
     const store = new FakeStore();
     setDebugMode(store, true);
     const { host, d, put } = page(store);
@@ -323,7 +323,7 @@ describe("Advanced sub-sections", () => {
     setDebugMode(store, false);
   });
 
-  it("remembers each sub-section's open state per surface", () => {
+  itWith("genpage", "remembers each sub-section's open state per surface", () => {
     const store = new FakeStore();
     const first = page(store);
     first.put("GenPage.clumping");
@@ -343,7 +343,7 @@ describe("Advanced sub-sections", () => {
     expect(store.data.has(DISCLOSURE_OPEN_KEY)).toBe(false);
   });
 
-  it("target builds in place for main, in the sub-section for advanced/<Sub>, nowhere for Debug without debug mode", () => {
+  itWith("genpage", "target builds in place for main, in the sub-section for advanced/<Sub>, nowhere for Debug without debug mode", () => {
     const store = new FakeStore();
     const { host, d } = page(store);
     const here = host.createDiv();
@@ -428,7 +428,7 @@ describe("commands and menus follow their placement", () => {
 
   it("every tagged command is registered through addPlaced with its id", () => {
     // Modules' commands are placed through their placementId (src/modules/<id>/runtime.ts).
-    const modules = ["world", "world-maps", "space"].map((m) => { try { return readSource("src", "modules", m, "runtime.ts"); } catch { return ""; } }).join("\n");
+    const modules = readdirSync(join(process.cwd(), "src", "modules")).map((m) => { try { return readSource("src", "modules", m, "runtime.ts"); } catch { return ""; } }).join("\n");
     for (const r of ROWS.filter((x) => x.id.startsWith("Plugin.cmd."))) expect([r.id, plugin.includes(`addPlaced("${r.id}"`) || modules.includes(`placementId: "${r.id}"`)]).toEqual([r.id, true]);
     for (const id of ["Plugin.fileMenuExportPdf", "Plugin.fileMenuExportMarkdown"]) expect(plugin).toContain(`id: "${id}"`);
   });

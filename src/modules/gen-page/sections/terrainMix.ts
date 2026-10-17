@@ -4,11 +4,11 @@
  * "+ Add terrain" (the shared mix list), Near rules and Mix strength.
  */
 
-import { makeScrubbable } from "../../ui/scrub";
-import { renderMultiplierSlider } from "../../ui/sliders";
-import { mixRemoveButton, renderMixAdd, splitMix } from "../../ui/mixList";
+import { makeScrubbable } from "../../../ui/scrub";
+import { renderMultiplierSlider } from "../../../ui/sliders";
+import { mixRemoveButton, renderMixAdd, splitMix } from "../../../ui/mixList";
 import { exampleShares, formatShare } from "../shares";
-import type { CountRange, NearRule } from "../../../packages/hex-wfc/src";
+import type { CountRange, NearRule } from "../../../../packages/hex-wfc/src";
 import { slider } from "./controls";
 import type { GeneratorPageCtx } from "./ctx";
 

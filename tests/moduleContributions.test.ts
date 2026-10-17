@@ -115,7 +115,7 @@ describe("P7: World maps through its contributions", () => {
       ["src", "hex-map", "MapModal.ts"],
       ["src", "hex-map", "newChildMap.ts"],
       ["src", "arrival", "ArrivalService.ts"],
-      ["src", "worldgen", "GeneratorPanel.ts"],
+      ["src", "modules", "gen-page", "GeneratorPanel.ts"],
       ["src", "HexmakerPlugin.ts"],
     ]) {
       const src = readSource(...f);

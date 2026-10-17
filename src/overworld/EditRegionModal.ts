@@ -45,6 +45,7 @@ import { renderBiomeTiles } from "./biomeChooser";
 import { BiomeLibraryModal, openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { openBlendIntoBiome } from "./BlendIntoBiomeModal";
+import { genPage } from "../modules/active";
 import { editRegionPlan, terrainCountsText } from "./overworldInput";
 import { biomeTileTitle, drawRegionNow, drawRegionPlan, groupOfBiome, lockButton, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost, type PaintableBiome } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
@@ -212,11 +213,8 @@ export class EditRegionModal extends HexmakerModal {
           void openBiomeGenerator(plugin, current);
         });
       }
-      // PR1: learn a generator from this region as painted (new, or over an existing one).
-      row.createEl("button", { text: "Make generator…", attr: { title: "Learn a generator from this region's terrain; its biome starts as a copy of this one" } }).addEventListener("click", () => {
-        this.close();
-        openMakeGenerator(plugin.app, plugin, name);
-      });
+      // PR1: learn a generator from this region as painted (new, or over an existing one); it opens on the generator page.
+      if (genPage()) row.createEl("button", { text: "Make generator…", attr: { title: "Learn a generator from this region's terrain; its biome starts as a copy of this one" } }).addEventListener("click", () => { this.close(); openMakeGenerator(plugin.app, plugin, name); });
       // Fold this region, as hand-edited, back into its biome (Advanced; Build or God).
       const biome = current ? plugin.biomeStore.get(current) : undefined;
       if (biome && !biome.blank) {

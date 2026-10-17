@@ -13,7 +13,7 @@
  * or type group). Never by name.
  */
 
-import type { HexWfcModel, PathFeature } from "../../packages/hex-wfc/src";
+import type { HexWfcModel, PathFeature } from "../../../packages/hex-wfc/src";
 
 export interface ImpassableHint {
   terrain: string;

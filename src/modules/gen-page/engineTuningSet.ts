@@ -4,7 +4,7 @@
  * their headers ("Engine tuning · 2 set"). Defaults are the engine's own
  * (packages/hex-wfc DEFAULT_SETTINGS). Pure: tests use it directly.
  */
-import { cleanupStrengths, DEFAULT_SETTINGS, type GeneratorSettings } from "../../packages/hex-wfc/src";
+import { cleanupStrengths, DEFAULT_SETTINGS, type GeneratorSettings } from "../../../packages/hex-wfc/src";
 
 type Settings = Required<GeneratorSettings>;
 

@@ -153,36 +153,6 @@ export const CORE_PLACEMENT: Readonly<Record<string, Placement>> = {
   "Plugin.fileMenuExportPdf": "advanced",
   "Plugin.fileMenuExportMarkdown": "advanced",
 
-  // ── Generator page ──
-  // Owner: the generator's overkill controls go in the page's own Advanced
-  // dropdown (closed by default) in tidy sub-sections, not behind debug
-  // mode, so anyone can open them for one generator. Nothing on this page
-  // is Debug.
-  "GenPage.clumping": "advanced/Engine tuning",
-  "GenPage.edgeSmoothing": "advanced/Engine tuning",
-  "GenPage.removeSmallPatches": "advanced/Engine tuning",
-  "GenPage.keepRare": "advanced/Engine tuning",
-  "GenPage.edgeStrength": "advanced/Engine tuning",
-  "GenPage.directionalBias": "advanced/Engine tuning",
-  "GenPage.scatter": "advanced/Engine tuning",
-  "GenPage.spacing": "advanced/Engine tuning",
-  "GenPage.randomness": "advanced/Engine tuning",
-  "GenPage.near": "advanced/Engine tuning",
-  "GenPage.mixStrength": "advanced/Engine tuning",
-  // Single routes: each path type's route list (its fold) carries the
-  // route controls with it.
-  "GenPage.pathTypeFold": "advanced/Paths",
-  "GenPage.pathTypeAvoid": "advanced/Paths",
-  "GenPage.routeOn": "advanced/Paths",
-  "GenPage.routeCount": "advanced/Paths",
-  "GenPage.routeAs": "advanced/Paths",
-  "GenPage.routeWiggle": "advanced/Paths",
-  "GenPage.routeLength": "advanced/Paths",
-  "GenPage.routeFollow": "advanced/Paths",
-  // The seed is saved with every save and shown in the saves list; Reroll
-  // stays by the preview.
-  "GenPage.seed": "advanced/Seed",
-  "GenPage.seedLock": "advanced/Seed",
   // ── Owner worksheet 2026-10-11 (dev/ui-inventory/inputs-tags-resolved.json):
   // maps, new maps, regions/overworlds/biomes, world types, palette editor,
   // random tables, workflows, export. simple = main, advanced = advanced,

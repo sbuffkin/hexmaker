@@ -108,6 +108,8 @@ export interface LifecycleHooks {
 export interface GenPageApi {
   /** Open the page (or bring it forward), with a map, generator, palette or biome picked. */
   open(plugin: HexmakerPlugin, select?: { mapName?: string; generatorPath?: string; paletteName?: string; biome?: string }): Promise<void>;
+  /** Redraw open pages (map types turned on or off: the generators and palettes they list changed). */
+  refresh(plugin: HexmakerPlugin): void;
 }
 
 /** A click on a hex while a party token is selected in Play. */

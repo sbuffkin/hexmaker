@@ -42,8 +42,15 @@ function withFake(fake: Partial<ModuleRuntime>): ModuleRuntime {
   runtimes.push(m);
   return m;
 }
+/** The real modules taken out for a test (put back after each): for the tests that need no module answering. */
+let parked: ModuleRuntime[] = [];
+function withoutRealModules(): void {
+  parked = runtimes.splice(0, runtimes.length);
+}
 afterEach(() => {
   for (let i = runtimes.length - 1; i >= 0; i--) if (runtimes[i].id.startsWith("fake")) runtimes.splice(i, 1);
+  runtimes.unshift(...parked);
+  parked = [];
 });
 
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
@@ -51,6 +58,9 @@ const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "u
 describe("contribution points: nothing contributed, nothing changes", () => {
   it("every collector is empty or neutral without a module that uses it", () => {
     const plugin = {} as never;
+    // The modules' folder settings come through as folder rows (World maps, Space, Hex flower).
+    for (const s of moduleSettings()) expect(s.control.type).toBe("folder");
+    withoutRealModules();
     expect(moduleViews()).toEqual([]);
     expect(moduleExportForm()).toEqual([]);
     expect(moduleWizardOffers("done")).toEqual([]);
@@ -60,8 +70,6 @@ describe("contribution points: nothing contributed, nothing changes", () => {
     expect(moduleTokenMenu(plugin, { map: "m", hex: "0_0", token: "t.md", party: true })).toEqual([]);
     expect(moduleRollTargets(plugin, { map: "m", x: 0, y: 0, mode: "play" })).toEqual([]);
     expect(moduleLogWriters()).toEqual([]);
-    // The modules' folder settings come through as folder rows (World maps, Space, Hex flower).
-    for (const s of moduleSettings()) expect(s.control.type).toBe("folder");
   });
 });
 
@@ -131,6 +139,7 @@ describe("settings[]: a module's settings in both settings paths", () => {
 describe("views[], lifecycle and genPage()", () => {
   it("views: each registered by the plugin with its type", () => {
     const made: unknown[] = [];
+    withoutRealModules();
     withFake({ views: [{ type: "fake-view", create: (leaf, plugin) => { made.push([leaf, plugin]); return {} as never; } }] });
     expect(moduleViews().map((v) => v.type)).toEqual(["fake-view"]);
     expect(readSource("src", "HexmakerPlugin.ts")).toContain("for (const v of moduleViews()) this.registerView(v.type, (leaf) => v.create(leaf, this));");
@@ -155,15 +164,18 @@ describe("views[], lifecycle and genPage()", () => {
     expect(plugin).toMatch(/onunload\(\) \{\n\s+runModuleUnload\(this\);/);
   });
 
-  it("genPage: the first module that provides it; the plugin opens the page through it when there is one", async () => {
+  it("genPage: the first module that provides it; the core opens the page only through it", async () => {
+    withoutRealModules();
     withFake({ id: "fake-none" });
     const opened: unknown[] = [];
-    withFake({ genPage: () => ({ open: async (plugin, select) => { opened.push([plugin, select]); } }) });
+    withFake({ genPage: () => ({ open: async (plugin, select) => { opened.push([plugin, select]); }, refresh: () => {} }) });
     const self = { app: {} };
     await genPage()!.open(self as never, { mapName: "Coast" });
     expect(opened).toEqual([[self, { mapName: "Coast" }]]);
-    // The plugin's openTerrainGenerator hands over first (the page's own code moves into the module later).
-    expect(readSource("src", "HexmakerPlugin.ts")).toMatch(/openTerrainGenerator\([^)]*\): Promise<void> \{\n\s+const page = genPage\(\);\n\s+if \(page\) return page\.open\(this, select\);/);
+    // The plugin has no page code of its own: map types changing only asks the page to redraw.
+    const plugin = readSource("src", "HexmakerPlugin.ts");
+    expect(plugin).not.toContain("openTerrainGenerator");
+    expect(plugin).toContain("genPage()?.refresh(this);");
   });
 });
 

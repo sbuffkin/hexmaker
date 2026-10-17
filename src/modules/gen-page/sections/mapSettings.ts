@@ -4,12 +4,12 @@
  * toward neighbours).
  */
 
-import { SIDES, hexRangeText, type Side } from "../world";
-import { blendFromNeighbours, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, regionNameAt, regionNeighbourNames, type NewRegion } from "../neighbours";
-import { sizePresets } from "../sizePresets";
-import { sourceMapsOf } from "../generators";
+import { SIDES, hexRangeText, type Side } from "../../../worldgen/world";
+import { blendFromNeighbours, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, regionNameAt, regionNeighbourNames, type NewRegion } from "../../../worldgen/neighbours";
+import { sizePresets } from "../../../worldgen/sizePresets";
+import { sourceMapsOf } from "../../../worldgen/generators";
 import { generatorPageState } from "../generatorPageState";
-import type { HexWfcModel } from "../../../packages/hex-wfc/src";
+import type { HexWfcModel } from "../../../../packages/hex-wfc/src";
 import type { GeneratorPageCtx } from "./ctx";
 import type { PreviewParts } from "./previewColumn";
 

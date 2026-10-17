@@ -14,7 +14,6 @@ import type {
   CommandContribution,
   ExportFormContribution,
   FolderSettingContribution,
-  GenPageApi,
   HexAt,
   LogWriterContribution,
   PartyClick,
@@ -24,7 +23,6 @@ import type {
   TokenMenuContribution,
   ViewContribution,
   WizardOfferContribution,
-  GeneratorPageTab,
   HexMenuContribution,
   PartyAt,
   PartyControl,
@@ -41,22 +39,27 @@ import type {
   ScaleMapMade,
 } from "./types";
 import type { TableSource } from "../worldgen/tableRoles";
-import type { WorldMapsApi } from "./world-maps/api";
 import type { PackKind } from "../packs/packKinds";
 import type { UndoItem } from "../hex-map/undoItems";
 import type { MapData } from "../types";
 import { registry } from "./index";
+import { setActiveRuntimes } from "./active";
 import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
+import { genPageRuntime } from "./gen-page/runtime";
 import { hexFlowerRuntime } from "./hex-flower/runtime";
 
 /** The runtime halves, by the same slice flags as ./index.ts. */
 const compiled: ModuleRuntime[] = [worldRuntime];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
 if (__SLICE_SPACE__) compiled.push(spaceRuntime);
+if (__SLICE_GENPAGE__) compiled.push(genPageRuntime);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
+setActiveRuntimes(MODULE_RUNTIMES);
+// genPage() and worldMaps() live in ./active.ts so module code can call them without importing this file.
+export { genPage, worldMaps } from "./active";
 
 /** Every module's built-in generators, in list order. */
 export function moduleGenerators(plugin: HexmakerPlugin, helpers: GeneratorHelpers): GeneratorContribution[] {
@@ -141,12 +144,6 @@ export function runModuleUnload(plugin: HexmakerPlugin): void {
   }
 }
 
-/** The generator page (undefined in a build without the module that provides it). */
-export function genPage(): GenPageApi | undefined {
-  for (const m of MODULE_RUNTIMES) if (m.genPage) return m.genPage();
-  return undefined;
-}
-
 /** Does any module make this click on a hex the selected party's step? */
 export function modulePartyClick(plugin: HexmakerPlugin, click: PartyClick): "move" | "none" {
   return MODULE_RUNTIMES.some((m) => m.play?.partyClick?.(plugin, click) === "move") ? "move" : "none";
@@ -224,12 +221,6 @@ export function moduleArrivalTables(plugin: HexmakerPlugin, terrains: string[], 
 /** Every module's New map option inventory ids: generator id → option key → id. */
 export function moduleNewMapOptionIds(): Record<string, Readonly<Record<string, string>>> {
   return Object.assign({}, ...MODULE_RUNTIMES.map((m) => m.newMapOptionIds ?? {})) as Record<string, Readonly<Record<string, string>>>;
-}
-
-/** World maps' hooks into the map surfaces (undefined in a build without the World maps slice). */
-export function worldMaps(): WorldMapsApi | undefined {
-  for (const m of MODULE_RUNTIMES) if (m.worldMaps) return m.worldMaps();
-  return undefined;
 }
 
 /** Each module's start-up upgrades, once the core's stores and its own have loaded. */
@@ -325,9 +316,4 @@ export function moduleHexMenu(plugin: HexmakerPlugin, map: string, hex: string):
 /** The hexes the modules add to map `map`'s "?" layer. */
 export function moduleUnchartedKeys(plugin: HexmakerPlugin, map: string): string[] {
   return MODULE_RUNTIMES.flatMap((m) => [...(m.unchartedKeys?.(plugin, map) ?? [])]);
-}
-
-/** Every module's generator page tabs, in module order. */
-export function moduleGeneratorTabs(): GeneratorPageTab[] {
-  return MODULE_RUNTIMES.flatMap((m) => [...(m.generatorPage ?? [])]);
 }

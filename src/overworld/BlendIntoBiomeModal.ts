@@ -18,6 +18,7 @@ import { drawPreview } from "../worldgen/preview";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { renderShareSliders } from "../ui/shareSliders";
 import { hexXY } from "../hexKey";
+import { genPage } from "../modules/active";
 
 /** The default share of the map in a blend. */
 export const DEFAULT_BLEND_WEIGHT = 0.25;
@@ -100,7 +101,8 @@ export class BlendIntoBiomeModal extends HexmakerModal {
 
     const go: HTMLButtonElement = this.footer({
       primary: { text: `Blend into ${target.biome.label}`, disabled: !!lock || !!target.missing, onClick: () => void this.apply(go) },
-      secondary: [!target.generator && { text: "Make a generator instead…", title: "Learn a generator from this map instead", onClick: () => {
+      // Making a generator needs the generator page (it opens there once made).
+      secondary: [!target.generator && !!genPage() && { text: "Make a generator instead…", title: "Learn a generator from this map instead", onClick: () => {
         this.close();
         openMakeGenerator(this.app, plugin, this.mapName);
       } }],

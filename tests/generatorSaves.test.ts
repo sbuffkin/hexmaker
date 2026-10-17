@@ -3,9 +3,9 @@ import expect from "expect";
 import type { TFile } from "obsidian";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 import { encodeCells, legacyOrigin, mapForSave, parseSave, serializeSave, type GeneratorSave } from "../src/worldgen/saveFormat";
-import { deleteSaves, listSaves, renameSave } from "../src/worldgen/saves";
-import { saveRows } from "../src/worldgen/libraryRows";
-import { savedMapWhy } from "../src/worldgen/genPage/previewColumn";
+import { deleteSaves, listSaves, renameSave } from "../src/modules/gen-page/saves";
+import { saveRows } from "../src/modules/gen-page/libraryRows";
+import { savedMapWhy } from "../src/modules/gen-page/sections/previewColumn";
 import { hexKey } from "../src/hexKey";
 import { MemVault } from "./helpers/memVault";
 

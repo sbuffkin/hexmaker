@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { MODULES, registry } from "../src/modules";
-import { MODULE_RUNTIMES, moduleGeneratorTabs, moduleHexMenu, moduleUnchartedKeys, runPartyEntered } from "../src/modules/runtime";
+import { moduleGeneratorTabs } from "../src/modules/gen-page/sections/moduleTabs";
+import { MODULE_RUNTIMES, moduleHexMenu, moduleUnchartedKeys, runPartyEntered } from "../src/modules/runtime";
 import { buildMapNote, parseMapNote, type MapNoteData } from "../src/maps/mapNote";
 import { scaleGenerators } from "../src/mapScales";
 import { scaleStarter } from "../src/wizardKinds";

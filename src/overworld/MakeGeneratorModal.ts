@@ -12,6 +12,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { makeRegionGenerator, overwriteTargets, type OverwriteCandidate } from "./regionGenerator";
 import { slugify } from "../utils";
+import { genPage } from "../modules/active";
 
 /** Open the "Make generator from this map" dialog. */
 export function openMakeGenerator(app: App, plugin: HexmakerPlugin, mapName: string): void {
@@ -130,7 +131,7 @@ export class MakeGeneratorModal extends HexmakerModal {
     if (res.biome) parts.push(`new biome "${res.biome}" uses it`);
     new Notice(parts.join("; ") + ".", 8000);
     this.close();
-    await plugin.openTerrainGenerator({ mapName: this.mapName, generatorPath: res.file.path, paletteName: plugin.getMap(this.mapName)?.paletteName });
+    await genPage()?.open(plugin, { mapName: this.mapName, generatorPath: res.file.path, paletteName: plugin.getMap(this.mapName)?.paletteName });
   }
 
   onClose(): void {

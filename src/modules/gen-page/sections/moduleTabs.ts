@@ -3,9 +3,14 @@
  * beside Generators and Maps, each with its own list and its own page below.
  */
 
-import type HexmakerPlugin from "../../HexmakerPlugin";
-import type { GeneratorPageHost, GeneratorPageTab } from "../../modules/types";
-import { moduleGeneratorTabs } from "../../modules/runtime";
+import type HexmakerPlugin from "../../../HexmakerPlugin";
+import type { GeneratorPageHost, GeneratorPageTab } from "../../types";
+import { activeRuntimes } from "../../active";
+
+/** Every module's generator page tabs, in module order. */
+export function moduleGeneratorTabs(): GeneratorPageTab[] {
+  return activeRuntimes().flatMap((m) => [...(m.generatorPage ?? [])]);
+}
 
 /** The module tab with id `tab` (undefined: Generators, Maps, or a tab of a module not in this build). */
 export function moduleTab(tab: string): GeneratorPageTab | undefined {

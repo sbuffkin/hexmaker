@@ -6,12 +6,12 @@
  */
 
 import { Notice, type TFile } from "obsidian";
-import type HexmakerPlugin from "../../HexmakerPlugin";
+import type HexmakerPlugin from "../../../HexmakerPlugin";
 import { applySave, readSave } from "../saves";
-import type { GeneratorSave } from "../saveFormat";
-import { neighbourSpec } from "../neighbours";
+import type { GeneratorSave } from "../../../worldgen/saveFormat";
+import { neighbourSpec } from "../../../worldgen/neighbours";
 import { generatorPageState } from "../generatorPageState";
-import { compareVersions, pluginVersion } from "../../compat";
+import { compareVersions, pluginVersion } from "../../../compat";
 
 /** Load `file` and redraw the page (`rerender`). Resolves false (with a notice) if it couldn't. */
 export async function loadSaveOntoPage(plugin: HexmakerPlugin, file: TFile, rerender: () => void): Promise<boolean> {

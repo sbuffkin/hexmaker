@@ -14,13 +14,13 @@ import {
   sourceInfluenceOf,
   combinedSourcesOf,
   sourceDirectionsOf,
-} from "../generators";
+} from "../../../worldgen/generators";
 import { renameGenerator } from "../saves";
 import { toPercents } from "../regionWeights";
-import { renderShareSliders } from "../../ui/shareSliders";
-import { VERSION_KEY } from "../../compat";
+import { renderShareSliders } from "../../../ui/shareSliders";
+import { VERSION_KEY } from "../../../compat";
 import { generatorPageState } from "../generatorPageState";
-import { COMPASS, type Compass, type GeneratorSettings } from "../../../packages/hex-wfc/src";
+import { COMPASS, type Compass, type GeneratorSettings } from "../../../../packages/hex-wfc/src";
 import type { GeneratorPageCtx } from "./ctx";
 
 /** An unsaved draft says so at the very top, with Save and Discard. */

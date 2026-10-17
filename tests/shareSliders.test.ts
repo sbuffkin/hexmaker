@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { percentsToWeights, rebalanceShares, shareText, toPercents, toShares, ShareState } from "../src/ui/shares";
 import { renderShareSliders } from "../src/ui/shareSliders";
-import { rebalance } from "../src/worldgen/regionWeights";
+import { rebalance } from "../src/modules/gen-page/regionWeights";
 import { comboId, comboParts, formatComboRef, mixToParts, newPartWeight, parseComboRef, type BiomePart } from "../src/overworld/biomeCombo";
 import { readSurface, readSource } from "./helpers/source";
 
@@ -81,7 +81,7 @@ describe("zero-sum shares", () => {
 });
 
 describe("generator page parity", () => {
-  /** The generator's own rebalance before the shared control (src/worldgen/regionWeights.ts at e8103fb). */
+  /** The generator's own rebalance before the shared control (src/modules/gen-page/regionWeights.ts at e8103fb). */
   function oldRebalance(weights: number[], index: number, value: number): number[] {
     const n = weights.length;
     if (n <= 1) return n ? [100] : [];
@@ -107,7 +107,7 @@ describe("generator page parity", () => {
   });
 
   it("the generator page, Edit region's Mix biomes and Blend into all use the shared control", () => {
-    for (const p of ["worldgen/GeneratorPanel.ts", "overworld/EditRegionModal.ts", "overworld/BlendIntoBiomeModal.ts"]) {
+    for (const p of ["modules/gen-page/GeneratorPanel.ts", "overworld/EditRegionModal.ts", "overworld/BlendIntoBiomeModal.ts"]) {
       expect({ p, uses: readSource("src", p).includes("renderShareSliders(") }).toEqual({ p, uses: true });
     }
     // No one-off influence / weight sliders left behind.

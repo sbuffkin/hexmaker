@@ -1,13 +1,13 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { combinedName, generatorGroupOf, generatorRows, generatorTree, groupLabel, regionRows } from "../src/worldgen/libraryRows";
+import { combinedName, generatorGroupOf, generatorRows, generatorTree, groupLabel, regionRows } from "../src/modules/gen-page/libraryRows";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
-import { GeneratorLibrary } from "../src/worldgen/GeneratorLibrary";
+import { GeneratorLibrary } from "../src/modules/gen-page/GeneratorLibrary";
 import type { GeneratorFile } from "../src/worldgen/generators";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 import type { App } from "obsidian";
 
-/** The generator page's file list (src/worldgen/libraryRows.ts). */
+/** The generator page's file list (src/modules/gen-page/libraryRows.ts). */
 
 const generators = [
   { path: "g/the-coast.md", name: "the-coast", sources: ["the-coast"], palette: "Default", terrains: 31, created: "2026-10-01" },

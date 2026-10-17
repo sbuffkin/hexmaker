@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
-import { renderNearRow } from "../src/worldgen/genPage/terrainMix";
+import { renderNearRow } from "../src/modules/gen-page/sections/terrainMix";
 import type { NearRule } from "../packages/hex-wfc/src";
 
 /**
- * The generator page's Near rule (src/worldgen/genPage/terrainMix.ts): a
+ * The generator page's Near rule (src/modules/gen-page/sections/terrainMix.ts): a
  * select of the terrains on the map plus a distance box, replacing the
  * free-text "volcano 3" field.
  */

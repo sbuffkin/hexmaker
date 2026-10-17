@@ -5,9 +5,9 @@
  */
 
 import { suggestImpassable } from "../impassableHint";
-import { isImpassable } from "../../impassable";
-import { cleanupStrengths, SYMMETRIES, type Symmetry } from "../../../packages/hex-wfc/src";
-import { sliderFormat } from "../../ui/sliders";
+import { isImpassable } from "../../../impassable";
+import { cleanupStrengths, SYMMETRIES, type Symmetry } from "../../../../packages/hex-wfc/src";
+import { sliderFormat } from "../../../ui/sliders";
 import { generatorPageState } from "../generatorPageState";
 import { slider, select, toggle, terrainFilter } from "./controls";
 import type { GeneratorPageCtx } from "./ctx";
