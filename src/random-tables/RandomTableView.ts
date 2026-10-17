@@ -37,7 +37,7 @@ import { planTableMigration } from "../migrations/v1.5-table-roll-ranges";
 import { processTableNote } from "./TableStore";
 import { groupTableFiles } from "./tablePickerGroups";
 import { MAP_MADE_GROUP_LABEL } from "./resolve";
-import { parseWorkflow, generateDefaultTemplate } from "./workflow";
+import { parseWorkflow } from "./workflow";
 import { resolveWorkflowTemplate } from "./workflowFiles";
 import { Frontmatter } from "../frontmatter";
 import { buildTree, renderFolderTree, type TreeNode } from "./FolderTree";
@@ -51,6 +51,7 @@ import { PlacedMenu } from "../ui/placedMenu";
 import { DETAIL_REFRESH_MS, LIST_REFRESH_MS, ListSignatures, listSignature, touchesList, type ListFolders } from "./listRefresh";
 import { tableTitle } from "../encounterLinks";
 import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /** Collapse key (and key prefix) of the tree's "Made by the map" section. */
 const MAP_MADE_KEY = "map-made:";
@@ -349,9 +350,7 @@ export class RandomTableView extends ItemView {
       let srcFolder = "";
       if (!(file instanceof TFile)) {
         try {
-          if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-            await this.app.vault.createFolder(folder);
-          }
+          if (folder) await ensureFolder(this.app.vault, folder);
           const fromValue = fromFolderInput.value.trim();
           let srcFile: TFile | null = null;
           if (fromValue) {
@@ -900,13 +899,7 @@ export class RandomTableView extends ItemView {
       new Notice("Configure a workflows folder in settings first.");
       return;
     }
-    if (!this.app.vault.getAbstractFileByPath(wfFolder)) {
-      try {
-        await this.app.vault.createFolder(wfFolder);
-      } catch {
-        /* may exist */
-      }
-    }
+    await ensureFolder(this.app.vault, wfFolder);
 
     // Find unique name
     let baseName = "New Workflow";
@@ -972,16 +965,8 @@ export class RandomTableView extends ItemView {
     });
     editLink.addEventListener("click", () => {
       void (async () => {
+        // The editor reads the template itself (it checks it hasn't changed before saving).
         const content = await this.app.vault.read(file);
-        const wf = parseWorkflow(content, file.basename);
-        let tmplContent = "";
-        if (wf.templateFile) {
-          const tmplFile = resolveWorkflowTemplate(this.app, wf.templateFile, file.path);
-          if (tmplFile) {
-            tmplContent = await this.app.vault.read(tmplFile);
-          }
-        }
-        if (!tmplContent) tmplContent = generateDefaultTemplate(wf.steps);
         new WorkflowEditorModal(
           this.app,
           this.plugin,
@@ -990,7 +975,7 @@ export class RandomTableView extends ItemView {
             void this.loadList();
             if (this.activeFile === file) void this.renderWorkflowDetail();
           },
-          { content, templateContent: tmplContent },
+          { content },
         ).open();
       })();
     });

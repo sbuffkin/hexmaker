@@ -73,11 +73,11 @@ describe("templates folder (PA3)", () => {
 	});
 
 	it("new town notes from the hex editor and link pickers use the town template", () => {
-		const editor = readSurface("hex-editor");
-		// …and say which hex they're in (a Location line, R3).
-		expect(editor).toContain("this.plugin.newLinkedNoteContent(section, name, path)");
-		const picker = readSurface("link-picker");
-		expect(picker).toContain("this.plugin.newLinkedNoteContent(this.linkSection, name, this.hexPath)");
+		// Both make them through HexNotesService.createAndLinkNote (one implementation)…
+		expect(readSurface("hex-editor")).toContain("this.plugin.hexNotes.createAndLinkNote(");
+		expect(readSurface("link-picker")).toContain("this.plugin.hexNotes.createAndLinkNote(");
+		// …which uses the section's template and says which hex they're in (a Location line, R3).
+		expect(readSurface("plugin")).toContain("await this.plugin.newLinkedNoteContent(section, name, hexPath)");
 	});
 
 	it("the Templates folder setting is in both settings paths", () => {

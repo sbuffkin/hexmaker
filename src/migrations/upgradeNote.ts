@@ -12,6 +12,7 @@
 import type { App } from "obsidian";
 import { compareVersions } from "../compat";
 import type { UpgradeEntry } from "./upgradeReport";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /** The note's name for a date: "Hexmaker upgrade 2026-10-14". */
 export function upgradeNoteName(date: Date): string {
@@ -114,9 +115,7 @@ export function changelogPoints(changelog: string, from: string | undefined): st
 export async function writeUpgradeNote(app: App, folder: string, input: UpgradeNoteInput): Promise<string> {
   const base = upgradeNoteName(input.date);
   const dir = folder.replace(/^\/+|\/+$/g, "");
-  if (dir && !app.vault.getAbstractFileByPath(dir)) {
-    try { await app.vault.createFolder(dir); } catch { /* made meanwhile */ }
-  }
+  if (dir) await ensureFolder(app.vault, dir);
   const at = (n: number) => `${dir ? `${dir}/` : ""}${base}${n > 1 ? ` (${n})` : ""}.md`;
   let n = 1;
   while (app.vault.getAbstractFileByPath(at(n))) n++;

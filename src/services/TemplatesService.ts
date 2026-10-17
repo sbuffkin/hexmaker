@@ -13,6 +13,7 @@ import DEFAULT_HEX_TEMPLATE from "../defaultHexTemplate.md";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "../templateNotes";
 import { fillNoteTemplate, hexTemplatePathFor, LINK_NOTE_TEMPLATES, linkNoteTemplate, linkNoteTemplatePathFor, LOCATION_SECTIONS, templatesFolderFor, withLocationLine } from "../noteTemplates";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /** The plugin: the template rules hand it to module code (moduleFolders, generatorsFolder). */
 export type TemplatesHost = HexmakerPlugin;
@@ -80,11 +81,7 @@ export class TemplatesService {
   private async ensureTemplateFile(path: string, content: string): Promise<void> {
     if (this.plugin.app.vault.getAbstractFileByPath(path)) return;
     const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    if (folder && !this.plugin.app.vault.getAbstractFileByPath(folder)) {
-      try {
-        await this.plugin.app.vault.createFolder(folder);
-      } catch { /* exists */ }
-    }
+    if (folder) await ensureFolder(this.plugin.app.vault, folder);
     try {
       await this.plugin.app.vault.create(path, content);
     } catch { /* created concurrently — fine */ }

@@ -17,9 +17,15 @@ import { cleanHexName, coordAlias, swapMapCoordAliases, syncHexAliases } from ".
 import {
   insertLinkInSection,
   appendSectionText,
+  addLinkToSection,
+  addBacklinkToFile,
 } from "../sections";
+import { LOCATION_SECTIONS } from "../noteTemplates";
+import { noteFileName } from "../vault/safePaths";
+import type { LinkSection } from "../types";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexKey, hexXY, isHexKey } from "../hexKey";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /** What HexNotesService uses of the plugin. */
 export type HexNotesHost = HexmakerPlugin;
@@ -123,14 +129,8 @@ export class HexNotesService {
 
     const hexBase = normalizeFolder(this.plugin.settings.hexFolder);
     const mapFolder = hexBase ? `${hexBase}/${mapName}` : mapName;
-    if (!this.plugin.app.vault.getAbstractFileByPath(mapFolder)) {
-      // Wrap in try/catch: a concurrent worker may have already created the folder.
-      try {
-        await this.plugin.app.vault.createFolder(mapFolder);
-      } catch {
-        /* exists */
-      }
-    }
+    // A concurrent worker may have made the folder already (ensureFolder allows for it).
+    await ensureFolder(this.plugin.app.vault, mapFolder);
 
     try {
       const file = await this.plugin.app.vault.create(path, content);
@@ -150,6 +150,62 @@ export class HexNotesService {
       new Notice("Could not create note at " + path);
       return null;
     }
+  }
+
+  /**
+   * A note for a hex's link section, `<folder>/<name>.md` (the name cleaned
+   * into a file name), made if it isn't there yet: from `template` when
+   * given, else the section's note template; places made from a hex get a
+   * Location line (PA3, F17, R3). Returns the note, or null after a notice.
+   */
+  async createLinkedNote(section: string, folder: string, rawName: string, hexPath: string, template?: string): Promise<TFile | null> {
+    const { vault } = this.plugin.app;
+    const name = noteFileName(rawName);
+    if (!name) return null;
+    const dir = normalizeFolder(folder);
+    const path = dir ? `${dir}/${name}.md` : `${name}.md`;
+    const existing = vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) return existing;
+    try {
+      if (dir) await ensureFolder(vault, dir);
+      const content = template
+        ? (LOCATION_SECTIONS.includes(section) ? this.plugin.withHexLocation(template, hexPath) : template)
+        : await this.plugin.newLinkedNoteContent(section, name, hexPath);
+      return await vault.create(path, content);
+    } catch (err) {
+      new Notice(`Could not create ${path}: ${String(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Link `file` into a hex's link section: the hex's note is made first if
+   * it has none (from the hex template, with its map link: never an empty
+   * note), then the link goes under the section and `file` gets a backlink
+   * to the hex. Returns the link text written, or null when the hex's note
+   * couldn't be made (createHexNote said so).
+   */
+  async linkNoteToHex(file: TFile, x: number, y: number, mapName: string, section: LinkSection): Promise<string | null> {
+    const { app } = this.plugin;
+    const hexPath = this.plugin.hexPath(x, y, mapName);
+    const hexNote = app.vault.getAbstractFileByPath(hexPath);
+    if (!(hexNote instanceof TFile) && !(await this.plugin.createHexNote(x, y, mapName))) return null;
+    const linkPath = app.metadataCache.fileToLinktext(file, hexPath);
+    await addLinkToSection(app, hexPath, section, `[[${linkPath}]]`);
+    await addBacklinkToFile(app, file.path, hexPath, this.plugin.hexLinkAlias(hexPath));
+    return linkPath;
+  }
+
+  /**
+   * "Create" in a hex's link picker (the hex editor's link sections, the
+   * hex table's picker): createLinkedNote, then linkNoteToHex. Returns the
+   * link text written, or null when nothing was linked.
+   */
+  async createAndLinkNote(
+    o: { x: number; y: number; mapName: string; section: LinkSection; folder: string; name: string; template?: string },
+  ): Promise<string | null> {
+    const file = await this.createLinkedNote(o.section, o.folder, o.name, this.plugin.hexPath(o.x, o.y, o.mapName), o.template);
+    return file ? this.linkNoteToHex(file, o.x, o.y, o.mapName, o.section) : null;
   }
 
   /**

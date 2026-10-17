@@ -38,6 +38,7 @@ import type { RegionSettings } from "../types";
 import { displayNameFor, mapLabel } from "../maps/mapTree";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexKey, strictHexXY } from "../hexKey";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /** What MapsService uses of the plugin. */
 export type MapsHost = Pick<HexmakerPlugin, "app" | "manifest" | "ensureOverworldBiomes" | "ensurePaletteInstalled" | "events" | "getMap" | "getMapPalette" | "mapLabel" | "mapStore" | "parentOf" | "refreshHexMap" | "roleTablesFor" | "saveSettings" | "settings" | "syncMapCoordAliases" | "tableNotes" | "undoBook">;
@@ -236,11 +237,7 @@ export class MapsService {
 
     const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
     const folderPath = hexFolder ? `${hexFolder}/${name}` : name;
-    if (!this.plugin.app.vault.getAbstractFileByPath(folderPath)) {
-      try {
-        await this.plugin.app.vault.createFolder(folderPath);
-      } catch { /* already exists */ }
-    }
+    await ensureFolder(this.plugin.app.vault, folderPath);
 
     // The slug names the folder; the name as typed is what the UI shows.
     const displayName = displayNameFor(rawName, name);

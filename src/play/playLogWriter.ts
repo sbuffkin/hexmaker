@@ -6,6 +6,7 @@ import { TFile, type App } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { getTokenDataFromCache } from "../frontmatter";
 import { addLinkToSection } from "../sections";
+import { ensureFolder } from "../vault/ensureFolder";
 import type { TokenEntry } from "../types";
 import { partyFor } from "./partyTravel";
 import {
@@ -31,18 +32,13 @@ export function tokensOnMap(app: App, mapName: string): TokenEntry[] {
   return out;
 }
 
-/** Make `folder` (and its parents) if missing. */
-async function ensureFolder(app: App, folder: string): Promise<void> {
-  if (!folder || app.vault.getAbstractFileByPath(folder)) return;
-  try { await app.vault.createFolder(folder); } catch { /* made meanwhile */ }
-}
 
 /** Today's log note in `folder`, made if missing. */
 export async function ensureLogNote(app: App, folder: string, now = new Date()): Promise<TFile> {
   const path = logNotePath(folder, now);
   const existing = app.vault.getAbstractFileByPath(path);
   if (existing instanceof TFile) return existing;
-  await ensureFolder(app, folder);
+  if (folder) await ensureFolder(app.vault, folder);
   try {
     return await app.vault.create(path, newLogNote(logDayName(now)));
   } catch (err) {

@@ -6,6 +6,7 @@ import { normalizeFolder, getIconUrl, iconLabel } from "../utils";
 import { noteLink } from "../noteFormats";
 import { pickerFolders } from "../notePickers";
 import { DEFAULT_TOKEN_FILL, isTokenNoteCandidate } from "./tokenDefaults";
+import { ensureFolder } from "../vault/ensureFolder";
 
 export interface TokenModalResult {
   icon: string | undefined;
@@ -487,9 +488,7 @@ export class TokenModal extends HexmakerModal {
     let n = 2;
     while (this.app.vault.getAbstractFileByPath(`${folder}/${base}-${n}.md`)) n++;
     const proxyPath = `${folder}/${base}-${n}.md`;
-    if (!this.app.vault.getAbstractFileByPath(folder)) {
-      try { await this.app.vault.createFolder(folder); } catch { /* race */ }
-    }
+    await ensureFolder(this.app.vault, folder);
     // A link, so renaming the original note keeps the proxy pointing at it (NF3).
     await this.app.vault.create(proxyPath, `---\ntoken-link: ${JSON.stringify(noteLink(originalPath))}\n---\n# ${base}-${n}\n`);
     return proxyPath;
@@ -509,9 +508,7 @@ export class TokenModal extends HexmakerModal {
     // 3. Create new note in worldFolder/tokens/
     const path   = this.newNotePath(title);
     const folder = path.slice(0, path.lastIndexOf("/"));
-    if (!this.app.vault.getAbstractFileByPath(folder)) {
-      try { await this.app.vault.createFolder(folder); } catch { /* race */ }
-    }
+    await ensureFolder(this.app.vault, folder);
     if (!this.app.vault.getAbstractFileByPath(path)) {
       await this.app.vault.create(path, `# ${title}\n`);
     }

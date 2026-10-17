@@ -44,9 +44,19 @@ describe("MG2: reading backups back", () => {
 	});
 
 	it("reads a notes backup's JSON forgivingly", () => {
-		expect(backupNotes({ notes: { a: "x", b: 3 } })).toEqual({ a: "x" });
+		expect(backupNotes({ notes: { "a.md": "x", "b.md": 3 } })).toEqual({ "a.md": "x" });
 		expect(backupNotes({ hexes: [] })).toBeNull();
 		expect(backupNotes(null)).toBeNull();
+	});
+
+	it("keeps only safe vault-relative .md paths (a tampered backup can't aim a restore elsewhere)", () => {
+		const notes = backupNotes({ notes: {
+			"world/hexes/coast/1_2.md": "ok",
+			"../outside.md": "x", "world/../../x.md": "x", "/etc/x.md": "x", "C:/Users/x.md": "x", "world\\x.md": "x",
+			".obsidian/plugins/hexmaker/main.js": "x", ".obsidian/x.md": "x", "world/.hidden/x.md": "x", "world/map.png": "x", "": "x",
+		} });
+		expect(notes).toEqual({ "world/hexes/coast/1_2.md": "ok" });
+		expect(backupNotes({ notes: { "../x.md": "x" } })).toBeNull();
 	});
 
 	it("says what a restore would do to each note", () => {
@@ -75,6 +85,20 @@ describe("MG2: restoring", () => {
 		expect(again[0].path).toBe(r.undo);
 		await restoreBackup(vault.app() as never, ROOT, again[0], new Date("2026-10-15T10:05:00Z"));
 		expect(vault.files.get("world/hexes/coast/1_2.md")).toBe(before);
+	});
+
+	it("a tampered backup restores only its safe notes: nothing outside the vault, in hidden folders or that isn't a note", async () => {
+		const vault = await vaultWithBackups();
+		await writeJsonBackup(vault.app().vault.adapter, `${ROOT}/map-notes-2026-10-16`, "tampered", JSON.stringify({
+			savedAt: "2026-10-16T08:00:00.000Z",
+			notes: { "world/hexes/coast/5_5.md": "fine\n", "../escape.md": "x", ".obsidian/plugins/hexmaker/main.js": "x", "world/.hidden/x.md": "x", "world/map.png": "x" },
+		}));
+		const [tampered] = await listNoteBackups(vault.app().vault.adapter as never, ROOT);
+		expect(Object.keys(tampered.notes)).toEqual(["world/hexes/coast/5_5.md"]);
+		const r = await restoreBackup(vault.app() as never, ROOT, tampered, new Date("2026-10-16T09:00:00Z"));
+		expect(r.restored).toEqual(["world/hexes/coast/5_5.md"]);
+		const before = new Set(["world/hexes/coast/1_2.md", "world/tables/beach.md", `${ROOT}/map-notes-2026-10-13/coast.json`, `${ROOT}/map-notes-2026-10-13/coast-paths-report.md`]);
+		expect([...vault.files.keys()].filter((p) => !before.has(p))).toEqual(["world/hexes/coast/5_5.md"]);
 	});
 
 	it("changes nothing when the notes are already as in the backup", async () => {

@@ -1,19 +1,24 @@
-import { App, Notice, TFile } from "obsidian";
+import { App, TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { HexmakerModal } from "../HexmakerModal";
 import { Fold } from "../ui/disclosure";
 import { normalizeFolder } from "../utils";
-import { addLinkToSection, addBacklinkToFile } from "../sections";
 import type { LinkSection } from "../types";
-import { LOCATION_SECTIONS } from "../noteTemplates";
 import { groupTableFiles } from "../random-tables/tablePickerGroups";
 import { MAP_MADE_GROUP_LABEL } from "../random-tables/resolve";
+
+/** The hex a picker links into. */
+export interface PickerHex {
+  x: number;
+  y: number;
+  mapName: string;
+}
 
 export class LinkPickerModal extends HexmakerModal {
   constructor(
     app: App,
     private plugin: HexmakerPlugin,
-    private hexPath: string,
+    private hex: PickerHex,
     private linkSection: LinkSection,
     private sourceFolder: string,
     private onLinked: () => void,
@@ -89,50 +94,24 @@ export class LinkPickerModal extends HexmakerModal {
     });
   }
 
+  /** Link a note into the hex (its note made from the template first if it has none: HexNotesService). */
   private async addLink(file: TFile): Promise<void> {
-    await this.ensureHexNote();
-    const linkText = `[[${this.app.metadataCache.fileToLinktext(file, this.hexPath)}]]`;
-    await addLinkToSection(this.app, this.hexPath, this.linkSection, linkText);
-    await addBacklinkToFile(this.app, file.path, this.hexPath, this.plugin.hexLinkAlias(this.hexPath));
+    const { x, y, mapName } = this.hex;
+    if ((await this.plugin.hexNotes.linkNoteToHex(file, x, y, mapName, this.linkSection)) === null) return;
     this.onLinked();
     this.close();
   }
 
+  /** Make the note (from `createTemplate`, else the section's template) and link it. */
   private async createAndLink(name: string): Promise<void> {
     if (!name) return;
-    const folder = normalizeFolder(this.sourceFolder);
-    const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
-    let file = this.app.vault.getAbstractFileByPath(newPath);
-    if (!(file instanceof TFile)) {
-      try {
-        if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-          await this.app.vault.createFolder(folder);
-        }
-        // Notes start from their section's template (PA3, F17) unless the caller gave one.
-        // Places made from a hex say where they are (a Location line, R3).
-        const content = this.createTemplate
-          ? (LOCATION_SECTIONS.includes(this.linkSection) ? this.plugin.withHexLocation(this.createTemplate, this.hexPath) : this.createTemplate)
-          : await this.plugin.newLinkedNoteContent(this.linkSection, name, this.hexPath);
-        file = await this.app.vault.create(newPath, content);
-      } catch (err) {
-        new Notice(`Could not create ${newPath}: ${String(err)}`);
-        return;
-      }
-    }
-    if (!(file instanceof TFile)) return;
-    await this.addLink(file);
-  }
-
-  private async ensureHexNote(): Promise<void> {
-    const existing = this.app.vault.getAbstractFileByPath(this.hexPath);
-    if (existing instanceof TFile) return;
-    const folder = this.hexPath.includes("/")
-      ? this.hexPath.slice(0, this.hexPath.lastIndexOf("/"))
-      : "";
-    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-      await this.app.vault.createFolder(folder);
-    }
-    await this.app.vault.create(this.hexPath, "");
+    const { x, y, mapName } = this.hex;
+    const linked = await this.plugin.hexNotes.createAndLinkNote({
+      x, y, mapName, section: this.linkSection, folder: this.sourceFolder, name, template: this.createTemplate,
+    });
+    if (linked === null) return;
+    this.onLinked();
+    this.close();
   }
 
   onClose(): void {

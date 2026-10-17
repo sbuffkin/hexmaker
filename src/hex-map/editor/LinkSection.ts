@@ -4,11 +4,11 @@
  * "Show on map" (SF4: the section's icon as the hex's icon).
  */
 
-import { Notice, TFile } from "obsidian";
+import { TFile } from "obsidian";
 import { canDo } from "../../modeGate";
 import { getIconUrl, normalizeFolder } from "../../utils";
 import { setIconOverrideInFile } from "../../frontmatter";
-import { addLinkToSection, removeLinkFromSection, addBacklinkToFile } from "../../sections";
+import { removeLinkFromSection } from "../../sections";
 import type { LinkSection } from "../../types";
 import { linkDisplayName } from "../../encounterLinks";
 import { openNoteFocused } from "../../openNote";
@@ -214,53 +214,24 @@ export class LinkSections extends EditorWritePart<LinkSectionHost> {
     const selectFile = (file: TFile) => this.saves.track(selectFileNow(file));
     const createAndLink = (name: string) => this.saves.track(createAndLinkNow(name));
 
+    // The hex's note (from the template), the link and the backlink: HexNotesService.
+    const linked = (linkPath: string | null) => {
+      if (linkPath === null) return;
+      currentLinks = [...currentLinks, linkPath];
+      refresh();
+      this.onChanged();
+    };
+
     const selectFileNow = async (file: TFile) => {
       closeDropdown();
       input.value = "";
-      const hexFile = await this.ensureHexNote();
-      if (!hexFile) {
-        new Notice("Could not create hex note.");
-        return;
-      }
-      const linkPath = this.app.metadataCache.fileToLinktext(file, path);
-      currentLinks = [...currentLinks, linkPath];
-      refresh();
-      await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
-      void addBacklinkToFile(this.app, file.path, path, this.plugin.hexLinkAlias(path));
-      this.onChanged();
+      linked(await this.plugin.hexNotes.linkNoteToHex(file, this.x, this.y, this.mapName, section));
     };
 
     const createAndLinkNow = async (name: string) => {
       closeDropdown();
       input.value = "";
-      const folder = normalizeFolder(sourceFolder);
-      const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
-      let file = this.app.vault.getAbstractFileByPath(newPath);
-      if (!(file instanceof TFile)) {
-        try {
-          if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-            await this.app.vault.createFolder(folder);
-          }
-          // Each link section's notes start from its template (PA3, F17), tables from a table.
-          // Places made here say where they are (a Location line, R3).
-          file = await this.app.vault.create(newPath, await this.plugin.newLinkedNoteContent(section, name, path));
-        } catch (err) {
-          new Notice(`Could not create ${newPath}: ${String(err)}`);
-          return;
-        }
-      }
-      if (!(file instanceof TFile)) return;
-      const hexFile = await this.ensureHexNote();
-      if (!hexFile) {
-        new Notice("Could not create hex note.");
-        return;
-      }
-      const linkPath = this.app.metadataCache.fileToLinktext(file, path);
-      currentLinks = [...currentLinks, linkPath];
-      refresh();
-      await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
-      void addBacklinkToFile(this.app, file.path, path, this.plugin.hexLinkAlias(path));
-      this.onChanged();
+      linked(await this.plugin.hexNotes.createAndLinkNote({ x: this.x, y: this.y, mapName: this.mapName, section, folder: sourceFolder, name }));
     };
 
     input.addEventListener("focus", () => openDropdown());

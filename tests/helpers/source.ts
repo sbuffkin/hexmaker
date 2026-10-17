@@ -52,7 +52,7 @@ export const SURFACES = {
 	/** The random tables / workflows view. */
 	"table-view": { file: "src/random-tables/RandomTableView.ts", more: ["src/random-tables/view"] },
 	/** The table editor modal. */
-	"table-editor": { file: "src/random-tables/RandomTableEditorModal.ts", more: [] },
+	"table-editor": { file: "src/random-tables/RandomTableEditorModal.ts", more: ["src/random-tables/tableEditor"] },
 	/** The PNG map renderer used by exports. */
 	"png-renderer": { file: "src/export/mapPngRenderer.ts", more: ["src/export/png"] },
 	/** The map export dialog. */
