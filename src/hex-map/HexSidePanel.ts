@@ -91,6 +91,7 @@ export type OverlayKey =
   | "showCoords"
   | "showHexNames"
   | "showTokenNames"
+  | "showAreaNames"
   | "showUncharted"
   | "showVisited"
   | "showTerrainIcons"
@@ -113,6 +114,8 @@ const OVERLAY_OPTIONS: OverlayOption[] = [
   { key: "showCoords",     label: "Coordinates", cssClass: "duckmage-hide-coords",      inLabels: true },
   { key: "showHexNames",   label: "Hex names",   cssClass: "duckmage-hide-hex-names",   inLabels: true },
   { key: "showTokenNames", label: "Token names", cssClass: "duckmage-hide-token-names", inLabels: true },
+  // The area overlay's names (P4: every kind of name has its own toggle).
+  { key: "showAreaNames",  label: "Area names",  cssClass: "duckmage-hide-area-names",  inLabels: true },
   // Hexes still to roll on arrival (a ? mark).
   { key: "showUncharted",  label: "Uncharted (?)", cssClass: "duckmage-hide-uncharted",   inLabels: true },
   // Hexes a party token has stood on (SF5): a dot on each.
