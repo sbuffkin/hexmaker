@@ -11,7 +11,6 @@ import {
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
   VIEW_TYPE_SETUP_WIZARD,
-  VIEW_TYPE_GENERATOR,
   VIEW_TYPE_PALETTE_EDITOR,
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
@@ -69,8 +68,6 @@ import { bindPorts } from "./ports";
 import { migrateHexFilesToDefaultRegion, startOnLayoutReady } from "./plugin/startup";
 import { registerCommands, registerEditorMenu } from "./plugin/commands";
 import { registerProtocolHandlers } from "./plugin/protocolHandlers";
-import { GeneratorView } from "./worldgen/GeneratorView";
-import { generatorPageState } from "./worldgen/generatorPageState";
 import { type NotePickPurpose } from "./templateNotes";
 import { MapsService, type NewMapOptions } from "./services/MapsService";
 import { PaletteQueries } from "./services/PaletteQueries";
@@ -181,7 +178,6 @@ export default class HexmakerPlugin extends Plugin {
     this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) => new SetupWizardView(leaf, this));
     this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
     this.registerView(VIEW_TYPE_PALETTE_EDITOR, (leaf) => new PaletteEditorView(leaf, this));
-    this.registerView(VIEW_TYPE_GENERATOR, (leaf) => new GeneratorView(leaf, this));
     this.registerView(VIEW_TYPE_HEX_TABLE, (leaf) => new HexTableView(leaf, this));
     this.registerView(VIEW_TYPE_RANDOM_TABLES, (leaf) => new RandomTableView(leaf, this));
     for (const v of moduleViews()) this.registerView(v.type, (leaf) => v.create(leaf, this));
@@ -190,14 +186,9 @@ export default class HexmakerPlugin extends Plugin {
     this.addSettingTab(new HexmakerSettingTab(this.app, this));
     // Debug mode (per device, src/ui/debugMode.ts): "Debug" in the status
     // bar while it's on; clicking it turns it off. Pages with a Debug
-    // subsection re-render when it changes.
+    // subsection re-render themselves when it changes.
     this.syncDebugStatus(isDebugMode(this.app));
-    this.register(onDebugModeChange((on) => {
-      this.syncDebugStatus(on);
-      for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)) {
-        if (leaf.view instanceof GeneratorView) leaf.view.refresh();
-      }
-    }));
+    this.register(onDebugModeChange((on) => this.syncDebugStatus(on)));
 
     // Register the embedded roller code block processor
     registerRollerBlock(this);
@@ -225,38 +216,6 @@ export default class HexmakerPlugin extends Plugin {
 
   openHexMap(): void {
     void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
-  }
-
-  /**
-   * Open the terrain generator page (or bring it forward), optionally with a
-   * region and generator selected, or a biome (#50): a blend-field biome
-   * opens as "Biome (blend field)", a generator-backed one opens its
-   * generator (the page says which biomes use it).
-   */
-  async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string; biome?: string } = {}): Promise<void> {
-    const page = genPage();
-    if (page) return page.open(this, select);
-    if (select.mapName) generatorPageState.mapName = select.mapName;
-    if (select.paletteName) generatorPageState.paletteName = select.paletteName;
-    if (select.generatorPath) {
-      generatorPageState.selectedPath = select.generatorPath;
-      generatorPageState.biome = "";
-    }
-    if (select.biome) {
-      const b = (this.moduleStore("biomes") as BiomeStore | undefined)?.get(select.biome);
-      const file = b?.generator ? this.app.vault.getAbstractFileByPath(`${b.generator}.md`) ?? this.app.vault.getAbstractFileByPath(b.generator) ?? this.app.metadataCache.getFirstLinkpathDest(b.generator, "") : null;
-      if (b && file) {
-        generatorPageState.selectedPath = file.path;
-        generatorPageState.biome = "";
-      } else if (b && !b.generator) generatorPageState.biome = b.id;
-    }
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)[0];
-    if (existing) {
-      await this.app.workspace.revealLeaf(existing);
-      (existing.view as GeneratorView).refresh();
-      return;
-    }
-    await this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_GENERATOR, active: true });
   }
 
   /**
@@ -329,9 +288,7 @@ export default class HexmakerPlugin extends Plugin {
   onMapKindsChanged(): void {
     this.loadAvailableIcons();
     this.refreshPaletteEditors();
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)) {
-      if (leaf.view instanceof GeneratorView) leaf.view.refresh();
-    }
+    genPage()?.refresh(this);
   }
 
   /** Redraw every open map view's New place bar (Reroll / Lock) only, never the grid: safe mid-stroke. */

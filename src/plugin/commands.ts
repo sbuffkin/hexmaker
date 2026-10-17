@@ -46,11 +46,6 @@ export function registerCommands(plugin: HexmakerPlugin): void {
     name: "Open hex table",
     callback: () => void plugin.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE }),
   });
-  addPlaced("Plugin.cmd.openTerrainGenerator", {
-    id: "open-terrain-generator",
-    name: "Open terrain generator",
-    callback: () => void plugin.openTerrainGenerator(),
-  });
   addPlaced("Plugin.cmd.openPaletteEditor", {
     id: "open-palette-editor",
     name: "Open palette editor",

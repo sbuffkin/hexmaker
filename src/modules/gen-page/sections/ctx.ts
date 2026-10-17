@@ -1,14 +1,14 @@
 /**
- * What the generator page's section renderers (src/worldgen/genPage/*)
+ * What the generator page's section renderers (src/modules/gen-page/sections/*)
  * share while one generator is shown: GeneratorPanel.renderGenerator
  * builds one GeneratorPageCtx and passes it to each section in page order.
  */
 
 import type { App, TFile } from "obsidian";
-import type HexmakerPlugin from "../../HexmakerPlugin";
-import type { GeneratorFile } from "../generators";
-import type { GeneratorSave } from "../saveFormat";
-import type { GeneratorSettings, HexWfcModel } from "../../../packages/hex-wfc/src";
+import type HexmakerPlugin from "../../../HexmakerPlugin";
+import type { GeneratorFile } from "../../../worldgen/generators";
+import type { GeneratorSave } from "../../../worldgen/saveFormat";
+import type { GeneratorSettings, HexWfcModel } from "../../../../packages/hex-wfc/src";
 
 /** A generator shown on the page: a file, or an unsaved draft (file null). */
 export type ShownGenerator = Omit<GeneratorFile, "file"> & { file: TFile | null };

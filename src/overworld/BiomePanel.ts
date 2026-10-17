@@ -1,7 +1,7 @@
 /**
  * The biome page (#50): "Biome (blend field)", THE biome editor (owner Q14,
  * 2026-10-13: one editor; Biomes… › New biome… only asks for the basics and
- * opens this page). Opened with `plugin.openTerrainGenerator({ biome })`
+ * opens this page). Opened with `genPage()?.open(plugin, { biome })`
  * (Biomes… › Edit…, Edit region's "Edit generator…"). Edits everything the
  * biome's note says, with a live preview of a sample region made by the
  * blend field (regionWorld.planRegion):
@@ -34,6 +34,7 @@ import {
 import { biomeNameProblem, climateFormFrom, climateFromForm, formTypes, generatorName, routeNote, type ClimateFormState } from "./biomeForm";
 import { landOf } from "./biomeCombo";
 import { listGenerators } from "../worldgen/generators";
+import { genPage } from "../modules/active";
 import { renderShareSliders } from "../ui/shareSliders";
 import { mixRemoveButton, renderMixAdd, splitMix } from "../ui/mixList";
 import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
@@ -127,9 +128,7 @@ export class BiomePanel {
       for (const b of g.items) parent.createEl("option", { text: b.generator ? `${b.label} (generator)` : b.label, value: b.id });
     }
     pick.value = this.id;
-    pick.addEventListener("change", () => {
-      void plugin.openTerrainGenerator({ biome: pick.value });
-    });
+    pick.addEventListener("change", () => void genPage()?.open(plugin, { biome: pick.value }));
     const path = plugin.biomeStore.pathOf(this.id);
     head.createEl("button", { text: "Open note" }).addEventListener("click", () => {
       const file = path ? plugin.app.vault.getAbstractFileByPath(path) : null;

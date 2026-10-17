@@ -306,14 +306,14 @@ describe("no confirm dialogs (Q6)", () => {
   });
 
   it("only the module offer and the debug-mode confirm still open a ConfirmModal", () => {
-    const users = ["HexmakerPlugin.ts", "HexmakerSettingTab.ts", "random-tables/WorkflowWizardModal.ts", "worldgen/GeneratorLibrary.ts", "worldgen/GeneratorPanel.ts", "random-tables/RandomTableView.ts", "hex-map/MapModal.ts", "hex-map/PathTypeEditorModal.ts"]
+    const users = ["HexmakerPlugin.ts", "HexmakerSettingTab.ts", "random-tables/WorkflowWizardModal.ts", "modules/gen-page/GeneratorLibrary.ts", "modules/gen-page/GeneratorPanel.ts", "random-tables/RandomTableView.ts", "hex-map/MapModal.ts", "hex-map/PathTypeEditorModal.ts"]
       .map((p) => [p, (readSource("src", p).match(/new ConfirmModal\(/g) ?? []).length] as const);
     expect(Object.fromEntries(users)).toEqual({
       "HexmakerPlugin.ts": 1, // the module offer
       "HexmakerSettingTab.ts": 1, // debug mode
       "random-tables/WorkflowWizardModal.ts": 0,
-      "worldgen/GeneratorLibrary.ts": 0,
-      "worldgen/GeneratorPanel.ts": 0,
+      "modules/gen-page/GeneratorLibrary.ts": 0,
+      "modules/gen-page/GeneratorPanel.ts": 0,
       "random-tables/RandomTableView.ts": 0,
       "hex-map/MapModal.ts": 0,
       "hex-map/PathTypeEditorModal.ts": 0,
@@ -399,8 +399,10 @@ describe("the biome page is the one biome editor", () => {
   it("the form is gone: Biomes… › Edit… opens the page; New biome… creates and opens it", () => {
     const lib = readSurface("biome-library");
     expect(lib).not.toMatch(/class BiomeFormModal|type: "range"|"Fewest islands"/);
-    expect(lib).toContain("void plugin.openTerrainGenerator({ biome: b.id });");
-    expect(lib).toContain("await plugin.openTerrainGenerator({ biome: res.id });");
+    expect(lib).toContain("void openBiomePage(plugin, b.id);");
+    expect(lib).toContain("await openBiomePage(plugin, res.id);");
+    // The biome page is on the generator page; without it, the biome's note opens.
+    expect(lib).toContain("if (page) { await page.open(plugin, { biome }); return; }");
     expect(lib).toContain('text: "New biome…"');
     const page = readSurface("biome-page");
     // One label for the fewest islands; the page's Type mix and Terrain weights on ShareSliders.

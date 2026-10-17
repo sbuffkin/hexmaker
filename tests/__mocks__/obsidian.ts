@@ -54,6 +54,8 @@ export class Menu {
 	hide() { return this; }
 }
 export class Plugin { constructor(_app: App, _manifest: any) {} }
+/** A workspace view: just enough for a module's view class to load (and to be made with a fake contentEl in tests). */
+export class ItemView { leaf: any; app: App; contentEl: any = {}; containerEl: any = {}; constructor(leaf: any) { this.leaf = leaf; this.app = leaf?.app ?? new App(); } getViewType(): string { return ""; } getDisplayText(): string { return ""; } register(_cb: () => unknown): void {} registerEvent(_ref: unknown): void {} }
 export class PluginSettingTab { app: App; containerEl: any = {}; constructor(app: App, _plugin: unknown) { this.app = app; } display(): void {} hide(): void {} }
 export class Setting { constructor(_el: unknown) {} }
 export function setIcon(_el: HTMLElement, _icon: string): void {}

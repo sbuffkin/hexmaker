@@ -7,7 +7,7 @@ import {
   hasTerrainTweaks,
   terrainShares,
   withoutTerrainTweaks,
-} from "../src/worldgen/shares";
+} from "../src/modules/gen-page/shares";
 import type { HexWfcModel } from "../packages/hex-wfc/src";
 
 const model: HexWfcModel = {

@@ -34,7 +34,7 @@ export const SURFACES = {
 	/** The right-click hex editor and its section renderers. */
 	"hex-editor": { file: "src/hex-map/HexEditorModal.ts", more: ["src/hex-map/editor"] },
 	/** The generator page (GeneratorPanel) and its section renderers / page state. */
-	"generator-page": { file: "src/worldgen/GeneratorPanel.ts", more: ["src/worldgen/genPage"] },
+	"generator-page": { file: "src/modules/gen-page/GeneratorPanel.ts", more: ["src/modules/gen-page/sections"] },
 	/** The New map dialog. */
 	"new-map-setup": { file: "src/worldgen/NewMapSetupModal.ts", more: ["src/worldgen/newMapSetup"] },
 	/** The first-run setup wizard. */

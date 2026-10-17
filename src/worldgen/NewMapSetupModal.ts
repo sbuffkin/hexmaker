@@ -24,7 +24,7 @@ import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVa
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import { attrsForTerrain } from "./tableSources";
 import { rowSubmapDefault } from "../arrival/arrival";
-import { moduleArrivalTables, moduleNewMapSetup, moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "../modules/runtime";
+import { genPage, moduleArrivalTables, moduleNewMapSetup, moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "../modules/runtime";
 import { scaleGenerators, scalePalette, scalesFor, type MapScaleDef } from "../mapScales";
 import { scaleStarter } from "../wizardKinds";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "../ui/mapScaleForm";
@@ -635,6 +635,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const actions = contentEl.createDiv({ cls: "duckmage-setup-actions" });
     const goBtn = actions.createEl("button", { cls: "mod-cta" });
     const genBtn = actions.createEl("button", { text: "Open in generator", attr: { title: "Create the map blank and open the generator view on it to tune generation by hand" } });
+    genBtn.toggle(!!genPage()); // only with the generator page in this build
     actions.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 
     let tuneTimer: number | undefined;
@@ -1162,12 +1163,6 @@ export class NewMapSetupModal extends HexmakerModal {
     await this.saveDefaults(paletteName);
     this.close();
     this.onCreated({ ...result, backgroundImage }, { openGenerator });
-    if (openGenerator) {
-      await this.plugin.openTerrainGenerator({
-        mapName: result.name,
-        paletteName,
-        generatorPath: kind?.generatorPath,
-      });
-    }
+    if (openGenerator) await genPage()?.open(this.plugin, { mapName: result.name, paletteName, generatorPath: kind?.generatorPath });
   }
 }

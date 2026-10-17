@@ -2,27 +2,27 @@
 	"limit": 800,
 	"caps": {
 		"src/hex-map/HexMapView.ts": 1038,
-		"src/HexmakerPlugin.ts": 643,
+		"src/HexmakerPlugin.ts": 600,
 		"src/maps/mapNote.ts": 1955,
 		"src/random-tables/RandomTableView.ts": 1913,
 		"src/hex-map/HexEditorModal.ts": 630,
-		"src/worldgen/GeneratorPanel.ts": 325,
+		"src/modules/gen-page/GeneratorPanel.ts": 325,
 		"src/maps/MapStore.ts": 1360,
 		"src/hex-map/pathTool.ts": 1495,
 		"src/overworld/regionGen.ts": 1394,
 		"src/random-tables/randomTable.ts": 1293,
 		"src/export/mapPngRenderer.ts": 1242,
-		"src/worldgen/NewMapSetupModal.ts": 1173,
+		"src/worldgen/NewMapSetupModal.ts": 1168,
 		"src/SetupWizardView.ts": 1108,
 		"src/hex-table/HexTableView.ts": 1102,
 		"src/space/worldTypes.ts": 1075,
 		"src/HexmakerSettingTab.ts": 1051,
 		"src/palettes/PaletteStore.ts": 940,
 		"src/worldgen/procedural/planetSurface.ts": 1005,
-		"src/hex-map/MapModal.ts": 927,
+		"src/hex-map/MapModal.ts": 916,
 		"src/random-tables/RandomTableEditorModal.ts": 818,
-		"src/overworld/EditRegionModal.ts": 891,
+		"src/overworld/EditRegionModal.ts": 889,
 		"src/worldgen/generators.ts": 841,
-		"src/overworld/BiomePanel.ts": 678
+		"src/overworld/BiomePanel.ts": 677
 	}
 }

@@ -4,8 +4,8 @@
  * searchable terrain list.
  */
 
-import { linkLabel } from "../../utils";
-import { renderLabeledSlider, sliderFormat, type SliderFormat } from "../../ui/sliders";
+import { linkLabel } from "../../../utils";
+import { renderLabeledSlider, sliderFormat, type SliderFormat } from "../../../ui/sliders";
 
 /** A labelled slider with its hint (the shared slider, stacked). */
 export function slider(

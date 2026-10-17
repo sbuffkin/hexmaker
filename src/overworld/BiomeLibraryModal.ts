@@ -22,6 +22,7 @@ import type { BiomeNoteFields } from "./biomeNote";
 import { biomeGroupOf, groupBiomes } from "./biomeGroups";
 import { biomeNameProblem, generatorName, routeNote } from "./biomeForm";
 import { lockButton } from "../ui/lockButton";
+import { genPage } from "../modules/active";
 import { addPickerFilter, filterText } from "../ui/pickers";
 
 /** Why biomes can't be added or edited from this overworld now, or undefined. */
@@ -29,26 +30,30 @@ export function biomeEditLock(plugin: HexmakerPlugin, overworldName: string): st
   return canAdd(plugin.getMap(overworldName)) ? undefined : "Switch to Build to add or edit biomes.";
 }
 
-/** Whether the generator page can open a biome (`openTerrainGenerator({ biome })`). */
-const GENERATOR_PAGE_TAKES_BIOMES = true;
-
 /**
  * "Edit generator…" for a biome, in one place: a biome with a generator
- * link opens that generator; otherwise the generator page opens the biome
- * when it can, else the biome's note opens.
+ * link opens that generator; otherwise the generator page opens the biome.
+ * In a build without the generator page (genPage() undefined), the
+ * generator's note opens, or the biome's.
  */
 export async function openBiomeGenerator(plugin: HexmakerPlugin, biome: string): Promise<void> {
   const b = plugin.biomeStore.get(biome);
   if (!b) { new Notice(`No biome called ${biome}.`); return; }
+  const page = genPage();
   if (b.generator) {
     const file = plugin.app.metadataCache.getFirstLinkpathDest(b.generator, "");
-    if (file) { await plugin.openTerrainGenerator({ generatorPath: file.path }); return; }
+    if (file && page) { await page.open(plugin, { generatorPath: file.path }); return; }
+    if (file) { await plugin.app.workspace.getLeaf("tab").openFile(file); return; }
     new Notice(`Generator ${generatorName(b.generator)} wasn't found; opening the biome's note.`);
-  } else if (GENERATOR_PAGE_TAKES_BIOMES) {
-    await plugin.openTerrainGenerator({ biome: b.id });
-    return;
   }
-  const path = plugin.biomeStore.pathOf(b.id);
+  await openBiomePage(plugin, b.id);
+}
+
+/** The biome page (the biome editor, on the generator page); the biome's note in a build without that page. */
+export async function openBiomePage(plugin: HexmakerPlugin, biome: string): Promise<void> {
+  const page = genPage();
+  if (page) { await page.open(plugin, { biome }); return; }
+  const path = plugin.biomeStore.pathOf(biome);
   const file = path ? plugin.app.vault.getAbstractFileByPath(path) : null;
   if (file instanceof TFile) await plugin.app.workspace.getLeaf("tab").openFile(file);
 }
@@ -92,7 +97,7 @@ export class BiomeLibraryModal extends HexmakerModal {
       edit.addEventListener("click", () => {
         if (biomeEditLock(plugin, this.overworldName)) return;
         this.close();
-        void plugin.openTerrainGenerator({ biome: b.id });
+        void openBiomePage(plugin, b.id);
       });
       if (b.generator) {
         row.createEl("button", { text: "Edit generator…" }).addEventListener("click", () => {
@@ -185,7 +190,7 @@ export class NewBiomeModal extends HexmakerModal {
       if ("error" in res) { new Notice(res.error); return; }
       this.close();
       this.onCreated();
-      await plugin.openTerrainGenerator({ biome: res.id });
+      await openBiomePage(plugin, res.id);
     };
     const create = this.footer({ primary: { text: "Create and open", onClick: () => void go() }, cancel: () => this.close() }).primary!;
     const lock = biomeEditLock(plugin, this.overworldName);

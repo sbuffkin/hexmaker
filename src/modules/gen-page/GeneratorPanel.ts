@@ -5,9 +5,9 @@
  */
 
 import { App, Notice } from "obsidian";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import { VIEW_TYPE_HEX_MAP } from "../constants";
-import type { HexMapView } from "../hex-map/HexMapView";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import { VIEW_TYPE_HEX_MAP } from "../../constants";
+import type { HexMapView } from "../../hex-map/HexMapView";
 import {
   listGenerators,
   saveGeneratorSettings,
@@ -16,24 +16,24 @@ import {
   paletteColors,
   sourceMapsOf,
   type GeneratorFile,
-} from "./generators";
-import { PREVIEW_AUTO_LIMIT } from "./preview";
+} from "../../worldgen/generators";
+import { PREVIEW_AUTO_LIMIT } from "../../worldgen/preview";
 import { GeneratorLibrary } from "./GeneratorLibrary";
-import { worldMaps } from "../modules/runtime";
-import { showModuleTab } from "./genPage/moduleTabs";
+import { worldMaps } from "../active";
+import { showModuleTab } from "./sections/moduleTabs";
 import { generatorPageState } from "./generatorPageState";
-import { generatorMapKind, isGeneratorShown } from "../mapKinds";
-import { Disclosure, Fold } from "../ui/disclosure";
+import { generatorMapKind, isGeneratorShown } from "../../mapKinds";
+import { Disclosure, Fold } from "../../ui/disclosure";
 import { ENGINE_TUNING_IDS, engineTuningIsSet } from "./engineTuningSet";
-import type { GeneratorSave } from "./saveFormat";
-import { randomSeed, type GeneratorSettings } from "../../packages/hex-wfc/src";
-import type { GeneratorPageCtx, GeneratorPageHost, GeneratorPageLocal, ShownGenerator } from "./genPage/ctx";
-import { renderDraftRow, renderGeneratorSettings } from "./genPage/generatorSettings";
-import { renderPreviewActions, renderPreviewBox } from "./genPage/previewColumn";
-import { renderMapSettings } from "./genPage/mapSettings";
-import { renderShapeSections } from "./genPage/shapeSections";
-import { renderTerrainMix } from "./genPage/terrainMix";
-import { renderPathsSection } from "./genPage/pathsSection";
+import type { GeneratorSave } from "../../worldgen/saveFormat";
+import { randomSeed, type GeneratorSettings } from "../../../packages/hex-wfc/src";
+import type { GeneratorPageCtx, GeneratorPageHost, GeneratorPageLocal, ShownGenerator } from "./sections/ctx";
+import { renderDraftRow, renderGeneratorSettings } from "./sections/generatorSettings";
+import { renderPreviewActions, renderPreviewBox } from "./sections/previewColumn";
+import { renderMapSettings } from "./sections/mapSettings";
+import { renderShapeSections } from "./sections/shapeSections";
+import { renderTerrainMix } from "./sections/terrainMix";
+import { renderPathsSection } from "./sections/pathsSection";
 
 /** Labels of the biomes whose `generator:` link resolves to the generator note at `path`. */
 export function biomesUsing(plugin: HexmakerPlugin, path: string): string[] {
@@ -111,7 +111,7 @@ export class GeneratorPanel {
         ? generatorPageState.draft ? { file: null, model: generatorPageState.draft, warnings: [] } : undefined
         : generators.find((g) => g.file.path === generatorPageState.selectedPath);
 
-    const page = { rerender: () => this.host.rerender(), show: () => show(), paletteName: () => generatorPageState.paletteName, mapName: () => this.mapName }; // a module tab's host (genPage/moduleTabs.ts)
+    const page = { rerender: () => this.host.rerender(), show: () => show(), paletteName: () => generatorPageState.paletteName, mapName: () => this.mapName }; // a module tab's host (sections/moduleTabs.ts)
     const show = () => {
       body.empty();
       side.empty();

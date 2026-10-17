@@ -4,13 +4,13 @@
  */
 
 import { TFile } from "obsidian";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import { slugify } from "../utils";
-import { ensureFolder } from "../vault/ensureFolder";
-import { VERSION_KEY } from "../compat";
-import { generatorsFolder, savesFolder, listGenerators, parseGeneratorText, saveGeneratorSettings, type GeneratorFile } from "./generators";
-import { parseSave, retargetSave, serializeSave, SAVE_MARKER, type GeneratorSave } from "./saveFormat";
-import { SETTING_KEYS, type GeneratorSettings } from "../../packages/hex-wfc/src";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import { slugify } from "../../utils";
+import { ensureFolder } from "../../vault/ensureFolder";
+import { VERSION_KEY } from "../../compat";
+import { generatorsFolder, savesFolder, listGenerators, parseGeneratorText, saveGeneratorSettings, type GeneratorFile } from "../../worldgen/generators";
+import { parseSave, retargetSave, serializeSave, SAVE_MARKER, type GeneratorSave } from "../../worldgen/saveFormat";
+import { SETTING_KEYS, type GeneratorSettings } from "../../../packages/hex-wfc/src";
 
 /** A save as listed (frontmatter only; the file is parsed on load). */
 export interface SaveEntry {

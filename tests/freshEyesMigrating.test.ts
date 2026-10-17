@@ -168,7 +168,7 @@ describe("F11: duplicate map names count once", () => {
 
 	it("the hex table, generator library and export list use it", () => {
 		expect(readSurface("hex-table").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(3);
-		expect(readSource("src/worldgen/GeneratorLibrary.ts").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(2);
+		expect(readSource("src/modules/gen-page/GeneratorLibrary.ts").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(2);
 		expect(readSurface("export-modal")).toContain("uniqueMapsByName(plugin.settings.maps)");
 		expect(readSurface("map-modal")).toContain("const maps = uniqueMapsByName(this.plugin.settings.maps);");
 	});

@@ -6,17 +6,16 @@
  */
 
 import { App, Notice } from "obsidian";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import { blendGenerators, blendSourcesOf, deleteGenerators, generatorsFolder, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
-import type { HexWfcModel } from "../../packages/hex-wfc/src";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import { blendGenerators, blendSourcesOf, deleteGenerators, generatorsFolder, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "../../worldgen/generators";
+import type { HexWfcModel } from "../../../packages/hex-wfc/src";
 import { combinedName, generatorRows, generatorTree, regionRows, saveRows, type GeneratorGroup, type GeneratorRow, type RegionRow } from "./libraryRows";
 import { deleteSaves, listSaves, renameSave, type SaveEntry } from "./saves";
 import { generatorPageState } from "./generatorPageState";
-import { loadSaveOntoPage } from "./genPage/loadSave";
-import { uniqueMapsByName } from "../maps/mapTree";
-import type { GeneratorPageHost } from "../modules/types";
-import { moduleGeneratorTabs } from "../modules/runtime";
-import { moduleTab } from "./genPage/moduleTabs";
+import { loadSaveOntoPage } from "./sections/loadSave";
+import { uniqueMapsByName } from "../../maps/mapTree";
+import type { GeneratorPageHost } from "../types";
+import { moduleGeneratorTabs, moduleTab } from "./sections/moduleTabs";
 
 export interface LibraryHost {
   /** The generator shown below the list. */

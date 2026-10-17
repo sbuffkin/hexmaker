@@ -42,8 +42,10 @@ describe("placement map", () => {
     // A module's own rows (World maps': its folders) sit in its module.
     expect(layerOf("Settings.biomesFolder", allPlacement())).toBe("debug");
     expect(layerOf("Settings.biomesFolder")).toBe(moduleOn("world-maps") ? "debug" : "main");
-    expect(layerOf("GenPage.clumping")).toBe("advanced");
-    expect(subSectionOf("GenPage.clumping")).toBe("Engine tuning");
+    // The generator page's rows are its module's (genpage): there whenever it's built.
+    expect(layerOf("GenPage.clumping", allPlacement())).toBe("advanced");
+    expect(subSectionOf("GenPage.clumping", allPlacement())).toBe("Engine tuning");
+    expect(layerOf("GenPage.clumping")).toBe(moduleOn("gen-page") ? "advanced" : "main");
     expect(layerOf("GenPage.symmetry")).toBe("main");
     // Not a prototype key or a bad value.
     expect(layerOf("toString")).toBe("main");
@@ -68,7 +70,8 @@ describe("placement map", () => {
     // The world folder is "keep" in the owner's worksheet: main.
     expect(layerOf("Settings.worldFolder")).toBe("main");
     // The setup tools are in the README's manual setup, so Advanced, not Debug.
-    expect(idsOn("advanced")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData", "GenPage.scatter", "GenPage.mixStrength"]));
+    expect(idsOn("advanced")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData"]));
+    expect(idsOn("advanced", allPlacement())).toEqual(expect.arrayContaining(["GenPage.scatter", "GenPage.mixStrength"]));
     expect(idsOn("debug", allPlacement())).toEqual(expect.arrayContaining(["Settings.biomesFolder", "Settings.biomePoolsFolder", "Settings.worldTypesFolder"]));
     // Nothing on the generator page needs debug mode (owner), except the biome
     // view's per-biome tuning, which the owner asked for in Debug (2026-10-12).

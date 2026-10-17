@@ -1,9 +1,9 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { suggestImpassable } from "../src/worldgen/impassableHint";
+import { suggestImpassable } from "../src/modules/gen-page/impassableHint";
 import type { HexWfcModel, PathFeature } from "../packages/hex-wfc/src";
 
-/** Suggesting impassable terrain from a generator (src/worldgen/impassableHint.ts). */
+/** Suggesting impassable terrain from a generator (src/modules/gen-page/impassableHint.ts). */
 
 const terrains = (shares: Record<string, number>) => Object.entries(shares).map(([name, weight]) => ({ name, weight }));
 const route = (type: string, to: string, through: Record<string, number>, count = 1): PathFeature =>

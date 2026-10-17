@@ -3,7 +3,7 @@
  * covers, so the Advanced table can show what a mix or count change does.
  */
 
-import { weightShares, type HexWfcModel } from "../../packages/hex-wfc/src";
+import { weightShares, type HexWfcModel } from "../../../packages/hex-wfc/src";
 
 /** Fraction of hexes (0–1) per terrain in a generated map. */
 export function terrainShares(cells: Map<string, string>): Map<string, number> {

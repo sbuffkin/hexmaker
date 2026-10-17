@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { rebalance, toPercents } from "../src/worldgen/regionWeights";
+import { rebalance, toPercents } from "../src/modules/gen-page/regionWeights";
 
-/** Region influence sliders for combined generators (src/worldgen/regionWeights.ts). */
+/** Region influence sliders for combined generators (src/modules/gen-page/regionWeights.ts). */
 
 const sum = (xs: number[]) => xs.reduce((n, x) => n + x, 0);
 
