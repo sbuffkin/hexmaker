@@ -13,6 +13,7 @@ import type { DrawingMode } from "../toolMode";
 import type { MapToolbar } from "./mapToolbar";
 import type { MapNavigation } from "./mapNavigation";
 import type { UndoController } from "./undoController";
+import type { TokenLayer } from "./tokenLayer";
 
 export interface WorkModeButtonHost {
   plugin: HexmakerPlugin;
@@ -24,6 +25,8 @@ export interface WorkModeButtonHost {
   undos: Pick<UndoController, "commitTerrainStroke" | "commitIconStroke" | "updateUndoButton" | "currentWorkMode">;
   nav: Pick<MapNavigation, "refreshArrivalBar" | "refreshSideCrumbs">;
   toolbar: Pick<MapToolbar, "applyMode">;
+  /** The party selection (Play only): put down on a mode switch, which redraws the tokens and party controls. */
+  tokens: Pick<TokenLayer, "selectParty">;
   exitCurrentMode(): void;
 }
 
@@ -93,6 +96,8 @@ export class WorkModeButton {
     void this.plugin.saveSettings();
     // A tool the new mode locks is put down.
     if (this.drawingMode && !allows(mode, TOOL_ACTIONS[this.drawingMode])) this.exitCurrentMode();
+    // The party is picked up in Play only: put it down, and its controls go with it.
+    this.host.tokens.selectParty(null);
     this.refreshWorkModeBtn();
     // The neighbour "+" buttons lock and unlock with the mode.
     this.nav.refreshSideCrumbs();

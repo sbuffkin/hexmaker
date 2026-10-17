@@ -379,9 +379,7 @@ export class HexMapView extends ItemView {
     this.workMode = new WorkModeButton({
       ...view,
       contentEl: this.contentEl,
-      undos: this.undos,
-      nav: this.nav,
-      toolbar: this.toolbar,
+      undos: this.undos, nav: this.nav, toolbar: this.toolbar, tokens: this.tokens,
     });
     this.shell = new MapShell({
       ...view,

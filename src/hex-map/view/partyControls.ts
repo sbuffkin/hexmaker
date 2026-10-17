@@ -12,6 +12,7 @@ import type { PartyAt } from "../../modules/types";
 import { logError } from "../../log";
 import type { UndoItem } from "../undoItems";
 import { gridBoxOf, sameGrid, type GridBox } from "../../maps/gridGrowth";
+import { workModeOf } from "../../workMode";
 
 export const PARTY_CONTROLS_CLS = "duckmage-party-controls";
 
@@ -42,8 +43,10 @@ export function drawPartyControls(plugin: HexmakerPlugin, host: PartyControlsHos
       const btn = group.createEl("button", { text: b.label, attr: { title: b.title, "aria-label": `${c.label} ${b.label}` } });
       buttons.push(btn);
       btn.addEventListener("click", () => {
-        buttons.forEach((x) => (x.disabled = true));
         const map = plugin.getMap(party.map);
+        // The controls are Play's: a bar left over after a mode switch does nothing.
+        if (workModeOf(map) !== "play") return;
+        buttons.forEach((x) => (x.disabled = true));
         const before = map ? gridBoxOf(map) : undefined;
         void b.run()
           .then((undo) => {
