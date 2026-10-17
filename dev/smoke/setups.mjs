@@ -359,6 +359,20 @@ async function freshExtra(ctx) {
     out.push({ check: "F1-create-paint", ok: r.files.includes(r.note) && others.length === 0, detail: `wrote ${r.files.join(", ") || "(nothing)"}` });
     out.push({ check: "F1-first-hex-note", ok: r.hasLink && r.terrainProp === r.terrain, detail: `${r.hexPath}: map link ${r.hasLink}, terrain property ${r.terrainProp} (map: ${r.terrain})` });
   }
+  // P3: a link picker's "Create" on a hex without a note makes the hex note
+  // from the template (map link), the linked note in its folder (a typed
+  // "../" can't leave it), and links them.
+  if (!r.error) {
+    const lk = await ctx.ev((id, map) => (async () => {
+      const app = window.app, p = app.plugins.plugins[id];
+      const folder = `${p.settings.worldFolder || "world"}/towns`;
+      const link = await p.hexNotes.createAndLinkNote({ x: 4, y: 4, mapName: map, section: "Towns", folder, name: "../Smoke Town" });
+      const hexPath = p.hexPath(4, 4, map);
+      const hex = (await app.vault.adapter.exists(hexPath)) ? await app.vault.adapter.read(hexPath) : "";
+      return { link, hexPath, town: app.vault.getAbstractFileByPath(`${folder}/Smoke Town.md`) ? `${folder}/Smoke Town.md` : null, mapLink: /^map:\s*"\[\[_/m.test(hex), linked: !!link && hex.includes(`[[${link}]]`), empty: hex.trim() === "" };
+    })(), ctx.pluginId, r.map);
+    out.push({ check: "P3-link-picker-hex-note", ok: !!lk.town && lk.mapLink && lk.linked && !lk.empty, detail: `${lk.hexPath}: map link ${lk.mapLink}, linked ${lk.link} ${lk.linked}; town note ${lk.town}` });
+  }
   out.push(...(await wizardMapStepChecks(ctx)));
   // C10: a hex flower map explored in Play (only in a build with the hexflower slice).
   const hf = await ctx.ev((id) => window.__smokePage.hexFlowerSolo(id), ctx.pluginId);
