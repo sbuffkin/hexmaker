@@ -11,4 +11,6 @@ data.json
 dev/overworld-preview.js
 dev/smoke/last-run.json
 dev/smoke/last-pass.json
+dev/smoke/last-run.*.json
+dev/smoke/last-pass.*.json
 dist/
