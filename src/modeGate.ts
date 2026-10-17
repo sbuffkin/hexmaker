@@ -9,6 +9,7 @@
  * Pure, no Obsidian imports.
  */
 import { lockedHint, mapAllows, type ModeAction } from "./workMode";
+import { logWarn } from "./log";
 
 type MapLookup = (mapName: string) => { workMode?: string } | undefined;
 let lookup: MapLookup | null = null;
@@ -59,6 +60,6 @@ export function guardWrite(mapName: string, action: ModeAction): boolean {
     noteHandEdit(mapName, action);
     return true;
   }
-  console.warn(`[hexmaker] refused a ${action} write on "${mapName}": ${lockedHint(action)}`);
+  logWarn(`refused a ${action} write on "${mapName}": ${lockedHint(action)}`);
   return false;
 }

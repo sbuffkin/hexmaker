@@ -224,7 +224,7 @@ async function backupHexNotes(host: MapNotesMigrationHost, map: string, files: T
     await writeJsonBackup(adapter, backupDir(host.manifest.dir), `${map}-hex-notes`, json);
     return true;
   } catch (e) {
-    console.error(`Hexmap World Creator: couldn't back up hex notes for ${map}; they were left untouched`, e);
+    logError(`couldn't back up hex notes for ${map}; they were left untouched`, e);
     return false;
   }
 }

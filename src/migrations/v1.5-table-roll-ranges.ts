@@ -65,6 +65,7 @@ export function planTableMigration(content: string): MigrationPlan {
 }
 
 import type { MigrationInfo } from "./types";
+import { logError, logWarn } from "../log";
 
 export const info: MigrationInfo = {
   id: "v1.5-table-roll-ranges",
@@ -123,7 +124,7 @@ export async function migrateTables(app: App, scope: TableScope, backupDir: stri
     const json = JSON.stringify({ kind: "table-ranges", savedAt: new Date().toISOString(), notes });
     result.backup = await writeJsonBackup(app.vault.adapter, backupDir, "tables", json);
   } catch (e) {
-    console.error("Hexmap World Creator: couldn't back up tables; nothing was changed", e);
+    logError("couldn't back up tables; nothing was changed", e);
     result.error = `Couldn't save a backup (${String(e)}), so no table was changed.`;
     return result;
   }
@@ -178,7 +179,7 @@ export async function upgradeTableRangesOnce(host: TableRangesHost): Promise<Mig
   };
   const result = await migrateTables(host.app, scope, backupDirFor(host));
   if (result.error) {
-    console.warn("Hexmap World Creator: roll ranges not added; will try again next start.", result.error);
+    logWarn("roll ranges not added; will try again next start.", result.error);
     return result;
   }
   host.settings.tableRangesUpgraded = true;

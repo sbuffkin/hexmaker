@@ -6,6 +6,7 @@
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { setGmIconsInFile, setIconOverrideInFile, setTerrainInFile } from "../../frontmatter";
 import { CoalescingWriteQueue, type WriteOutcome } from "./coalescingWriteQueue";
+import { logWarn } from "../../log";
 
 export interface HexWritesHost {
   plugin: HexmakerPlugin;
@@ -30,7 +31,7 @@ export class HexWrites {
     const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
     const changed = () => host.changed();
     const warn = (what: string) => (path: string, attempt: number, err: unknown) =>
-      console.warn(`[duckmage] ${what} write attempt ${attempt} failed for ${path}:`, err);
+      logWarn(`${what} write attempt ${attempt} failed for ${path}:`, err);
     const app = host.plugin.app;
     this.terrain = new CoalescingWriteQueue({
       sleep, onChange: changed, onError: warn("terrain"),

@@ -77,7 +77,6 @@
   }
  },
  "settings": {
-  "mySetting": "default",
   "worldFolder": "world",
   "hexFolder": "world/hexes",
   "townsFolder": "",
@@ -206,7 +205,6 @@
     "paths": []
    }
   ],
-  "zoomLevel": 1,
   "pathTypes": [
    {
     "name": "Road",

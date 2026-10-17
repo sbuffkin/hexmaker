@@ -1,15 +1,13 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import {
-	DEFAULT_TOWN_TEMPLATE,
+	DEFAULT_NOTE_TEMPLATE,
 	fillNoteTemplate,
 	hexTemplatePathFor,
 	LINK_NOTE_TEMPLATES,
 	linkNoteTemplate,
 	linkNoteTemplatePathFor,
-	noteTemplateFor,
 	templatesFolderFor,
-	townTemplatePathFor,
 } from "../src/noteTemplates";
 import { isLinkableNotePath, isTemplateNotePath, templateNoteRules } from "../src/templateNotes";
 import { DEFAULT_SETTINGS } from "../src/constants";
@@ -28,27 +26,27 @@ describe("templates folder (PA3)", () => {
 		expect(hexTemplatePathFor({ worldFolder: "w", templatePath: "RPG/world/hextemplate.md" })).toBe("RPG/world/hextemplate.md");
 		expect(hexTemplatePathFor({ worldFolder: "w", templatePath: "tpl/hex" })).toBe("tpl/hex.md");
 		expect(hexTemplatePathFor({ worldFolder: "w", templatePath: "" })).toBe("w/templates/hex.md");
-		expect(townTemplatePathFor({ worldFolder: "w" })).toBe("w/templates/town.md");
-		expect(townTemplatePathFor({ worldFolder: "w", templatesFolder: "T" })).toBe("T/town.md");
+		expect(linkNoteTemplatePathFor({ worldFolder: "w" }, "Towns")).toBe("w/templates/town.md");
+		expect(linkNoteTemplatePathFor({ worldFolder: "w", templatesFolder: "T" }, "Towns")).toBe("T/town.md");
 	});
 
 	it("the town template is barebones and generic (SX1)", () => {
-		expect(DEFAULT_TOWN_TEMPLATE).toMatch(/^# \{\{title\}\}/);
-		expect(DEFAULT_TOWN_TEMPLATE).toMatch(/^## Description$/m);
+		expect(DEFAULT_NOTE_TEMPLATE).toMatch(/^# \{\{title\}\}/);
+		expect(DEFAULT_NOTE_TEMPLATE).toMatch(/^## Description$/m);
 		// Few headings, no ### (those are hex-note link sections).
-		expect((DEFAULT_TOWN_TEMPLATE.match(/^#/gm) ?? []).length).toBeLessThanOrEqual(3);
-		expect(DEFAULT_TOWN_TEMPLATE).not.toMatch(/^###/m);
-		expect(fillNoteTemplate(DEFAULT_TOWN_TEMPLATE, "Gullmouth")).toMatch(/^# Gullmouth\n/);
+		expect((DEFAULT_NOTE_TEMPLATE.match(/^#/gm) ?? []).length).toBeLessThanOrEqual(3);
+		expect(DEFAULT_NOTE_TEMPLATE).not.toMatch(/^###/m);
+		expect(fillNoteTemplate(DEFAULT_NOTE_TEMPLATE, "Gullmouth")).toMatch(/^# Gullmouth\n/);
 	});
 
 	it("every place-like link section gets its own note template, the same way (F17)", () => {
-		expect(noteTemplateFor("Towns")).toBe("town");
-		expect(noteTemplateFor("Dungeons")).toBe("dungeon");
-		expect(noteTemplateFor("features")).toBe("feature");
-		expect(noteTemplateFor("Quests")).toBe("quest");
-		expect(noteTemplateFor("Factions")).toBe("faction");
+		expect(linkNoteTemplate("Towns")?.file).toBe("town.md");
+		expect(linkNoteTemplate("Dungeons")?.file).toBe("dungeon.md");
+		expect(linkNoteTemplate("features")?.file).toBe("feature.md");
+		expect(linkNoteTemplate("Quests")?.file).toBe("quest.md");
+		expect(linkNoteTemplate("Factions")?.file).toBe("faction.md");
 		// A new encounter table is a table, not a note template.
-		expect(noteTemplateFor("Encounters Table")).toBeNull();
+		expect(linkNoteTemplate("Encounters Table")).toBeNull();
 		expect(linkNoteTemplatePathFor({ worldFolder: "w" }, "Dungeons")).toBe("w/templates/dungeon.md");
 		expect(linkNoteTemplatePathFor({ worldFolder: "w", templatesFolder: "T" }, "Towns")).toBe("T/town.md");
 		expect(linkNoteTemplatePathFor({ worldFolder: "w" }, "Encounters Table")).toBeNull();

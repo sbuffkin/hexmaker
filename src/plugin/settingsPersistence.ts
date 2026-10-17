@@ -39,6 +39,9 @@ import { takeUpgradeReport } from "../migrations/upgradeReport";
 import { writeUpgradeNote } from "../migrations/upgradeNote";
 import changelog from "../../CHANGELOG.md";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { logError } from "../log";
+import { reportSaveFailure } from "./saveFailure";
+import { tidyLoadedSettings } from "./settingsTidy";
 
 /** What SettingsPersistence uses of the plugin. */
 export type SettingsHost = HexmakerPlugin;
@@ -91,29 +94,8 @@ export class SettingsPersistence {
     // them filled in from the old name rules (once), so no map changes look.
     // Notes are migrated by PaletteStore on attach.
     if (!this.plugin.settings.pathTypesExplicit) fillLegacyPathTypes(this.plugin.settings.terrainPalettes, this.plugin.settings.pathTypes);
-    if (!this.plugin.settings.hexOrientation) this.plugin.settings.hexOrientation = "pointy";
-    if (!this.plugin.settings.tablesFolder)
-      this.plugin.settings.tablesFolder = "world/tables";
-    if (!this.plugin.settings.defaultTableDice) this.plugin.settings.defaultTableDice = 100;
-    if (this.plugin.settings.questsFolder === undefined)
-      this.plugin.settings.questsFolder = "";
-    if (this.plugin.settings.featuresFolder === undefined)
-      this.plugin.settings.featuresFolder = "";
-    if (this.plugin.settings.factionsFolder === undefined)
-      this.plugin.settings.factionsFolder = "";
-    if (this.plugin.settings.hexEditorTerrainCollapsed === undefined)
-      this.plugin.settings.hexEditorTerrainCollapsed = false;
-    if (this.plugin.settings.hexEditorFeaturesCollapsed === undefined)
-      this.plugin.settings.hexEditorFeaturesCollapsed = false;
-    if (this.plugin.settings.hexEditorNotesCollapsed === undefined)
-      this.plugin.settings.hexEditorNotesCollapsed = false;
-    if (!Array.isArray(this.plugin.settings.rollTableExcludedFolders))
-      this.plugin.settings.rollTableExcludedFolders = ["terrain"];
-    if (!Array.isArray(this.plugin.settings.encounterTableExcludedFolders))
-      this.plugin.settings.encounterTableExcludedFolders = ["terrain"];
-    if (!this.plugin.settings.defaultMap) {
-      this.plugin.settings.defaultMap = this.plugin.settings.maps[0]?.name ?? "default";
-    }
+    // Unusable values fixed, retired keys dropped (missing keys already have their defaults).
+    tidyLoadedSettings(this.plugin.settings);
     // Own copy (never alias DEFAULT_SETTINGS). Read from the raw data: unset
     // (new install / older data) = world, plus space if a palette has space
     // terrains already.
@@ -190,7 +172,7 @@ export class SettingsPersistence {
         const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
         link = { text: `What changed, and the backups: ${name}`, open: () => void this.openVaultNote(path) };
       } catch (e) {
-        console.error("Hexmap World Creator: couldn't write the upgrade note", e);
+        logError("couldn't write the upgrade note", e);
       }
     }
     endNoticeBatch(link);
@@ -230,13 +212,19 @@ export class SettingsPersistence {
     // The setup just finished or was turned off without picking map types
     // (e.g. "Don't show again", a recipe): record its types, install nothing.
     this.plugin.settings.kindContent = inferKindContent(this.plugin.settings);
-    await this.plugin.saveData(this.plugin.settings);
+    // Never rejects: callers fire and forget (`void saveSettings()`), so a
+    // failed write is logged and said here instead of going unhandled.
+    try {
+      await this.plugin.saveData(this.plugin.settings);
+    } catch (e) {
+      reportSaveFailure("the plugin's settings", e);
+    }
     // Mirror palette edits (from any editor) into the palette notes.
-    void this.plugin.paletteStore.sync();
+    void this.plugin.paletteStore.sync().catch((e) => reportSaveFailure("the palette notes", e));
     // A terrain added anywhere (palette editor, terrain editor, a new or
     // imported palette) gets its empty tables (HG5).
-    void this.plugin.ensureTablesForNewTerrains();
-    void this.plugin.mapStore.sync();
+    void this.plugin.ensureTablesForNewTerrains().catch((e) => reportSaveFailure("the new terrains' tables", e));
+    void this.plugin.mapStore.sync().catch((e) => reportSaveFailure("the map notes", e));
     // Settings hold map-level state (paths, palette, grid size, overlays).
     // A save made from one view/window leaves sibling map views stale —
     // flag them so they re-render on next activation (issue #32). The
@@ -263,7 +251,7 @@ export class SettingsPersistence {
     await this.plugin.loadSettings();
     // Map notes hold paths and map settings; the new data.json doesn't win.
     // Queued before any sync, so nothing writes the bare copy over a note.
-    void this.plugin.mapStore.reloadFromNotes();
+    void this.plugin.mapStore.reloadFromNotes().catch((e) => logError("couldn't reload the map notes", e));
     // data.json carries a cached copy of the palettes; the notes win.
     await this.plugin.paletteStore.reload();
     this.plugin.loadAvailableIcons();

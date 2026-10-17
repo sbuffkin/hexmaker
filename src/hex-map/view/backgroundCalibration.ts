@@ -82,9 +82,8 @@ export class BackgroundCalibration {
   }
 
   /** A drag's mousemove, once per frame, over the colour snapshot (see calibrationDrag.ts). */
-  private coalesceDragMove(label: string, work: (ev: MouseEvent) => void): DragMove {
+  private coalesceDragMove(work: (ev: MouseEvent) => void): DragMove {
     return coalesceDragMove(
-      label,
       work,
       () => {
         this.buildCalibrationSnapshot();
@@ -270,7 +269,7 @@ export class BackgroundCalibration {
       const startOX = bg.offsetX, startOY = bg.offsetY;
       const zoom = this.host.zoom();
       const before = this.captureCalibration(map);
-      const { onMove, stop } = this.coalesceDragMove("bg-move", (ev) => {
+      const { onMove, stop } = this.coalesceDragMove((ev) => {
         bg.offsetX = startOX + (ev.clientX - startX) / zoom;
         bg.offsetY = startOY + (ev.clientY - startY) / zoom;
         this.applyBgLayerVars(layer, bg);
@@ -343,7 +342,7 @@ export class BackgroundCalibration {
       const startOY = map.gridDisplayOffsetY ?? 0;
       const zoom = this.host.zoom();
       const before = this.captureCalibration(map);
-      const { onMove, stop } = this.coalesceDragMove("grid-move", (ev) => {
+      const { onMove, stop } = this.coalesceDragMove((ev) => {
         map.gridDisplayOffsetX = startOX + (ev.clientX - startX) / zoom;
         map.gridDisplayOffsetY = startOY + (ev.clientY - startY) / zoom;
         applyGridTransform();
@@ -395,7 +394,7 @@ export class BackgroundCalibration {
 
   /** The 8 resize handles (see calibrationDrag.ts). */
   private attachResizeHandles(el: HTMLElement, opts: ResizeOpts): void {
-    attachResizeHandles(el, opts, () => this.host.zoom(), (label, work) => this.coalesceDragMove(label, work));
+    attachResizeHandles(el, opts, () => this.host.zoom(), (work) => this.coalesceDragMove(work));
   }
 
   private calibrationHelpEl: HTMLElement | null = null;

@@ -187,20 +187,3 @@ export function getSubmapFromFile(app: App, path: string): string | undefined {
   const m = getHexMapsFromFile(app, path);
   return m.regionMap ?? m.locations[0];
 }
-
-/** Older hex notes' one-submap key (map-folder hexes: sets the only location). */
-export async function setSubmapInFile(
-  app: App,
-  path: string,
-  mapName: string | null,
-): Promise<boolean> {
-  const loc = hexLoc(path);
-  if (loc) return hexSource!.set(loc.map, loc.key, { locations: mapName ? [mapName] : null }, "link-map");
-  const file = app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) return false;
-  await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
-    if (mapName === null) delete fm["duckmage-submap"];
-    else fm["duckmage-submap"] = mapName;
-  });
-  return true;
-}

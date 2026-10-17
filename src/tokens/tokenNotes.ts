@@ -49,18 +49,6 @@ export async function setTokenHex(
   });
 }
 
-export async function setTokenVisible(
-  app: App,
-  path: string,
-  visible: boolean,
-): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) return;
-  await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
-    fm["token-visible"] = visible;
-  });
-}
-
 export async function removeTokenFrontmatter(
   app: App,
   path: string,

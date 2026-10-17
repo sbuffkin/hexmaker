@@ -25,6 +25,7 @@ import { addBlendOfRow } from "../worldgen/generatorNoteUpdate";
 import { mapAllows, lockedHint } from "../workMode";
 import { mapNoteLink } from "../noteFormats";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
+import { logError } from "../log";
 
 export type OverwriteReason = "own" | "parent" | "learned" | "related" | "other";
 
@@ -271,7 +272,7 @@ export async function makeRegionGenerator(plugin: HexmakerPlugin, mapName: strin
     try {
       backup = await backupText(plugin, name, old);
     } catch (e) {
-      console.error("Hexmap World Creator: couldn't back up the generator before overwriting it", e);
+      logError("couldn't back up the generator before overwriting it", e);
       return { error: `Couldn't back up ${f.path}, so it wasn't overwritten.` };
     }
     // Tables and keys only: the note's own text stays.
@@ -390,7 +391,7 @@ export async function applyBlend(plugin: HexmakerPlugin, mapName: string, target
     try {
       backup = await backupText(plugin, f.basename, await plugin.app.vault.read(f));
     } catch (e) {
-      console.error("Hexmap World Creator: couldn't back up the generator before blending into it", e);
+      logError("couldn't back up the generator before blending into it", e);
       return { error: `Couldn't back up ${f.path}, so nothing was changed.` };
     }
     await writeGeneratorInPlace(plugin, f, plan.model, (text) => addBlendOfRow(text, row));

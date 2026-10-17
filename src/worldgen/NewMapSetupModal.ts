@@ -57,6 +57,7 @@ import {
   type GenerateOutcome,
   type TerrainGeneratorKind,
 } from "./registry";
+import { logWarn } from "../log";
 
 /** Submaps are local (a system, a dungeon): smaller, odd sizes so there's a true centre hex. */
 export const SUBMAP_SIZE_PRESETS: SizePreset[] = [
@@ -1117,9 +1118,8 @@ export class NewMapSetupModal extends HexmakerModal {
         addGeneratedPaths(this.plugin, result.name, paths);
         await this.plugin.saveSettings();
       }
-      // Expected and harmless (an Orbit path crossing a planet hex has no
-      // path type on the planet's palette): skip quietly (fresh-eyes F12).
-      if (missing.length) console.warn(`[hexmaker] ${result.name}: skipped generated paths with no matching path type: ${missing.join(", ")}`);
+      // Expected and harmless (an Orbit path over a planet hex has no path type there): skip quietly (fresh-eyes F12).
+      if (missing.length) logWarn(`${result.name}: skipped generated paths with no matching path type: ${missing.join(", ")}`);
     }
     // What the scale's module adds (Biomes: an overworld with its region settings), then the generator (a hex flower's note).
     const scale = this.activeScale();

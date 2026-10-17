@@ -34,8 +34,3 @@ export function takeUpgradeReport(): UpgradeEntry[] {
   entries = [];
   return out;
 }
-
-/** Whether anything was reported (tests). */
-export function upgradeReportSize(): number {
-  return entries.length;
-}

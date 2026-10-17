@@ -36,6 +36,7 @@ import type { HexWrites } from "./hexWrites";
 import type { MapToolbar } from "./mapToolbar";
 import type { UndoController } from "./undoController";
 import { hexKey, hexPair } from "../../hexKey";
+import { logWarn } from "../../log";
 
 export interface HexPainterHost {
   plugin: HexmakerPlugin;
@@ -505,10 +506,7 @@ export class HexPainter {
         );
         hexEl.insertBefore(iconEl, hexEl.querySelector(".duckmage-hex-dot"));
       } catch (err) {
-        console.warn(
-          `[hexmaker] failed to render icon for terrain "${terrain}":`,
-          err,
-        );
+        logWarn(`failed to render icon for terrain "${terrain}":`, err);
       }
     }
     if (terrain !== null) hexEl.addClass("duckmage-hex-exists");

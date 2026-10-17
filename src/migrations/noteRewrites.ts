@@ -25,6 +25,7 @@ import type { HexProps } from "../maps/hexProps";
 import type { RefLinker } from "../modules/types";
 import type { MigrationInfo } from "./types";
 import { hexXY } from "../hexKey";
+import { logError, logWarn } from "../log";
 
 /** What the rewrites need from the plugin. */
 export interface NoteFormatHost {
@@ -139,7 +140,7 @@ export async function runRewrite(host: NoteFormatHost, step: NoteRewrite, when =
     const json = JSON.stringify({ kind: `note-format-${id}`, savedAt: when.toISOString(), notes });
     result.backup = await writeJsonBackup(host.app.vault.adapter, backupDir(host, when), id, json);
   } catch (e) {
-    console.error(`Hexmap World Creator: couldn't back up notes for the ${id} upgrade; nothing was changed`, e);
+    logError(`couldn't back up notes for the ${id} upgrade; nothing was changed`, e);
     result.error = `Couldn't save a backup (${String(e)}), so no note was changed.`;
     return result;
   }
@@ -196,9 +197,9 @@ export async function runNoteRewrites(host: NoteFormatHost, steps: readonly Note
       results.push(r);
       onResult?.(step, r);
       if (!r.error) done.add(id);
-      if (r.skipped.length) console.warn(`Hexmap World Creator: ${id} upgrade left these notes as they were`, r.skipped);
+      if (r.skipped.length) logWarn(`${id} upgrade left these notes as they were`, r.skipped);
     } catch (e) {
-      console.error(`Hexmap World Creator: the ${id} note upgrade failed; it will be tried again next time`, e);
+      logError(`the ${id} note upgrade failed; it will be tried again next time`, e);
     }
   }
   // Ids from other builds stay recorded.

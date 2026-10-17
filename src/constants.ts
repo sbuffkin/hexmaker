@@ -363,7 +363,6 @@ export const DEFAULT_PATH_TYPES: PathType[] = [
 export const UNKNOWN_PATH_TYPE: PathType = { name: "", color: "#9ca3af", width: 3, lineStyle: "dashed", routing: "through", avoidImpassable: true, autoRoute: "direct" };
 
 export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
-  mySetting: "default",
   worldFolder: "world",
   hexFolder: "world/hexes",
   townsFolder: "",
@@ -389,7 +388,6 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
       pathChains: [],
     },
   ],
-  zoomLevel: 1,
   pathTypes: DEFAULT_PATH_TYPES,
   hexOrientation: "flat",
   staggerOffset: "odd",

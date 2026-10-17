@@ -5,7 +5,6 @@ import {
 	getTokenDataFromCache,
 	removeTokenFrontmatter,
 	setTokenHex,
-	setTokenVisible,
 	applyTokenFrontmatter,
 } from "../src/frontmatter";
 
@@ -178,22 +177,6 @@ describe("setTokenHex", () => {
 		expect(getContent()).toContain("token-hex: 5_7");
 		// NF3: a link to the map note.
 		expect(getContent()).toContain("token-map: [[_overworld]]");
-	});
-});
-
-// ── setTokenVisible ───────────────────────────────────────────────────────────
-
-describe("setTokenVisible", () => {
-	it("sets token-visible to false", async () => {
-		const { app, getContent } = makeApp("tokens/hero.md", "---\ntoken: true\n---\n");
-		await setTokenVisible(app, "tokens/hero.md", false);
-		expect(getContent()).toContain("token-visible: false");
-	});
-
-	it("sets token-visible to true", async () => {
-		const { app, getContent } = makeApp("tokens/hero.md", "---\ntoken: true\ntoken-visible: false\n---\n");
-		await setTokenVisible(app, "tokens/hero.md", true);
-		expect(getContent()).toContain("token-visible: true");
 	});
 });
 

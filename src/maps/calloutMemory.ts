@@ -11,6 +11,7 @@
  */
 import type { DataAdapter } from "obsidian";
 import type { MapDataShown } from "../hexMapData";
+import { logWarn } from "../log";
 
 const FILE = "map-data-shown.json";
 
@@ -35,7 +36,7 @@ export class CalloutMemory {
         const raw = JSON.parse(await this.adapter().read(this.path)) as { notes?: Record<string, MapDataShown> };
         for (const [p, v] of Object.entries(raw.notes ?? {})) if (v && typeof v === "object" && !this.shown.has(p)) this.shown.set(p, v);
       } catch (e) {
-        console.warn(`[hexmaker] couldn't read ${this.file}; edits are imported again once notes are refreshed`, e);
+        logWarn(`couldn't read ${this.file}; edits are imported again once notes are refreshed`, e);
       }
     })();
     return this.loading;
@@ -82,7 +83,7 @@ export class CalloutMemory {
     try {
       await this.adapter().write(this.path, JSON.stringify({ version: 1, notes }, null, 1));
     } catch (e) {
-      console.warn(`[hexmaker] couldn't save ${this.file}`, e);
+      logWarn(`couldn't save ${this.file}`, e);
     }
   }
 }

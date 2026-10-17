@@ -22,14 +22,6 @@ function isPlaceholder(v: string): boolean {
   return s === "" || /^\*?\(.*\)\*?$/.test(s) || /^_+$/.test(s) || s === "-" || s === "—";
 }
 
-/** The value written on the note's "**Field:**" line, or undefined when it's absent, empty or a placeholder. */
-export function readBodyField(content: string, field: BodyField): string | undefined {
-  const m = lineRe(field).exec(content);
-  if (!m) return undefined;
-  const v = m[2].replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_a, target: string, alias?: string) => alias ?? target).trim();
-  return isPlaceholder(v) ? undefined : v;
-}
-
 /** A filled body line taken out of a note: which field, and its value exactly as typed. */
 export interface TakenBodyField {
   field: BodyField;

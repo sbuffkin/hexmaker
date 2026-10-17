@@ -34,8 +34,9 @@ export default defineConfig([
     rules: {
       "obsidianmd/sample-names": "off",
       "obsidianmd/ui/sentence-case": ["warn", { allowAutoFix: true }],
-      // Allow console.warn/error for genuine error reporting; block debug console.log
-      "no-console": ["warn", { allow: ["warn", "error"] }],
+      // Every console line goes through src/log.ts (logError / logWarn), so the
+      // plugin's lines share one "Hexmaker:" prefix (owner decision LG1).
+      "no-console": "error",
       // Enforce no-static-styles-assignment as an error so the local lint
       // breaks instead of waiting for the upstream obsidianmd reviewer bot
       // to catch it. The rule means: no direct `.style.foo = ...` and no
@@ -56,4 +57,10 @@ export default defineConfig([
       "@typescript-eslint/no-unnecessary-type-assertion": "error",
     },
   },
+
+  // The one place that writes to the console.
+  { files: ["src/log.ts"], rules: { "no-console": "off" } },
+  // TEMPORARY: src/export/** moves to logError in its own cleanup lane; drop
+  // this override once that lands (no-console is an error everywhere else).
+  { files: ["src/export/**"], rules: { "no-console": ["warn", { allow: ["warn", "error"] }] } },
 ]);

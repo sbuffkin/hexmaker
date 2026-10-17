@@ -65,8 +65,3 @@ export function starterTablePath(tablesFolder: string, section: RolledSection): 
   const file = ROLLED_SECTION_TABLES[section].starterFile;
   return tablesFolder ? `${tablesFolder}/${file}` : file;
 }
-
-/** Short "from …" text for the source of a rolled table. */
-export function tableSourceLabel(source: TableSource): string {
-  return source === "hex" ? "this hex's table" : source === "map" ? "the map's table" : "the starter table";
-}

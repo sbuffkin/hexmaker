@@ -37,6 +37,7 @@ import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planP
 import { repointPaletteName } from "./paletteOptions";
 import { TerrainRenameOffers } from "./renameOffer";
 import { logError } from "../log";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /** Local storage key (per device): what was last said about each palette note's colours. */
 const COLOR_REPORTED_KEY = "hexmaker-palette-colors-reported";
@@ -298,13 +299,7 @@ export class PaletteStore {
   }
 
   private async ensureFolder(): Promise<void> {
-    const folder = this.folder();
-    if (this.plugin.app.vault.getAbstractFileByPath(folder)) return;
-    try {
-      await this.plugin.app.vault.createFolder(folder);
-    } catch {
-      /* created concurrently */
-    }
+    await ensureFolder(this.plugin.app.vault, this.folder());
   }
 
   /** Rename a palette in memory and repoint everything that names it. */
@@ -494,7 +489,7 @@ export class PaletteStore {
       const dir = `${this.plugin.manifest.dir}/backups/palettes-${new Date().toISOString().slice(0, 10)}`;
       where = await writeJsonBackup(this.plugin.app.vault.adapter, dir, "deleted-palettes", JSON.stringify({ savedAt: new Date().toISOString(), palettes: gone }));
     } catch (e) {
-      console.error("Hexmap World Creator: couldn't back up the deleted palettes; they were kept", e);
+      logError("couldn't back up the deleted palettes; they were kept", e);
       return;
     }
     const rec = settings.paletteNotes;
@@ -592,7 +587,7 @@ export class PaletteStore {
         await writeJsonBackup(this.plugin.app.vault.adapter, dir, "palettes-before-new-terrains", JSON.stringify({ savedAt: new Date().toISOString(), notes }));
       } catch (e) {
         // No backup, no change: try again next start.
-        console.error("Hexmap World Creator: couldn't back up palette notes; new terrains not added", e);
+        logError("couldn't back up palette notes; new terrains not added", e);
         return false;
       }
       applyPresetTerrains(plan);
@@ -633,7 +628,7 @@ export class PaletteStore {
         await writeJsonBackup(this.plugin.app.vault.adapter, dir, "palettes-before-path-fields", JSON.stringify({ savedAt: new Date().toISOString(), notes }));
       } catch (e) {
         // No backup, no change: try again next start.
-        console.error("Hexmap World Creator: couldn't back up palette notes; path types not updated", e);
+        logError("couldn't back up palette notes; path types not updated", e);
         return false;
       }
       applyPresetPathFields(plan);
