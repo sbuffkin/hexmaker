@@ -15,7 +15,7 @@ import {
 } from "../src/export/exportMarker";
 import { announceExport, saveExport } from "../src/export/vaultWrite";
 import { withExportProvenance } from "../src/export/exportFolder";
-import { crc32 } from "../src/packs/zip";
+import { crc32 } from "../src/crc32";
 import type { App } from "obsidian";
 
 const enc = new TextEncoder();

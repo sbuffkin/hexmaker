@@ -18,7 +18,7 @@
  * Pure: no Obsidian imports.
  */
 
-import { crc32 } from "../packs/zip";
+import { crc32 } from "../crc32";
 
 /** The marker's name, in every form. */
 export const EXPORT_MARKER = "hexmaker-export";

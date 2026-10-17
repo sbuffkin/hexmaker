@@ -7,6 +7,7 @@
 	"src/compat.ts",
 	"src/constants.ts",
 	"src/coordStyle.ts",
+	"src/crc32.ts",
 	"src/encounterLinks.ts",
 	"src/export/exportMarker.ts",
 	"src/export/exportNames.ts",
