@@ -127,6 +127,18 @@ export function planPropsSync(note: NoteProps, map: HexProps, base: HexProps | u
 }
 
 /**
+ * Turning the properties back on (owner HP3): the fields a note keeps as
+ * it has them. That's a value of its own where the map has none, unless
+ * it's only the copy the plugin last wrote there (`base`; the map cleared
+ * it while the properties were off). The sync then takes a kept value
+ * onto the map, as it does for a note's own value the first time. Every
+ * other field shows the map's value: the map note is the source.
+ */
+export function resyncKeep(note: NoteProps, map: HexProps, base: HexProps | undefined): PropField[] {
+  return PROP_FIELDS.filter((f) => !map[f] && !!note.props[f] && note.props[f] !== (base?.[f] ?? ""));
+}
+
+/**
  * `setPropsInText` for a frontmatter object (processFrontMatter): the
  * property keys set to `props` where they are (`area` where `region` was),
  * new ones last, ones `props` lacks removed; fields in `keep` untouched.

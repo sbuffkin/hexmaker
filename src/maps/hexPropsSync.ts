@@ -113,7 +113,11 @@ export class HexPropsSync {
     });
   }
 
-  /** Stop following changes (the setting was turned off). */
+  /**
+   * Stop following changes (the setting was turned off). The notes keep
+   * their properties and the memory of what was written there, so turning
+   * it back on can tell a stale copy from an edit (HP3).
+   */
   stop(): void {
     this.started = false;
     this.stopListening?.();
@@ -137,6 +141,11 @@ export class HexPropsSync {
   /** What a migration wrote into a note: remembered, so a later hand edit is told from it. */
   remember(path: string, props: HexProps): void {
     this.rememberShown(path, props);
+  }
+
+  /** What the plugin last wrote into a note's properties (kept while the setting is off). */
+  shown(path: string): HexProps | undefined {
+    return this.memory.get(path);
   }
 
   /** None shown is kept as no entry: it reads the same (hexProps.planPropsSync) and keeps the file small. */

@@ -45,11 +45,12 @@ describe("region weather / rumours tables (E2)", () => {
     expect(isRolledSection("description")).toBe(false);
   });
 
-  it("starter tables are real, rollable tables (shipped as data: tests/shippedTables.test.ts)", () => {
+  it("starter tables are real tables: weather rollable, rumours empty (shipped as data: tests/shippedTables.test.ts)", () => {
     for (const path of ["weather.md", "rumors.md"]) {
       const shipped = registry.shippedTables(["world"]).find((t) => t.path === path)!;
       const table = parseRandomTable(shipped.text);
-      expect(table.entries.length).toBeGreaterThan(5);
+      if (path === "weather.md") expect(table.entries.length).toBeGreaterThan(5);
+      else expect(table.entries).toEqual([]);
       expect(starterTablePath("", path === "weather.md" ? "weather" : "hooks & rumors")).toBe(path);
     }
   });

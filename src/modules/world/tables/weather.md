@@ -1,5 +1,5 @@
 ---
-dice: 100
+dice: 20
 table-type: weather
 roll-filter: false
 encounter-filter: false
@@ -8,14 +8,12 @@ encounter-filter: false
 ```duckmage-roller
 ```
 
-| d100 | Result | Weight |
+| d20 | Result | Weight |
 |-----|--------|--------|
-| 1–21 | Clear and calm | 4 |
-| 22–37 | Overcast, cool | 3 |
-| 38–53 | Light rain | 3 |
-| 54–64 | Fog until midday | 2 |
-| 65–75 | Strong wind | 2 |
-| 76–85 | Heavy rain; travel slowed | 2 |
-| 86–90 | Thunderstorm | 1 |
-| 91–95 | Unseasonal heat or cold | 1 |
-| 96–100 | Strange weather (magical or ill-omened) | 1 |
+| 1–5 | Sunny | 5 |
+| 6–9 | Cloudy | 4 |
+| 10–13 | Rainy | 4 |
+| 14–16 | Windy | 3 |
+| 17–18 | Foggy | 2 |
+| 19 | Stormy | 1 |
+| 20 | Snowy | 1 |
