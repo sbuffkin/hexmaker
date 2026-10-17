@@ -481,6 +481,8 @@ export async function modeLocks(id, name) {
  * (token note and the map note's `visited:` list); "Add to play log…"
  * writes today's log note and links it from the hex note. Everything it
  * made is removed again (the map's visited list and mode restored).
+ * In a build without the play slice: the party token is a plain token (no
+ * party mark, nothing picked up) and its note keeps `token-party`.
  */
 export async function partyPlay(id, name) {
   const app = window.app;
@@ -503,10 +505,21 @@ export async function partyPlay(id, name) {
   const key = `${mid.dataset.x}_${mid.dataset.y}`;
   const tokPath = "smoke-party-token.md";
   const made = [tokPath];
+  // Solo play is a slice (release-slices.json "play"): its command is registered only when it's built.
+  const playOn = !!app.commands.commands[`${id}:open-play-log`];
   try {
     await app.vault.create(tokPath, `---\ntoken: true\ntoken-hex: "${key}"\ntoken-map: "${name}"\ntoken-party: true\n---\n# Smoke party\n`);
     view.setWorkMode("play");
     await sleep(300);
+    if (!playOn) {
+      const tokenEl = await waitFor(() => view.containerEl.querySelector(".duckmage-token"));
+      if (!tokenEl) fail("the token wasn't drawn");
+      if (view.containerEl.querySelector(".duckmage-token.is-party")) fail("a party token is marked as the party without the play slice");
+      if (view.containerEl.querySelector(".duckmage-hex.duckmage-hex-visited")) fail("visited marks without the play slice");
+      if (!/^token-party: true$/m.test(await app.vault.adapter.read(tokPath))) fail("the token note lost token-party");
+      if (out.ok) out.steps.push("play slice not built: the party token is a plain token, its note keeps token-party, no visited marks");
+      return out;
+    }
     const tokenEl = await waitFor(() => view.containerEl.querySelector(".duckmage-token.is-party"));
     if (!tokenEl) { fail("the party token wasn't drawn"); return out; }
     const press = (el) => {
@@ -551,7 +564,11 @@ export async function partyPlay(id, name) {
     // The play log.
     const stepPath = p.hexPath(Number(step.dataset.x), Number(step.dataset.y), name);
     const hadStepNote = !!app.vault.getAbstractFileByPath(stepPath);
-    view.openPlayLog(Number(step.dataset.x), Number(step.dataset.y));
+    // Through the hex editor's Add to log link (the play module's log writer).
+    view.openHexEditorModal(Number(step.dataset.x), Number(step.dataset.y));
+    const logLink = await waitFor(() => [...document.querySelectorAll(".modal a.duckmage-editor-open-link")].find((a) => a.textContent === "Add to log"));
+    if (!logLink) fail("the hex editor has no Add to log link");
+    logLink?.click();
     const box = await waitFor(() => document.querySelector(".duckmage-play-log-text"));
     if (!box) fail("Add to play log didn't open");
     else {
