@@ -7,9 +7,9 @@
 
 import { App, Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
+import { blendGenerators, blendSourcesOf, deleteGenerators, generatorsFolder, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
-import { combinedName, generatorRows, regionRows, saveRows, type RegionRow } from "./libraryRows";
+import { combinedName, generatorRows, generatorTree, regionRows, saveRows, type GeneratorGroup, type GeneratorRow, type RegionRow } from "./libraryRows";
 import { deleteSaves, listSaves, renameSave, type SaveEntry } from "./saves";
 import { generatorPageState } from "./generatorPageState";
 import { loadSaveOntoPage } from "./genPage/loadSave";
@@ -41,6 +41,8 @@ export class GeneratorLibrary {
   static checkedGenerators = new Set<string>();
   static checkedRegions = new Set<string>();
   static checkedSaves = new Set<string>();
+  /** Generator groups opened or closed this session (T4); unset = closed. */
+  static expandedGroups = new Map<string, boolean>();
   private saves: SaveEntry[];
 
   constructor(
@@ -119,6 +121,7 @@ export class GeneratorLibrary {
 
   private drawGenerators(list: HTMLElement, actions: HTMLElement, redraw: () => void): void {
     const checked = GeneratorLibrary.checkedGenerators;
+    const folder = generatorsFolder(this.plugin);
     const rows = generatorRows(
       this.generators.map((g) => ({
         path: g.file.path,
@@ -127,13 +130,18 @@ export class GeneratorLibrary {
         palette: g.model.meta.palette,
         terrains: g.model.terrains.length,
         created: g.model.meta.created,
+        folder: g.file.parent && g.file.parent.path.startsWith(folder + "/") ? g.file.parent.path.slice(folder.length + 1) : "",
       })),
       GeneratorLibrary.query,
     );
+    // Yours at the top; preset families and subfolders as groups, closed
+    // until opened (T4). Same row type and columns throughout.
+    const tree = generatorTree(rows, { query: GeneratorLibrary.query, expanded: GeneratorLibrary.expandedGroups, current: this.host.selectedPath() });
     const table = list.createDiv({ cls: "duckmage-wfc-library-table is-generators" });
-    this.header(table, ["Name", "From", "Palette", "Terrains", "Created"], rows.map((r) => r.path), checked, redraw);
-    for (const r of rows) {
+    this.header(table, ["Name", "From", "Palette", "Terrains", "Created"], tree.visible.map((r) => r.path), checked, redraw);
+    const generatorRow = (r: GeneratorRow, inGroup: boolean) => {
       const row = this.row(table, r.path, checked, redraw);
+      row.toggleClass("is-in-group", inGroup);
       if (r.path === this.host.selectedPath()) row.addClass("is-current");
       this.cells(row, [r.name, r.from || "–", r.palette || "–", String(r.terrains), r.created || "–"]);
       row.setAttr("title", "Click to load; tick to select");
@@ -143,6 +151,11 @@ export class GeneratorLibrary {
         if (g) this.host.load(g);
         redraw();
       });
+    };
+    for (const r of tree.top) generatorRow(r, false);
+    for (const group of tree.groups) {
+      this.groupRow(table, group, checked, redraw);
+      if (group.open) for (const r of group.rows) generatorRow(r, true);
     }
     if (!rows.length) list.createDiv({ text: this.generators.length ? "No generators match." : "No generators yet. Learn one on the Maps tab.", cls: "duckmage-empty-state" });
 
@@ -354,6 +367,44 @@ export class GeneratorLibrary {
       redraw();
     });
     for (const t of titles) head.createSpan({ text: t });
+  }
+
+  /**
+   * A group of generators (T4): the same row, its tick ticking every row in
+   * it, its name with the tree's ▸/▾ toggle and a count. Click to open or close.
+   */
+  private groupRow(table: HTMLElement, group: GeneratorGroup, checked: Set<string>, redraw: () => void): void {
+    const row = table.createDiv({ cls: "duckmage-wfc-library-row is-group" });
+    const keys = group.rows.map((r) => r.path);
+    const ticked = keys.filter((k) => checked.has(k)).length;
+    const box = row.createEl("input", { type: "checkbox", attr: { "aria-label": `Select all ${group.label}` } });
+    box.checked = ticked > 0 && ticked === keys.length;
+    box.indeterminate = ticked > 0 && ticked < keys.length;
+    row.toggleClass("is-checked", box.checked);
+    box.addEventListener("change", () => {
+      for (const k of keys) {
+        if (box.checked) checked.add(k);
+        else checked.delete(k);
+      }
+      redraw();
+    });
+    const name = row.createSpan({ cls: "duckmage-wfc-library-group-name", attr: { title: group.label } });
+    const toggle = name.createSpan({ cls: "duckmage-map-tree-toggle", text: group.open ? "▾" : "▸", attr: { role: "button", "aria-label": group.open ? "Collapse" : "Expand" } });
+    name.createSpan({ text: `${group.label} (${keys.length})` });
+    for (let i = 0; i < 4; i++) row.createSpan();
+    row.setAttr("title", group.open ? "Click to close" : "Click to open");
+    const flip = () => {
+      GeneratorLibrary.expandedGroups.set(group.key, !group.open);
+      redraw();
+    };
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      flip();
+    });
+    row.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest("input, .duckmage-map-tree-toggle")) return;
+      flip();
+    });
   }
 
   private row(table: HTMLElement, key: string, checked: Set<string>, redraw: () => void): HTMLElement {

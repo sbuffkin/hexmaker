@@ -9944,3 +9944,20 @@ button.is-armed {
     font-family: var(--font-monospace);
     resize: vertical;
 }
+
+/* ── Generator library tree (T4) + paths amount (G3), lane worldgen ── */
+.duckmage-wfc-library-row.is-group {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-wfc-library-group-name {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+}
+.duckmage-wfc-library-row.is-in-group > span:first-of-type {
+    padding-left: 1.25em;
+}
+.duckmage-wfc-paths-amount {
+    margin: 0.25em 0 0.5em;
+}
