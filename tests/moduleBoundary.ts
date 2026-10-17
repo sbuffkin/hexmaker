@@ -20,6 +20,7 @@ export const MODULE_DIRS: Record<string, string[]> = {
   space: ["src/space/", "src/modules/space/"],
   "world-maps": ["src/overworld/", "src/modules/world-maps/"],
   world: ["src/modules/world/"],
+  "hex-flower": ["src/hexflower/", "src/modules/hex-flower/"],
 };
 
 /**

@@ -28,3 +28,16 @@ if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerModule);
 export const MODULES: readonly HexmakerModule[] = compiled;
 
 export const registry = new ModuleRegistry(MODULES);
+
+/**
+ * The release slices this build has on (foundation not listed), as the
+ * build named them (esbuild's __HEXMAKER_SLICES__; tests/register.mjs in
+ * tests). For logs and the smoke runs: which features a bug report ran with.
+ */
+export function builtSlices(): string[] {
+  try {
+    return JSON.parse(__HEXMAKER_SLICES__) as string[];
+  } catch {
+    return [];
+  }
+}

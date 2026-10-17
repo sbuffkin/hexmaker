@@ -3,6 +3,14 @@ import tseslint from "typescript-eslint";
 import { defineConfig } from "eslint/config";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import globals from "globals";
+import { readSlices } from "./dev/release/slices.mjs";
+
+// Release slice flags (esbuild define; src/slices.d.ts), one per flagged
+// slice in release-slices.json, and the list of slices built.
+const sliceGlobals = Object.fromEntries([
+  ...Object.values(readSlices()).filter((s) => s.define).map((s) => [s.define, "readonly"]),
+  ["__HEXMAKER_SLICES__", "readonly"],
+]);
 
 export default defineConfig([
   { ignores: ["**/tests/**", "node_modules/", "*.mjs", "main.js", "dev/**"] },
@@ -18,10 +26,7 @@ export default defineConfig([
         // Obsidian-injected globals for popout-window-aware code
         activeDocument: "readonly",
         activeWindow: "readonly",
-        // Release slice flags (esbuild define; src/slices.d.ts).
-        __SLICE_WORLDMAPS__: "readonly",
-        __SLICE_SPACE__: "readonly",
-        __SLICE_HEXFLOWER__: "readonly",
+        ...sliceGlobals,
       },
       parser: tsparser,
       parserOptions: { project: "./tsconfig.json" },

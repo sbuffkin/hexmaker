@@ -19,6 +19,10 @@ import { ICON_PACK_LABELS } from "../src/utils";
 import { contextKindsIn, kindForIn, sectionWordsIn, type MapKindHost } from "../src/maps/mapKindQueries";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
+import { describeWith, itWith, moduleOn } from "./helpers/slices";
+
+/** Every slice with a flag: tests of the modules' combined lists need them all (npm run test:slices builds fewer). */
+const EVERY = ["worldmaps", "space", "hexflower"];
 
 /**
  * The module registry (plan-code-modules P1) and the one map-type rule
@@ -33,9 +37,9 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps, space and hex-flower, in that order", () => {
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "hex-flower"]);
-    expect(registry.kindIds()).toEqual(["world", "space"]);
+  it("registers world, world-maps, space and hex-flower (those built), in that order", () => {
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "hex-flower"].filter(moduleOn));
+    expect(registry.kindIds()).toEqual(["world", "space"].filter(moduleOn));
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();
   });
@@ -46,7 +50,7 @@ describe("module registry", () => {
     expect(() => new ModuleRegistry([bare("a", { kind: k }), bare("b", { kind: k })])).toThrow(/twice/);
   });
 
-  it("resolves a map type by id or alias, any case", () => {
+  itWith("space", "resolves a map type by id or alias, any case", () => {
     expect(registry.kindId("space")).toBe("space");
     expect(registry.kindId(" Planet ")).toBe("space");
     expect(registry.kindId("WORLD")).toBe("world");
@@ -61,7 +65,7 @@ describe("module registry", () => {
     expect(new ModuleRegistry([]).fallbackKind()).toBeUndefined();
   });
 
-  it("derives the core's lists from the modules", () => {
+  itWith("space", "derives the core's lists from the modules", () => {
     expect(MAP_KINDS.map((k) => k.id)).toEqual(registry.kindIds());
     for (const t of registry.terrainTypes()) expect(TERRAIN_TYPES.some((x) => x.id === t.id && x.kind === t.kind && x.group === t.group)).toBe(true);
     expect(PALETTE_PRESETS.map((p) => p.name)).toEqual(registry.palettes().map((p) => p.name));
@@ -72,13 +76,13 @@ describe("module registry", () => {
     expect(Object.keys(ICON_PACK_LABELS)).toEqual(["terrain", "places", "space", "custom"]);
   });
 
-  it("a module's terrain types say its map type; the core's land and water types don't", () => {
+  itWith("space", "a module's terrain types say its map type; the core's land and water types don't", () => {
     expect(registry.moduleTypeKind("star")).toBe("space");
     expect(registry.moduleTypeKind("forest")).toBeUndefined();
     expect(registry.moduleTypeKind(undefined)).toBeUndefined();
   });
 
-  it("knows which map types bring engine table roles", () => {
+  itWith("space", "knows which map types bring engine table roles", () => {
     expect(registry.kindsWithTableRoles()).toEqual(["space"]);
   });
 
@@ -91,7 +95,7 @@ describe("module registry", () => {
     expect(worldOnly.kindId("planet")).toBeUndefined();
   });
 
-  it("Space alone powers Hexmaker (CM4): its own palettes, a planet surface on shared types", () => {
+  itWith("space", "Space alone powers Hexmaker (CM4): its own palettes, a planet surface on shared types", () => {
     const spaceOnly = new ModuleRegistry(MODULES.filter((m) => m.id === "space"));
     expect(spaceOnly.kindIds()).toEqual(["space"]);
     expect(spaceOnly.fallbackKind()).toBe("space");
@@ -99,7 +103,7 @@ describe("module registry", () => {
   });
 });
 
-describe("palette map types", () => {
+describeWith("space", "palette map types", () => {
   it("infers from a module's terrain types only", () => {
     expect(inferredKind(SPACE_SECTOR_TERRAINS)).toBe("space");
     expect(inferredKind(DEFAULT_TERRAIN_PALETTE)).toBeUndefined();
@@ -126,13 +130,13 @@ describe("one map-type rule (CM3): the nearest type up the map tree", () => {
   const system = P(SPACE_SYSTEM_TERRAINS, "space");
   const expanded = P(DEFAULT_TERRAIN_PALETTE, "world");
 
-  it("the map's own palette decides when it says a type", () => {
+  itWith("space", "the map's own palette decides when it says a type", () => {
     expect(kindForChain([system])).toBe("space");
     expect(kindForChain([expanded, system])).toBe("world");
     expect(kindForChain([P(SPACE_SECTOR_TERRAINS), expanded])).toBe("space");
   });
 
-  it("a palette of only shared types says nothing: the parent decides", () => {
+  itWith("space", "a palette of only shared types says nothing: the parent decides", () => {
     expect(kindForChain([planetLand, system])).toBe("space");
     expect(kindForChain([planetLand])).toBeUndefined();
     expect(kindForChain([P([{ name: "red" } as { type?: string }]), planetLand, expanded])).toBe("world");
@@ -148,12 +152,12 @@ describe("one map-type rule (CM3): the nearest type up the map tree", () => {
     expect([...contextKindsOf([edge])]).toEqual(["world"]);
   });
 
-  it("context is every palette's type along the chain", () => {
+  itWith("space", "context is every palette's type along the chain", () => {
     expect([...contextKindsOf([planetLand, system])].sort()).toEqual(["space", "world"]);
     expect([...contextKindsOf([undefined, expanded])]).toEqual(["world"]);
   });
 
-  it("the plugin asks the same rule through the map tree", () => {
+  itWith("space", "the plugin asks the same rule through the map tree", () => {
     const maps: Record<string, { paletteName: string; parent?: string }> = {
       sector: { paletteName: "Space - Sector" },
       surface: { paletteName: "Expanded", parent: "sector" },
@@ -182,7 +186,7 @@ describe("one map-type rule (CM3): the nearest type up the map tree", () => {
 });
 
 describe("generators, engines and table roles through modules (P3)", () => {
-  it("every table role rolls on an engine of its own module", () => {
+  itWith("space", "every table role rolls on an engine of its own module", () => {
     for (const m of MODULES) {
       const engines = new Set((m.engines ?? []).map((e) => e.id));
       for (const r of m.tableRoles ?? []) expect({ role: r.id, ok: engines.has(r.engine) }).toEqual({ role: r.id, ok: true });
@@ -190,27 +194,29 @@ describe("generators, engines and table roles through modules (P3)", () => {
     expect(registry.engines().map((e) => e.id)).toEqual(["procedural:star-scatter", "procedural:orbits"]);
   });
 
-  it("the modules' built-in generators keep the list order", async () => {
+  it("the modules' built-in generators keep the list order (those of the modules built)", async () => {
     const { moduleGenerators, MODULE_RUNTIMES } = await import("../src/modules/runtime");
     expect(MODULE_RUNTIMES.map((r) => r.id)).toEqual(MODULES.map((m) => m.id));
     const plugin = { settings: { hexOrientation: "flat" } } as never;
     const gens = moduleGenerators(plugin, { toPaths: () => ({ paths: [], missing: [] }), procGrid: (g) => ({ ...g, orientation: "flat" }) });
-    expect(gens.map((g) => g.id)).toEqual([
-      "procedural:hex-flower",
-      "procedural:star-scatter", "procedural:orbits", "procedural:region-detail",
-      "procedural:overland", "procedural:world-biomes", "procedural:planet-surface",
-    ]);
+    // Each generator, with the module that brings it.
+    const order: [string, string][] = [
+      ["procedural:hex-flower", "hex-flower"],
+      ["procedural:star-scatter", "space"], ["procedural:orbits", "space"], ["procedural:region-detail", "world"],
+      ["procedural:overland", "world"], ["procedural:world-biomes", "world-maps"], ["procedural:planet-surface", "space"],
+    ];
+    expect(gens.map((g) => g.id)).toEqual(order.filter(([, m]) => moduleOn(m)).map(([id]) => id));
     // Each generator is tagged with a map type a module provides (Hex flower: none, it fits any map, on every scale).
     for (const g of gens) if (!g.everyScale) expect(registry.kindIds()).toContain(g.mapKind);
   });
 
-  it("first-map generators and background terrains come from the map types", () => {
+  itWith("space", "first-map generators and background terrains come from the map types", () => {
     expect(registry.kindInfo("world")?.firstGenerators).toEqual(["procedural:overland"]);
     expect(registry.kindInfo("space")?.firstGenerators).toEqual(["procedural:star-scatter"]);
     expect(registry.kindInfo("space")?.baseTerrainTypes).toEqual(["void"]);
   });
 
-  it("path roles and When keys come from the modules", async () => {
+  itWith(EVERY, "path roles and When keys come from the modules", async () => {
     const { conditionKeys, parseWhen, formatWhen } = await import("../src/random-tables/tableConditions");
     expect(registry.pathRoles()).toEqual({ routes: "Path type for routes", orbits: "Path type for orbits" });
     expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "from", "type", "terrain"]);
@@ -220,7 +226,7 @@ describe("generators, engines and table roles through modules (P3)", () => {
 });
 
 describe("stores, settings, commands and one-time upgrades through modules (P4)", () => {
-  it("Space brings the World types store, folder setting, two commands and its seeding", async () => {
+  itWith(EVERY, "Space brings the World types store, folder setting, two commands and its seeding", async () => {
     const { MODULE_RUNTIMES, moduleCommands, moduleFolderSettings } = await import("../src/modules/runtime");
     const space = MODULE_RUNTIMES.find((r) => r.id === "space")!;
     expect(moduleCommands().map((c) => [c.command.id, c.kind ?? null])).toEqual([
@@ -250,7 +256,7 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
     for (const d of moduleFolderSettings()) expect(PLACEMENT[d.id]).toBeDefined();
   });
 
-  it("onEnabled runs only for the map types just turned on, in module order", async () => {
+  itWith("space", "onEnabled runs only for the map types just turned on, in module order", async () => {
     const { runOnEnabled } = await import("../src/modules/runtime");
     const calls: string[] = [];
     const plugin = {
@@ -263,7 +269,7 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
     expect(calls).toEqual(["world types", "tables space"]);
   });
 
-  it("the one-time terrain type refinement comes from the modules", async () => {
+  itWith("space", "the one-time terrain type refinement comes from the modules", async () => {
     const { refinedTerrainType } = await import("../src/terrainTypes");
     expect(refinedTerrainType({ name: "moon", type: "world" })).toBe("moon");
     expect(refinedTerrainType({ name: "moon", type: "desert" })).toBeUndefined();

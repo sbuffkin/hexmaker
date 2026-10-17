@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { declineModuleOffer, moduleOfferFor, moduleOfferText, resetModuleOffers } from "../src/maps/moduleOffer";
 import { readSurface, readSource, ownerFile } from "./helpers/source";
+import { itWith } from "./helpers/slices";
 
 /**
  * Owner call CM6: a map whose module is off still loads; opening it on
@@ -18,7 +19,7 @@ const kindFor = (m: string) => kinds[m];
 describe("CM6: the offer itself", () => {
   beforeEach(() => resetModuleOffers());
 
-  it("offers the map's module when it's off", () => {
+  itWith("space", "offers the map's module when it's off", () => {
     expect(moduleOfferFor("kerrigan", kindFor, { mapKinds: ["world"] })).toEqual({ kind: "space", label: "Space" });
     expect(moduleOfferFor("gullmouth", kindFor, { mapKinds: ["space"] })).toEqual({ kind: "world", label: "World" });
   });
@@ -30,7 +31,7 @@ describe("CM6: the offer itself", () => {
     expect(moduleOfferFor("odd", kindFor, { mapKinds: ["world"] })).toBeUndefined();
   });
 
-  it("'Not now' holds for the session, per module", () => {
+  itWith("space", "'Not now' holds for the session, per module", () => {
     declineModuleOffer("space");
     expect(moduleOfferFor("kerrigan", kindFor, { mapKinds: ["world"] })).toBeUndefined();
     expect(moduleOfferFor("gullmouth", kindFor, { mapKinds: ["space"] })).toBeDefined();
