@@ -112,16 +112,26 @@ describe("the party controls (HF3)", () => {
 		const { root, el } = fakeRoot();
 		const calls: [string, string, number][] = [];
 		const item: UndoItem = { kind: "map-field", mapName: "m", field: "hexFlowerAt", before: undefined, after: ["W: 3"] };
-		const plugin = {};
+		const map = { gridSize: { cols: 5, rows: 5 }, gridOffset: { x: 0, y: 0 } };
+		const plugin = { getMap: (n: string) => (n === "m" ? map : undefined) };
 		setExplore(plugin as never, {
 			exploreMap: (m: string) => (explored && m === "m" ? {} : undefined),
-			reveal: async (m: string, hex: string, rings: number) => { calls.push([m, hex, rings]); return [item]; },
+			reveal: async (m: string, hex: string, rings: number) => {
+				calls.push([m, hex, rings]);
+				// Revealing 3 rings from the middle grows the map (HF4).
+				if (rings === 3) { map.gridOffset = { x: -4, y: -4 }; map.gridSize = { cols: 13, rows: 13 }; }
+				return [item];
+			},
 		} as never);
 		const pushed: [UndoItem, string][] = [];
+		const still: unknown[] = [];
 		let renders = 0;
-		const host = { controlsEl: () => el, pushUndo: (it: UndoItem, m: string) => pushed.push([it, m]), renderGrid: () => { renders++; } };
+		const host = {
+			controlsEl: () => el, pushUndo: (it: UndoItem, m: string) => pushed.push([it, m]), renderGrid: () => { renders++; },
+			keepViewStill: (before: unknown, after: unknown) => still.push([before, after]),
+		};
 		const party = { map: "m", hex: "2_2", token: "world/tokens/Party.md", title: "Party" };
-		return { root, plugin, host, party, calls, pushed, item, renders: () => renders };
+		return { root, plugin, host, party, calls, pushed, item, still, renders: () => renders };
 	}
 
 	it("on an explored map: the party's name and Reveal 1 · 2 · 3; a click reveals that far as one undo", async () => {
@@ -137,6 +147,24 @@ describe("the party controls (HF3)", () => {
 		expect(s.calls).toEqual([["m", "2_2", 2]]);
 		expect(s.pushed).toEqual([[s.item, "m"]]);
 		expect(s.renders()).toBe(1);
+		// The map didn't grow: the view isn't moved.
+		expect(s.still).toEqual([]);
+	});
+
+	it("a Reveal that grew the map redraws and keeps the view still (HF4)", async () => {
+		const s = setup(true);
+		drawPartyControls(s.plugin as never, s.host, s.party);
+		const reveal = s.root.find(PARTY_CONTROLS_CLS)!.all((e) => e.attrs["data-control"] === REVEAL_CONTROL_ID)[0];
+		reveal.buttons()[2].fire("click");
+		await new Promise((r) => setTimeout(r, 0));
+		expect(s.renders()).toBe(1);
+		expect(s.still).toEqual([[{ x: 0, y: 0, cols: 5, rows: 5 }, { x: -4, y: -4, cols: 13, rows: 13 }]]);
+	});
+
+	it("a party step that grew the map keeps the view still too", () => {
+		const layer = readFileSync("src/hex-map/view/tokenLayer.ts", "utf8");
+		expect(layer).toMatch(/const gridBefore = gridBoxOf\(this\.host\.getActiveMap\(\)\);\s*const filled = await runPartyEntered/);
+		expect(layer).toMatch(/if \(!sameGrid\(gridBefore, gridAfter\)\) this\.host\.keepViewStill\(gridBefore, gridAfter\);/);
 	});
 
 	it("drawn again, it replaces itself; no party or no explored map: nothing", () => {
