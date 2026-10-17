@@ -41,7 +41,7 @@ The interactive map. DOM: `contentEl` (`.duckmage-hex-map-container`) → `.duck
 | `mapShell` | shortcuts, top bar, side panels, workspace/store listeners |
 | `pathOverlay`, `areaOverlay` + `areaShapes`, `gridLabels`, `neighbourShadow` | overlays (read-then-write) |
 | `backgroundCalibration` + `calibrationDrag` | background image layer and grid calibration |
-| `undoController` + `undoGroup` | strokes → `plugin.undoBook` (one queue per map per work mode) |
+| `undoController` + `undoGroup` | strokes → `plugin.undoBook` (one queue per map per work mode); `grid` entries (a map grown from code, `hex-map/gridChange.ts`) shrink back only while their band is blank, then `gridResize` keeps the view still |
 | `tokenLayer`, `hexContextMenu`, `hexSwap`, `gridEdgeButtons`, `workModeButton` | tokens and party travel, right-click menus, swap tool, +/− edges, Play/Build/God |
 
 Public: `centerOnHex(x, y)`, `activeMapName`, `renderGrid(...)`. The path tool is `hex-map/pathTool.ts`.

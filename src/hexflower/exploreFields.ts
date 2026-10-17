@@ -4,6 +4,7 @@
  *   explore-with: ["[[Weather]] -> play log, every step", "[[Wilds]] -> terrain"]
  *   hex-flower-at: ["Wilds: 10"]
  *   explore-reveal: entered
+ *   explore-grow: off        (only when the map shouldn't grow at its edge; HF4)
  *
  * One plain key each (src/maps/mapNote.ts reads and writes them like the
  * core's, through the module's mapNoteFields). Pure data.
@@ -20,6 +21,8 @@ export interface ExploreFields {
   hexFlowerAt?: string[];
   /** "entered" (default) or "neighbours": which hexes a step fills. */
   exploreReveal?: string;
+  /** "off": the map doesn't grow as the party nears its edge (unset: it does). */
+  exploreGrow?: string;
 }
 
 export type ExploreMap = MapData & ExploreFields;
@@ -28,6 +31,7 @@ export const EXPLORE_FIELDS: readonly MapNoteField[] = [
   { field: "exploreWith", key: "explore-with", kind: "list" },
   { field: "hexFlowerAt", key: "hex-flower-at", kind: "list" },
   { field: "exploreReveal", key: "explore-reveal", kind: "str" },
+  { field: "exploreGrow", key: "explore-grow", kind: "str" },
 ];
 
 /** Is `map` explored by the party (it has at least one rule)? */

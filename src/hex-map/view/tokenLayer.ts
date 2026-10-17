@@ -29,6 +29,7 @@ import type { HexContextMenu } from "./hexContextMenu";
 import type { MapToolbar } from "./mapToolbar";
 import type { UndoController } from "./undoController";
 import { hexKey, hexPair } from "../../hexKey";
+import { gridBoxOf, sameGrid, type GridBox } from "../../maps/gridGrowth";
 
 export interface TokenLayerHost {
   activeMapName(): string;
@@ -51,6 +52,8 @@ export interface TokenLayerHost {
   onHexClick(x: number, y: number, e?: MouseEvent): Promise<void>;
   centerOnHex(x: number, y: number): void;
   renderGrid(): void;
+  /** After the grid went from `before` to `after` and was redrawn: keep the view still (gridResize). */
+  keepViewStill(before: GridBox, after: GridBox): void;
 }
 
 export class TokenLayer {
@@ -127,6 +130,7 @@ export class TokenLayer {
       controlsEl: () => this.host.controlsEl(),
       pushUndo: (item, map) => this.host.undos.pushUndo(item, map),
       renderGrid: () => this.host.renderGrid(),
+      keepViewStill: (before, after) => this.host.keepViewStill(before, after),
     }, party ? { map: party.map, hex: party.hex, token: party.filePath, title: party.title } : undefined);
   }
 
@@ -279,7 +283,8 @@ export class TokenLayer {
   /**
    * Move the party one step to `hex` (clicked or dragged) and mark both
    * hexes visited; one undo with the visited marks and what modules filled
-   * (P2: undo means it didn't happen). The step goes in the play log (P1).
+   * (P2: undo means it didn't happen). In Play, the step goes in the play
+   * log (P1); moving the party by hand in Build or God isn't a step of the game.
    */
   async moveParty(party: TokenEntry, hex: string, dragged = false): Promise<void> {
     if (!guardWrite(party.map, "token")) return;
@@ -290,14 +295,18 @@ export class TokenLayer {
     const visitedAfter = this.host.getActiveMap().visited;
     if (!dragged) this.updateTokenLayer();
     const moved = setTokenHex(this.app, party.filePath, hex, party.map);
+    // The map may grow as the party nears its edge (HF4).
+    const gridBefore = gridBoxOf(this.host.getActiveMap());
     const filled = await runPartyEntered(this.plugin, step);
+    const gridAfter = gridBoxOf(this.host.getActiveMap());
     const token: UndoItem = { kind: "token", path: party.filePath, before: { hex: step.from, map: party.map }, after: { hex, map: party.map } };
     const visited: UndoItem[] = visitedAfter === visitedBefore ? [] : [{ kind: "map-field", mapName: party.map, field: "visited", before: visitedBefore, after: visitedAfter }];
     const items = [token, ...visited, ...filled];
     this.host.undos.pushUndo(items.length > 1 ? { kind: "group", items } : token, party.map);
-    void onPartyMoved(this.plugin, step);
+    if (this.host.undos.currentWorkMode() === "play") void onPartyMoved(this.plugin, step);
     await moved;
     if (filled.length) this.host.renderGrid();
+    if (!sameGrid(gridBefore, gridAfter)) this.host.keepViewStill(gridBefore, gridAfter);
   }
 
   /** Mark hexes of the open map visited (or not), saved in its map note. */

@@ -379,9 +379,7 @@ export class HexMapView extends ItemView {
     this.workMode = new WorkModeButton({
       ...view,
       contentEl: this.contentEl,
-      undos: this.undos,
-      nav: this.nav,
-      toolbar: this.toolbar,
+      undos: this.undos, nav: this.nav, toolbar: this.toolbar, tokens: this.tokens,
     });
     this.shell = new MapShell({
       ...view,
@@ -399,7 +397,7 @@ export class HexMapView extends ItemView {
       pathLayer: this.pathLayer,
       labels: this.labels,
       grid: this.grid,
-      undo: () => this.undo(),
+      undo: async () => { await this.undo(); },
       redo: () => this.redo(),
       navigateUp: () => this.navigateUp(),
       navigateBack: () => this.navigateBack(),
@@ -434,11 +432,9 @@ export class HexMapView extends ItemView {
       modeAllows: (action: ModeAction) => this.modeAllows(action),
       exitCurrentMode: () => this.exitCurrentMode(),
       centerOnHex: (x: number, y: number, keepHexWidth?: number) => this.centerOnHex(x, y, keepHexWidth),
-      renderGrid: (
-        terrainOverrides?: Map<string, string | null>,
-        iconOverrides?: Map<string, string | null>,
-        gmIconsOverrides?: Map<string, string[]>,
-      ) => this.renderGrid(terrainOverrides, iconOverrides, gmIconsOverrides),
+      renderGrid: (...a: Parameters<HexMapView["renderGrid"]>) => this.renderGrid(...a),
+      // The grid changed size from code (a map that grows, its undo): keep the view still.
+      keepViewStill: (...a: Parameters<GridEdgeButtons["keepViewStill"]>) => this.edges.keepViewStill(...a),
     };
   }
 
@@ -1013,14 +1009,9 @@ export class HexMapView extends ItemView {
     };
   }
 
-  /** Undo the last action done on this map in its current mode (WM6). */
-  private async undo(): Promise<void> {
-    await this.undos.undo();
-  }
-
-  private async redo(): Promise<void> {
-    await this.undos.redo();
-  }
+  /** Undo the last action on this map in its current mode (WM6); with `match`, only when it's that one. */
+  async undo(match?: Parameters<UndoController["undo"]>[0]): Promise<boolean> { return this.undos.undo(match); }
+  private async redo(): Promise<void> { await this.undos.redo(); }
 
   /** Wait (briefly) until every queued terrain write has landed in the map store. */
   private async terrainWritesSettled(): Promise<void> {

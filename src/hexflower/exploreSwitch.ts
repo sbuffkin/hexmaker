@@ -62,5 +62,6 @@ export async function disableExploring(plugin: HexmakerPlugin, mapName: string):
   delete map.exploreWith;
   delete map.hexFlowerAt;
   delete map.exploreReveal;
+  delete map.exploreGrow;
   await plugin.saveSettings();
 }

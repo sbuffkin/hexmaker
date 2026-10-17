@@ -3,9 +3,10 @@
  * Reveal button, Roll this hex), so the map draws them with a small bounce
  * (owner HF3, 2026-10-16). Whoever fills a hex marks it here; the grid
  * renderer tags the marked hexes it draws (`duckmage-hex-reveal`, with the
- * ring number for a short stagger) for a moment after, so a render that
- * lands a little later still shows it. The CSS turns the bounce off under
- * prefers-reduced-motion.
+ * ring number for a short stagger). Marks are drawn once: the next render
+ * takes them (a later redraw, an undo, doesn't bounce them again), and only
+ * within a moment of being marked. Only hexes that have terrain bounce. The
+ * CSS turns the bounce off under prefers-reduced-motion.
  *
  * Pure: no Obsidian imports.
  */
@@ -24,16 +25,13 @@ export function markRevealed(map: string, hexes: Iterable<string> | ReadonlyMap<
   for (const [hex, ring] of entries) m.set(hex, { at: now, ring });
 }
 
-/** The hexes of map `map` to draw bouncing now (hex → ring); old marks are dropped. */
+/** The hexes of map `map` to draw bouncing now (hex → ring), taken: each is drawn once; old marks are dropped. */
 export function revealedNow(map: string, now = Date.now()): Map<string, number> {
   const out = new Map<string, number>();
   const m = marks.get(map);
   if (!m) return out;
-  for (const [hex, v] of m) {
-    if (now - v.at > REVEAL_BOUNCE_MS) m.delete(hex);
-    else out.set(hex, v.ring);
-  }
-  if (!m.size) marks.delete(map);
+  for (const [hex, v] of m) if (now - v.at <= REVEAL_BOUNCE_MS) out.set(hex, v.ring);
+  marks.delete(map);
   return out;
 }
 

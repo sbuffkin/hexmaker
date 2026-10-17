@@ -109,6 +109,13 @@ describe("work mode policy", () => {
 		for (const a of play) expect(allows("play", a)).toBe(true);
 	});
 
+	it("an explored map grows (blank hexes only) as the party nears its edge, in every mode like discovering (HF4)", () => {
+		expect(ACTION_POLICY["grow-while-exploring"].modes).toEqual(["play", "build", "god"]);
+		expect(ACTION_POLICY["grow-while-exploring"].modes).toEqual(ACTION_POLICY.discover.modes);
+		// Growing by hand stays Build's.
+		expect(allows("play", "grow-map")).toBe(false);
+	});
+
 	it("Play locks map data: painting, paths, links to maps, size, properties, new maps from it", () => {
 		const locked: ModeAction[] = ["paint-terrain", "paint-icon", "paint-region-area", "edit-path", "link-map", "grow-map", "shrink-map", "new-child-map", "map-properties", "place-biome", "reshape", "swap-hexes", "delete-map"];
 		for (const a of locked) expect(allows("play", a)).toBe(false);

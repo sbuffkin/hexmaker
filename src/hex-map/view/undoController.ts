@@ -3,7 +3,7 @@
  * being painted, committing them to this map's queue for its work mode
  * (plugin.undoBook, WM6), and preparing / applying every entry kind
  * (terrain, icon, faction, region, subhex, swap, path, calibrate, cells,
- * projection, token, group, map-field). An entry whose target changed since
+ * projection, token, group, map-field, grid, note-section). An entry whose target changed since
  * is skipped part by part, so it never reverts the newer change.
  */
 import type HexmakerPlugin from "../../HexmakerPlugin";
@@ -19,6 +19,9 @@ import type { BackgroundCalibration } from "./backgroundCalibration";
 import type { HexWrites } from "./hexWrites";
 import { applyGroup, applyMapField, prepareGroup, prepareMapField } from "./undoGroup";
 import { hexKey } from "../../hexKey";
+import { applyGridUndo, prepareGrid } from "../gridChange";
+import { applyNoteSection, prepareNoteSection } from "../noteUndo";
+import { gridBoxOf, type GridBox } from "../../maps/gridGrowth";
 
 export interface UndoHost {
   plugin: HexmakerPlugin;
@@ -37,6 +40,8 @@ export interface UndoHost {
   applyPathSnapshot(mapName: string, paths: MapPath[]): Promise<void>;
   applyTokenSnap(path: string, snap: TokenSnap | null): Promise<void>;
   renderGrid(): void;
+  /** After the grid went from `before` to `after` and was redrawn: keep the view still. */
+  keepViewStill(before: GridBox, after: GridBox): void;
   updateModeBar(): void;
   updateGmIcons(): void;
   updatePathOverlay(): void;
@@ -132,9 +137,18 @@ export class UndoController {
     return workModeOf(this.host.plugin.getMap(this.host.activeMapName()));
   }
 
-  /** Undo the last action done on this map in its current mode (WM6). */
-  async undo(): Promise<void> {
-    await this.undoStep("undo");
+  /**
+   * Undo the last action done on this map in its current mode (WM6).
+   * `match`: only when that last action is the one it picks (a notice's
+   * Undo for its own step); false when it isn't (nothing is undone).
+   */
+  async undo(match?: (item: UndoItem) => boolean): Promise<boolean> {
+    if (match) {
+      const top = this.host.plugin.undoBook.peek(this.host.activeMapName(), this.currentWorkMode(), "undo");
+      if (!top || !match(top)) return false;
+    }
+    await this.undoStep("undo", !!match);
+    return true;
   }
 
   async redo(): Promise<void> {
@@ -146,13 +160,13 @@ export class UndoController {
    * target changed since (in another mode, or by hand) is skipped part by
    * part, so it never reverts the newer change (prepareUndo).
    */
-  private async undoStep(dir: UndoDirection): Promise<void> {
+  private async undoStep(dir: UndoDirection, onlyTop = false): Promise<void> {
     if (this.undoBusy) return;
     this.undoBusy = true;
     try {
       // Reads below compare against what's stored: let queued writes land.
       await this.terrainWritesSettled();
-      const item = await this.host.plugin.undoBook.step(this.host.activeMapName(), this.currentWorkMode(), dir, (it, d) => this.prepareUndo(it, d));
+      const item = await this.host.plugin.undoBook.step(this.host.activeMapName(), this.currentWorkMode(), dir, (it, d) => this.prepareUndo(it, d), onlyTop);
       if (item) await this.applyUndo(item, dir);
     } finally {
       this.undoBusy = false;
@@ -225,6 +239,8 @@ export class UndoController {
       }
       case "group": return prepareGroup(item, dir, (it, d) => this.prepareUndo(it, d));
       case "map-field": return prepareMapField(this.host.plugin, item, dir);
+      case "grid": return prepareGrid(this.host.plugin, item, dir);
+      case "note-section": return prepareNoteSection(this.host.plugin.app, item, dir);
     }
   }
 
@@ -275,6 +291,16 @@ export class UndoController {
       applyMapField(this.host.plugin, item, dir);
       // A map setting the grid shows (the visited marks): redraw it.
       if (item.field === "visited") this.host.renderGrid();
+    } else if (item.kind === "note-section") {
+      await applyNoteSection(this.host.plugin.app, item, dir);
+    } else if (item.kind === "grid") {
+      const map = this.host.plugin.getMap(item.mapName);
+      if (!map) return;
+      const before = gridBoxOf(map);
+      if (applyGridUndo(this.host.plugin, item, dir) && item.mapName === this.host.activeMapName()) {
+        this.host.renderGrid();
+        this.host.keepViewStill(before, gridBoxOf(map));
+      }
     }
     else {
       await this.host.applyTokenSnap(item.path, dir === "undo" ? item.before : item.after);

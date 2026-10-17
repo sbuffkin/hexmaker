@@ -2,8 +2,9 @@
  * Map properties → Hex flower (plan-hex-flower; a map setting, owner HF8):
  * on any map, a switch to explore it with a hex flower (exploreSwitch.ts).
  * On a map the party explores: its rules (one per line, top to bottom),
- * what a step reveals (the hex, or 1–3 rings around it), filling every
- * blank hex now, and turning it off.
+ * what a step reveals (the hex, or 1–3 rings around it), whether the map
+ * grows as the party nears an edge (HF4), filling every blank hex now, and
+ * turning it off.
  */
 
 import { Notice } from "obsidian";
@@ -11,6 +12,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import type { MapPropertiesSection } from "../modules/types";
 import { isExploreMap } from "./exploreFields";
+import { growOff } from "./exploreGrow";
 import { formatReveal, parseFlowerAt, parseReveal, parseRule } from "./explore";
 import { exploreOf, flowerStoreOf } from "./context";
 import { disableExploring, enableExploring } from "./exploreSwitch";
@@ -54,6 +56,18 @@ export const EXPLORE_PROPS: MapPropertiesSection = {
     });
     row.createSpan({ cls: "duckmage-map-origin-desc", text: "The party's Reveal button fills more at any time." });
 
+    const growRow = box.createEl("label", { cls: "duckmage-region-row" });
+    const grow = growRow.createEl("input", { type: "checkbox", attr: { "aria-label": GROW_LABEL } });
+    grow.checked = !growOff(map);
+    growRow.createSpan({ text: GROW_LABEL });
+    if (map.world) growRow.createSpan({ cls: "duckmage-map-origin-desc", text: "Not on a map with neighbouring regions." });
+    grow.addEventListener("change", () => {
+      // Written only when off: an explored map grows by default.
+      if (grow.checked) delete map.exploreGrow;
+      else map.exploreGrow = "off";
+      void plugin.saveSettings();
+    });
+
     const at = [...parseFlowerAt(map.hexFlowerAt)];
     if (at.length) box.createDiv({ cls: "duckmage-map-origin-desc", text: `Where the walks stand: ${at.map(([f, c]) => `${f} ${c}`).join(", ")}` });
 
@@ -76,6 +90,8 @@ export const EXPLORE_PROPS: MapPropertiesSection = {
     });
   },
 };
+
+export const GROW_LABEL = "Grow the map as the party nears an edge";
 
 /** The map-note values the "Each step fills" choice offers (0 = the hex entered). */
 const REVEAL_CHOICES: [string, string][] = [

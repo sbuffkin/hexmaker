@@ -11,6 +11,8 @@ import { modulePartyControls } from "../../modules/runtime";
 import type { PartyAt } from "../../modules/types";
 import { logError } from "../../log";
 import type { UndoItem } from "../undoItems";
+import { gridBoxOf, sameGrid, type GridBox } from "../../maps/gridGrowth";
+import { workModeOf } from "../../workMode";
 
 export const PARTY_CONTROLS_CLS = "duckmage-party-controls";
 
@@ -19,6 +21,8 @@ export interface PartyControlsHost {
   /** Record what a button wrote as one undo on map `map`. */
   pushUndo(item: UndoItem, map: string): void;
   renderGrid(): void;
+  /** After the grid went from `before` to `after` and was redrawn: keep the view still. */
+  keepViewStill(before: GridBox, after: GridBox): void;
 }
 
 /** Draw (or clear) the party controls for `party` (undefined: none selected). */
@@ -39,11 +43,18 @@ export function drawPartyControls(plugin: HexmakerPlugin, host: PartyControlsHos
       const btn = group.createEl("button", { text: b.label, attr: { title: b.title, "aria-label": `${c.label} ${b.label}` } });
       buttons.push(btn);
       btn.addEventListener("click", () => {
+        const map = plugin.getMap(party.map);
+        // The controls are Play's: a bar left over after a mode switch does nothing.
+        if (workModeOf(map) !== "play") return;
         buttons.forEach((x) => (x.disabled = true));
+        const before = map ? gridBoxOf(map) : undefined;
         void b.run()
           .then((undo) => {
             if (undo.length) host.pushUndo(undo.length === 1 ? undo[0] : { kind: "group", items: undo }, party.map);
             host.renderGrid();
+            // A Reveal near the edge grows the map (HF4): keep what's on screen still.
+            const after = map ? gridBoxOf(map) : undefined;
+            if (before && after && !sameGrid(before, after)) host.keepViewStill(before, after);
           })
           .catch((e) => logError(`party control ${c.id}`, e))
           .finally(() => buttons.forEach((x) => (x.disabled = false)));

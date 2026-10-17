@@ -55,6 +55,7 @@
 	"src/mapScales.ts",
 	"src/maps/calloutMemory.ts",
 	"src/maps/compass.ts",
+	"src/maps/gridGrowth.ts",
 	"src/maps/hexFrontmatter.ts",
 	"src/maps/hexProps.ts",
 	"src/maps/mapNames.ts",

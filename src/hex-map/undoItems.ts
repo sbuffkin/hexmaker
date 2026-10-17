@@ -9,6 +9,7 @@ import type { MapPath, TokenShape, TokenSize } from "../types";
 import type { HexData } from "../maps/mapNote";
 import type { CellEdit } from "../undoBook";
 import type { ProjectionUndo } from "../overworld/overworldPaths";
+import type { GridBox } from "../maps/gridGrowth";
 
 export type TerrainUndoEntry = {
   x: number;
@@ -93,5 +94,17 @@ export type UndoItem =
   | { kind: "token"; path: string; before: TokenSnap | null; after: TokenSnap | null }
   /** A map setting (a map-note key) changed: its value before and after (undefined: not set). */
   | { kind: "map-field"; mapName: string; field: string; before: unknown; after: unknown }
+  /**
+   * The map's grid grew (or shrank): its box before and after. Undoing a
+   * growth keeps the rows when any of their hexes has content since
+   * (hex-map/gridChange.ts).
+   */
+  | { kind: "grid"; mapName: string; before: GridBox; after: GridBox }
+  /**
+   * Text a step wrote into a section of a hex note (Features, Description…):
+   * the section's text before and after. Skipped (with a notice) when the
+   * section was edited since (hex-map/noteUndo.ts).
+   */
+  | { kind: "note-section"; path: string; section: string; before: string; after: string }
   /** Several entries undone and redone as one (a party step and what it filled). */
   | { kind: "group"; items: UndoItem[] };
