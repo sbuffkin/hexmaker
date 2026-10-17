@@ -9,6 +9,7 @@ import {
   CONFLICT_LABELS,
   loadPack,
   planImport,
+  readFolderPack,
   resolveSteps,
   type ConflictChoice,
   type ImportPlan,
@@ -18,9 +19,6 @@ import {
 } from "./packPlan";
 import { runImport, type ImportReport } from "./packIO";
 import { vaultPaletteFinder, vaultWriteHost, zipsInVault } from "./packVault";
-
-/** Most files a picked folder may hold (a wrong pick, like a whole vault, stops here). */
-const MAX_FOLDER_FILES = 5000;
 
 const CHOICES: ConflictChoice[] = ["both", "skip", "replace"];
 
@@ -87,10 +85,12 @@ export class PackImportModal extends HexmakerModal {
       const list = Array.from(dirInput.files ?? []);
       if (!list.length) return;
       const top = (list[0].webkitRelativePath || list[0].name).split("/")[0];
-      void this.load(top, async () => {
-        if (list.length > MAX_FOLDER_FILES) throw new Error(`that folder has ${list.length} files; a pack has its notes and a pack.md`);
-        return Promise.all(list.map(async (f): Promise<PackFile> => ({ path: f.webkitRelativePath || f.name, data: new Uint8Array(await f.arrayBuffer()) })));
-      });
+      // A wrong pick (a whole vault) or a folder over the pack limits stops here, before reading.
+      void this.load(top, async () => readFolderPack(list.map((f) => ({
+        path: f.webkitRelativePath || f.name,
+        size: f.size,
+        read: async () => new Uint8Array(await f.arrayBuffer()),
+      }))));
     });
     this.place("PackImport.pickFolder", dirBtn);
 

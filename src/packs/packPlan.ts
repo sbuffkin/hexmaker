@@ -9,6 +9,7 @@
 import { MANIFEST_FILE, inferManifest, parseManifest, type PackManifest } from "./packManifest";
 import { isSafePackPath, keepBothPath, rewriteFolderLinks, vaultPathOf, type PackKind } from "./packKinds";
 import { paletteKey, planPalettes, renamePaletteRefs, type FindPalette } from "./packPalettes";
+import { PACK_LIMITS, packSizeProblem, type PackLimits } from "./zip";
 
 /** A file of the pack (from a zip or a picked folder). */
 export interface PackFile {
@@ -54,6 +55,27 @@ export function loadPack(files: readonly PackFile[], known: readonly { id: strin
     return { manifest: parseManifest(decodeText(manifestFile.data) ?? "", name), inferred: false, files: rest };
   }
   return { manifest: inferManifest(rest.map((f) => f.path), known, name), inferred: true, files: rest };
+}
+
+/** A file of a picked folder: its path in the folder, its size, and a way to read it. */
+export interface FolderFile {
+  path: string;
+  size: number;
+  read(): Promise<Uint8Array>;
+}
+
+/**
+ * The pack files of a picked folder. Only notes (.md) are read: nothing
+ * else is ever imported, so a folder with big pictures or videos in it
+ * costs nothing. Throws when the folder's notes are over `limits` (the
+ * same ones a .zip is held to), before reading any.
+ */
+export async function readFolderPack(list: readonly FolderFile[], limits: PackLimits = PACK_LIMITS): Promise<PackFile[]> {
+  if (list.length > limits.files) throw new Error(`that folder has ${list.length} files; a pack has its notes and a pack.md`);
+  const isNote = (f: FolderFile) => f.path.toLowerCase().endsWith(".md");
+  const problem = packSizeProblem(list.filter(isNote).map((f) => ({ path: f.path, size: f.size })), limits);
+  if (problem) throw new Error(problem);
+  return Promise.all(list.map(async (f): Promise<PackFile> => ({ path: f.path, data: isNote(f) ? await f.read() : new Uint8Array(0) })));
 }
 
 /** UTF-8 text, or null when the bytes aren't readable text. A leading BOM is kept. */

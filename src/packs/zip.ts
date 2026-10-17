@@ -140,8 +140,84 @@ export async function writeZip(entries: readonly ZipEntry[], when: Date = new Da
   return out;
 }
 
-/** Read the files of a .zip (folder entries are left out). Throws on a damaged or unsupported zip. */
-export async function readZip(bytes: Uint8Array): Promise<ZipEntry[]> {
+/**
+ * How much a pack may unpack to. A zip declares each file's size, but a
+ * hostile one can lie, so both the declared and the actually inflated bytes
+ * are held to these (a "zip bomb" of a few MB can otherwise inflate to
+ * gigabytes and take the app down). Packs are notes: these are far above
+ * any real one.
+ */
+export const PACK_LIMITS = {
+  /** Most bytes one file may unpack to. */
+  fileBytes: 10 * 1024 * 1024,
+  /** Most bytes all files together may unpack to. */
+  totalBytes: 100 * 1024 * 1024,
+  /** Most files (entries) a pack may hold. */
+  files: 5000,
+} as const;
+
+export type PackLimits = { fileBytes: number; totalBytes: number; files: number };
+
+const MB = (n: number): string => `${Math.round(n / (1024 * 1024))} MB`;
+
+/** Why a pack of these files is over `limits`, or null when it fits. Sizes are unpacked bytes. */
+export function packSizeProblem(files: readonly { path: string; size: number }[], limits: PackLimits = PACK_LIMITS): string | null {
+  if (files.length > limits.files) return `it has ${files.length} files; a pack may have at most ${limits.files}`;
+  let total = 0;
+  for (const f of files) {
+    if (f.size > limits.fileBytes) return `"${f.path}" is too big (over ${MB(limits.fileBytes)})`;
+    total += f.size;
+    if (total > limits.totalBytes) return `it unpacks to more than ${MB(limits.totalBytes)}`;
+  }
+  return null;
+}
+
+/** Inflate `raw`, stopping as soon as it passes `max` bytes (null then). */
+async function inflateAtMost(raw: Uint8Array, max: number): Promise<Uint8Array | null> {
+  const reader = new Blob([bufferOf(raw)]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    let step: ReadableStreamReadResult<Uint8Array>;
+    try {
+      step = await reader.read();
+    } catch {
+      throw new Error("damaged zip (can't unpack)");
+    }
+    if (step.done) break;
+    size += step.value.length;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(step.value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.length;
+  }
+  return out;
+}
+
+interface CentralEntry {
+  path: string;
+  flags: number;
+  method: number;
+  crc: number;
+  csize: number;
+  usize: number;
+  localAt: number;
+}
+
+/**
+ * Read the files of a .zip (folder entries are left out). Throws on a
+ * damaged or unsupported zip, and on one over `limits` (checked on the
+ * sizes it declares before anything is unpacked, and again on the bytes
+ * each file really unpacks to).
+ */
+export async function readZip(bytes: Uint8Array, limits: PackLimits = PACK_LIMITS): Promise<ZipEntry[]> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let endAt = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
@@ -154,34 +230,55 @@ export async function readZip(bytes: Uint8Array): Promise<ZipEntry[]> {
   const count = view.getUint16(endAt + 10, true);
   const cdOffset = view.getUint32(endAt + 16, true);
   if (count === 0xffff || cdOffset === 0xffffffff) throw new Error("zip64 files aren't supported");
+  if (count > limits.files) throw new Error(`it has ${count} files; a pack may have at most ${limits.files}`);
+  if (cdOffset > endAt) throw new Error("damaged zip (central directory)");
+
+  // 1. The central directory, every offset checked against the buffer.
   const dec = new TextDecoder();
-  const out: ZipEntry[] = [];
+  const entries: CentralEntry[] = [];
   let p = cdOffset;
   for (let n = 0; n < count; n++) {
-    if (p + 46 > bytes.length || view.getUint32(p, true) !== CENTRAL_SIG) throw new Error("damaged zip (central directory)");
-    const flags = view.getUint16(p + 8, true);
-    const method = view.getUint16(p + 10, true);
-    const crc = view.getUint32(p + 16, true);
-    const csize = view.getUint32(p + 20, true);
-    const usize = view.getUint32(p + 24, true);
+    if (p + 46 > endAt || view.getUint32(p, true) !== CENTRAL_SIG) throw new Error("damaged zip (central directory)");
     const nameLen = view.getUint16(p + 28, true);
     const extraLen = view.getUint16(p + 30, true);
     const commentLen = view.getUint16(p + 32, true);
-    const localAt = view.getUint32(p + 42, true);
+    if (p + 46 + nameLen > endAt) throw new Error("damaged zip (central directory)");
     const path = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen)).replace(/\\/g, "/");
+    entries.push({
+      path,
+      flags: view.getUint16(p + 8, true),
+      method: view.getUint16(p + 10, true),
+      crc: view.getUint32(p + 16, true),
+      csize: view.getUint32(p + 20, true),
+      usize: view.getUint32(p + 24, true),
+      localAt: view.getUint32(p + 42, true),
+    });
     p += 46 + nameLen + extraLen + commentLen;
-    if (path.endsWith("/")) continue;
-    if (flags & 0x1) throw new Error(`"${path}" is encrypted`);
-    if (view.getUint32(localAt, true) !== LOCAL_SIG) throw new Error(`damaged zip at "${path}"`);
+  }
+  const files = entries.filter((e) => !e.path.endsWith("/"));
+
+  // 2. What the files say they unpack to, before unpacking any.
+  const declared = packSizeProblem(files.map((e) => ({ path: e.path, size: e.usize })), limits);
+  if (declared) throw new Error(declared);
+
+  // 3. Unpack, holding each file to its declared size.
+  const out: ZipEntry[] = [];
+  for (const e of files) {
+    const { path, localAt, csize, usize } = e;
+    if (e.flags & 0x1) throw new Error(`"${path}" is encrypted`);
+    if (localAt + 30 > bytes.length || view.getUint32(localAt, true) !== LOCAL_SIG) throw new Error(`damaged zip at "${path}"`);
     const dataAt = localAt + 30 + view.getUint16(localAt + 26, true) + view.getUint16(localAt + 28, true);
+    if (dataAt + csize > bytes.length) throw new Error(`damaged zip at "${path}"`);
     const raw = bytes.subarray(dataAt, dataAt + csize);
     let data: Uint8Array;
-    if (method === 0) data = raw.slice();
-    else if (method === 8) {
+    if (e.method === 0) data = raw.slice();
+    else if (e.method === 8) {
       if (!canStream("decompress")) throw new Error("this app can't unpack compressed zips");
-      data = await pipe(raw, new DecompressionStream("deflate-raw"));
+      const inflated = await inflateAtMost(raw, usize);
+      if (!inflated) throw new Error(`"${path}" unpacks to more than it says (${usize} bytes)`);
+      data = inflated;
     } else throw new Error(`"${path}" uses an unsupported compression`);
-    if (data.length !== usize || crc32(data) !== crc) throw new Error(`"${path}" is damaged (checksum)`);
+    if (data.length !== usize || crc32(data) !== e.crc) throw new Error(`"${path}" is damaged (checksum)`);
     out.push({ path, data });
   }
   return out;
