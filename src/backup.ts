@@ -4,6 +4,8 @@
  * backups folder; never overwrites an earlier backup.
  */
 
+import { isSafeNotePath } from "./vault/safePaths";
+
 /** The bits of Obsidian's DataAdapter a backup needs. */
 export interface BackupAdapter {
   exists(path: string): Promise<boolean>;
@@ -74,13 +76,18 @@ export async function readJsonBackup(adapter: BackupReadAdapter, path: string): 
   }
 }
 
-/** The notes a backup's JSON holds (path → text), or null when it isn't a notes backup. */
+/**
+ * The notes a backup's JSON holds (path → text), or null when it isn't a
+ * notes backup. Only safe vault-relative `.md` paths are kept (no `..`,
+ * hidden, absolute or drive parts): restoring writes to these paths, so a
+ * tampered backup file can't aim a write anywhere else.
+ */
 export function backupNotes(data: unknown): Record<string, string> | null {
   if (!data || typeof data !== "object") return null;
   const notes = (data as { notes?: unknown }).notes;
   if (!notes || typeof notes !== "object" || Array.isArray(notes)) return null;
   const out: Record<string, string> = {};
-  for (const [p, t] of Object.entries(notes as Record<string, unknown>)) if (typeof t === "string") out[p] = t;
+  for (const [p, t] of Object.entries(notes as Record<string, unknown>)) if (typeof t === "string" && isSafeNotePath(p)) out[p] = t;
   return Object.keys(out).length ? out : null;
 }
 
