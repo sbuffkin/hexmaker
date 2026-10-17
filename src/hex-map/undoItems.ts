@@ -100,5 +100,11 @@ export type UndoItem =
    * (hex-map/gridChange.ts).
    */
   | { kind: "grid"; mapName: string; before: GridBox; after: GridBox }
+  /**
+   * Text a step wrote into a section of a hex note (Features, Description…):
+   * the section's text before and after. Skipped (with a notice) when the
+   * section was edited since (hex-map/noteUndo.ts).
+   */
+  | { kind: "note-section"; path: string; section: string; before: string; after: string }
   /** Several entries undone and redone as one (a party step and what it filled). */
   | { kind: "group"; items: UndoItem[] };

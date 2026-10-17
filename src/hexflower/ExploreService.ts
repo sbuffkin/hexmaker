@@ -12,12 +12,14 @@
  *   day's log note.
  * - `hex-flower-at` (where each flower's walk stands) to the map note.
  *
- * Undo: the map cells and `hex-flower-at` changes are returned as undo
+ * Undo: the map cells, the text written into hex notes (owner HF7: one
+ * undo = the whole step) and `hex-flower-at` changes are returned as undo
  * entries, which the map view groups with the token's move (one Ctrl+Z);
- * the party's Reveal button (reveal) is one undo the same way.
+ * the party's Reveal button (reveal) is one undo the same way. The notice's
+ * Undo is that same Ctrl+Z (the map view's queue), never a second path.
  * The map grows as the party nears its edge (exploreGrow.ts), as a "grid"
  * entry first in the same group.
- * Notes and the play log are a journal: they stay (the notice says so).
+ * The play log is a journal: its lines stay (the notice says so).
  */
 
 import { Notice, TFile } from "obsidian";
@@ -29,7 +31,6 @@ import { hashSeed } from "../arrival/arrival";
 import { parseVisited } from "../play/partyTravel";
 import { addToPlayLog } from "../play/playLogWriter";
 import { addLinkToSection, appendSectionText, sectionText } from "../sections";
-import { setTokenHex } from "../frontmatter";
 import { resolveRoll, type ResolveContext, type TableLookup } from "../random-tables/resolve";
 import { flowerStoreOf } from "./context";
 import { logError } from "../log";
@@ -37,7 +38,8 @@ import { exploreOrder, ringOrder } from "./exploreOrder";
 import { markRevealed } from "../hex-map/revealBounce";
 import { isExploreMap, type ExploreMap } from "./exploreFields";
 import { makeRoom } from "./exploreGrow";
-import { applyGridUndo } from "../hex-map/gridChange";
+import { VIEW_TYPE_HEX_MAP } from "../constants";
+import { applyNoteSection, prepareNoteSection } from "../hex-map/noteUndo";
 import {
   describeMove,
   describeWrites,
@@ -196,8 +198,12 @@ export class ExploreService {
         let file = this.plugin.app.vault.getAbstractFileByPath(path);
         if (!(file instanceof TFile)) file = await this.plugin.createHexNote(x, y, map.name);
         if (!(file instanceof TFile)) continue;
+        // The section's text before and after: part of the step's undo (HF7).
+        const before = sectionText(await this.plugin.app.vault.read(file), section);
         if (w.kind === "note") await addLinkToSection(this.plugin.app, file.path, section, `[[${w.value}]]`);
         else await this.plugin.app.vault.process(file, (c) => appendSectionText(c, section, w.value));
+        const after = sectionText(await this.plugin.app.vault.read(file), section);
+        if (after !== before) undo.push({ kind: "note-section", path: file.path, section, before, after });
       } else if (w.target.kind === "log") {
         await addToPlayLog(this.plugin, map.name, x, y, w.kind === "note" ? `[[${w.value}]]` : w.value);
       }
@@ -345,7 +351,7 @@ export class ExploreService {
     const last = this.last.get(mapName);
     const map = this.exploreMap(mapName);
     if (!last || !map) return;
-    const back = this.takeBack(last.undo);
+    const back = await this.takeBack(last.undo);
     const r = await this.fill(mapName, last.hex, last.from, last.reroll + 1);
     if (!r) return;
     this.plugin.pushUndo(mapName, { kind: "group", items: [...back, ...r.undo] });
@@ -354,39 +360,48 @@ export class ExploreService {
   }
 
   /**
-   * Undo cell edits now (Reroll, and the notice's Undo), for the parts still
+   * Undo a fill's cell edits and note text now (Reroll), for the parts still
    * as they were left. Returns the entries that redo them (for undo).
    */
-  private takeBack(items: readonly UndoItem[]): UndoItem[] {
+  private async takeBack(items: readonly UndoItem[]): Promise<UndoItem[]> {
     const out: UndoItem[] = [];
     const store = this.plugin.mapStore;
-    for (const it of items) {
+    for (const it of [...items].reverse()) {
+      if (it.kind === "note-section") {
+        if (!await prepareNoteSection(this.plugin.app, it, "undo", (t) => this.show(t, []))) continue;
+        await applyNoteSection(this.plugin.app, it, "undo");
+        out.push({ ...it, before: it.after, after: it.before });
+      }
       if (it.kind !== "cells") continue;
       const done = it.edits.filter((e) => Object.entries(e.fields).every(([f, [, a]]) => sameValue((store.get(e.map, e.key) as Record<string, unknown> | undefined)?.[f], a)));
       for (const e of done) store.set(e.map, e.key, cellPatch(e, "undo"));
       // Reverse each edit: the take-back's own undo puts them back.
       if (done.length) out.push({ kind: "cells", edits: done.map((e) => ({ ...e, fields: Object.fromEntries(Object.entries(e.fields).map(([f, [b, a]]) => [f, [a, b]])) })) });
     }
-    return out;
+    return out.reverse();
   }
 
-  /** The notice's Undo: the step's cells and positions back, the rows it grew (still blank), and the party. */
-  private async undoStep(mapName: string, undo: readonly UndoItem[], step?: PartyStep): Promise<void> {
-    this.takeBack(undo);
-    for (const it of undo) if (it.kind === "grid") applyGridUndo(this.plugin, it, "undo");
-    const map = this.exploreMap(mapName);
-    for (const it of undo) if (it.kind === "map-field" && map && sameValue(map.hexFlowerAt, it.after)) map.hexFlowerAt = it.before as string[] | undefined;
-    void this.plugin.saveSettings();
-    if (step?.token) await setTokenHex(this.plugin.app, step.token, step.from, step.map);
-    if (this.last.get(mapName)?.undo === undo) this.last.delete(mapName);
-    this.plugin.refreshHexMap();
+  /**
+   * The notice's Undo: the map view's own undo of this step (Ctrl+Z), so
+   * the step, its visited marks, fills, note text and rows go together and
+   * the entry leaves the queue. Only while the step is the latest action
+   * on the map; otherwise the user is told to use the map's Undo.
+   */
+  private async undoStep(mapName: string, undo: readonly UndoItem[]): Promise<void> {
+    const marker = undo[0];
+    const views = this.plugin.app.workspace?.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => l.view as unknown as Partial<StepUndoView>) ?? [];
+    const view = views.find((v) => v.activeMapName === mapName && typeof v.undo === "function");
+    const done = view?.undo ? await view.undo((top) => holds(top, marker)) : false;
+    if (!done) { this.show("This step isn't the latest change on the map any more: use the map's Undo.", []); return; }
+    const last = this.last.get(mapName);
+    if (last && last.undo.every((u) => undo.includes(u))) this.last.delete(mapName);
   }
 
   private notify(mapName: string, r: { undo: UndoItem[]; lines: string[]; filled: boolean }, step?: PartyStep): void {
     if (!r.lines.length) return;
     const actions: { label: string; run: () => void }[] = [];
     if (r.filled) actions.push({ label: "Reroll", run: () => void this.reroll(mapName) });
-    if (r.undo.length) actions.push({ label: "Undo", run: () => void this.undoStep(mapName, r.undo, step) });
+    if (r.undo.length) actions.push({ label: "Undo", run: () => void this.undoStep(mapName, r.undo) });
     this.show(r.lines.join("\n"), actions);
   }
 
@@ -429,7 +444,19 @@ export class ExploreService {
   }
 }
 
-/** The step's notice: what was filled, then Reroll · Undo links (notes and the play log stay). */
+/** The map view's undo, as the notice's Undo uses it (HexMapView.undo). */
+interface StepUndoView {
+  activeMapName: string;
+  undo(match: (item: UndoItem) => boolean): Promise<boolean>;
+}
+
+/** Is `marker` the entry `item`, or part of it (a step's group)? */
+function holds(item: UndoItem, marker: UndoItem | undefined): boolean {
+  if (!marker) return false;
+  return item === marker || (item.kind === "group" && item.items.some((i) => holds(i, marker)));
+}
+
+/** The step's notice: what was filled, then Reroll · Undo links (the play log keeps its lines). */
 function showNotice(text: string, actions: { label: string; run: () => void }[]): void {
   const frag = createFragment();
   frag.appendText(text);
@@ -438,6 +465,6 @@ function showNotice(text: string, actions: { label: string; run: () => void }[])
     const link = frag.createEl("a", { text: a.label, href: "#" });
     link.addEventListener("click", (e) => { e.preventDefault(); notice.hide(); a.run(); });
   });
-  if (actions.some((a) => a.label === "Undo")) frag.appendText(" (notes and the play log stay)");
+  if (actions.some((a) => a.label === "Undo")) frag.appendText(" (the play log keeps its lines)");
   const notice = new Notice(frag, 10000);
 }

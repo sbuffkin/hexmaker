@@ -64,6 +64,13 @@ export class UndoBook<T> {
     return (this.queues.get(this.id(map, mode))?.redo.length ?? 0) > 0;
   }
 
+  /** The entry the next undo (or redo) would take, without taking it. */
+  peek(map: string, mode: WorkMode, dir: UndoDirection): T | undefined {
+    const q = this.queues.get(this.id(map, mode));
+    const from = dir === "undo" ? q?.undo : q?.redo;
+    return from?.[from.length - 1];
+  }
+
   /** Sizes, for tooltips and tests. */
   size(map: string, mode: WorkMode): { undo: number; redo: number } {
     const q = this.queues.get(this.id(map, mode));
@@ -74,9 +81,10 @@ export class UndoBook<T> {
    * Take the next entry to undo (or redo) from `map`'s `mode` queue. Entries
    * `prepare` rejects are dropped (popped) and the next one is tried. The
    * returned entry (as prepared) moves to the other stack; the caller
-   * applies it. Null when nothing is left.
+   * applies it. Null when nothing is left. `onlyTop`: try the latest entry
+   * only (a rejected one is still dropped), never an older one.
    */
-  async step(map: string, mode: WorkMode, dir: UndoDirection, prepare: UndoPrepare<T>): Promise<T | null> {
+  async step(map: string, mode: WorkMode, dir: UndoDirection, prepare: UndoPrepare<T>, onlyTop = false): Promise<T | null> {
     const q = this.queues.get(this.id(map, mode));
     if (!q) return null;
     const from = dir === "undo" ? q.undo : q.redo;
@@ -85,7 +93,10 @@ export class UndoBook<T> {
       while (from.length) {
         const item = from.pop()!;
         const ready = await prepare(item, dir);
-        if (ready === null) continue; // its target changed since: dropped
+        if (ready === null) {
+          if (onlyTop) return null;
+          continue; // its target changed since: dropped
+        }
         to.push(ready);
         if (to.length > this.depth) to.shift();
         return ready;
