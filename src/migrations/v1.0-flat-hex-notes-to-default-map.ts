@@ -9,6 +9,7 @@
 import { TFile, TFolder, type App } from "obsidian";
 import { normalizeFolder } from "../utils";
 import type { MigrationInfo } from "./types";
+import { ensureFolder } from "../vault/ensureFolder";
 
 export const info: MigrationInfo = {
   id: "v1.0-flat-hex-notes-to-default-map",
@@ -34,13 +35,7 @@ export async function migrate(app: App, hexFolderSetting: string): Promise<numbe
   if (candidates.length === 0) return 0;
 
   const defaultFolder = `${hexFolder}/default`;
-  if (!app.vault.getAbstractFileByPath(defaultFolder)) {
-    try {
-      await app.vault.createFolder(defaultFolder);
-    } catch {
-      /* exists */
-    }
-  }
+  await ensureFolder(app.vault, defaultFolder);
   let moved = 0;
   for (const file of candidates) {
     const newPath = `${defaultFolder}/${file.name}`;

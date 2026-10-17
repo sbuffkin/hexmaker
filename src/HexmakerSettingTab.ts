@@ -17,6 +17,7 @@ import { noteTemplateEntries } from "./noteTemplates";
 import { renderLabeledSlider } from "./ui/sliders";
 import { DEBUG_CONFIRM_TEXT, debugModeConfirmed, isDebugMode, markDebugModeConfirmed, onDebugModeChange, setDebugMode } from "./ui/debugMode";
 import { hexPropsSettingItem } from "./settings/hexPropsSetting";
+import { ensureFolder } from "./vault/ensureFolder";
 
 /** The settings tab's surface id (placement ids are `Settings.<control>`). */
 const SURFACE = "Settings";
@@ -635,11 +636,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     for (const [key, path] of defaults) {
       if (!this.plugin.settings[key]) {
         (this.plugin.settings as unknown as Record<string, unknown>)[key] = path;
-        try {
-          if (!this.app.vault.getAbstractFileByPath(path)) await this.app.vault.createFolder(path);
-        } catch {
-          /* folder already exists */
-        }
+        await ensureFolder(this.app.vault, path);
       }
     }
     await this.plugin.saveSettings();
@@ -651,13 +648,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       let totalCreated = 0;
       for (const map of this.plugin.settings.maps) {
         const mapFolder = `${hexF}/${map.name}`;
-        if (!this.app.vault.getAbstractFileByPath(mapFolder)) {
-          try {
-            await this.app.vault.createFolder(mapFolder);
-          } catch {
-            /* exists */
-          }
-        }
+        await ensureFolder(this.app.vault, mapFolder);
         const { cols, rows } = map.gridSize;
         const { x: ox, y: oy } = map.gridOffset;
         const xs = Array.from({ length: cols }, (_, i) => ox + i);

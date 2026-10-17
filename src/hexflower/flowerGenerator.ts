@@ -23,6 +23,7 @@ import { exploreOrder } from "./exploreOrder";
 import { flowerStoreOf } from "./context";
 import type { ExploreMap } from "./exploreFields";
 import { hexKey, hexXY, neighbourKeys } from "../hexKey";
+import { ensureFolder } from "../vault/ensureFolder";
 
 export const HEX_FLOWER_GENERATOR_ID = "procedural:hex-flower";
 /** The Flower option's value for "New from this palette". */
@@ -143,7 +144,7 @@ async function afterCreate(plugin: HexmakerPlugin, made: ScaleMapMade): Promise<
 export async function addPartyToken(plugin: HexmakerPlugin, mapName: string, hex: string): Promise<void> {
   const vault = plugin.app.vault;
   const folder = `${normalizeFolder(plugin.settings.worldFolder) || "world"}/tokens`;
-  if (!vault.getAbstractFileByPath(folder)) { try { await vault.createFolder(folder); } catch { /* made meanwhile */ } }
+  await ensureFolder(vault, folder);
   let name = PARTY_TOKEN_NAME;
   for (let i = 2; vault.getAbstractFileByPath(`${folder}/${name}.md`); i++) name = `${PARTY_TOKEN_NAME} ${i}`;
   const file = await vault.create(`${folder}/${name}.md`, "");

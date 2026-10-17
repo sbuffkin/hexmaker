@@ -7,6 +7,7 @@ import { normalizeFolder } from "../utils";
 import type { OverlayStyle } from "../frontmatter";
 import { addOverlayPatternControls, renderHexPreview } from "./overlayPatternControls";
 import { addPickerFilter, emptyState, filterText } from "../ui/pickers";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /**
  * A kind of painted area note (factions, areas): where its notes live, the
@@ -320,9 +321,7 @@ export class AreaNotePickerModal extends HexmakerModal {
     }
 
     // Ensure folder exists
-    if (!this.app.vault.getAbstractFileByPath(folder)) {
-      await this.app.vault.createFolder(folder);
-    }
+    await ensureFolder(this.app.vault, folder);
 
     const file = await this.app.vault.create(filePath, "");
     this.kind.afterCreate?.(this.plugin, name);

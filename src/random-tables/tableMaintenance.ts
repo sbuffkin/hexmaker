@@ -18,6 +18,7 @@ import { normalizeFolder } from "../utils";
 import { parseRandomTableWithReport, type TableIssue } from "./randomTable";
 import { tableNotes, type TableScope } from "./tableNotePaths";
 import { backupDirFor, migrateTables, type MigrationResult, type MigrationSurvey, surveyTableMigration } from "../migrations/v1.5-table-roll-ranges";
+import { ensureFolder } from "../vault/ensureFolder";
 
 export type { TableScope };
 export { migrateTables, surveyTableMigration, tableNotes, type MigrationResult, type MigrationSurvey };
@@ -100,7 +101,7 @@ export async function writeTableReport(app: App, scope: TableScope, text: string
   const existing = app.vault.getAbstractFileByPath(path);
   if (existing instanceof TFile) await app.vault.modify(existing, text);
   else {
-    if (scope.tablesFolder && !app.vault.getAbstractFileByPath(scope.tablesFolder)) await app.vault.createFolder(scope.tablesFolder);
+    if (scope.tablesFolder) await ensureFolder(app.vault, scope.tablesFolder);
     await app.vault.create(path, text);
   }
   return path;

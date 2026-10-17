@@ -3,6 +3,7 @@ import { Notice, normalizePath } from "obsidian";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { registry } from "./modules";
 import { rangeCellTexts } from "./random-tables/randomTable";
+import { ensureFolder } from "./vault/ensureFolder";
 
 let labelSeq = 0;
 
@@ -262,9 +263,7 @@ export async function importBinaryFileToVault(
 	destFolder: string,
 ): Promise<string> {
 	const folder = normalizeFolder(destFolder);
-	if (folder && !plugin.app.vault.getAbstractFileByPath(folder)) {
-		await plugin.app.vault.createFolder(folder);
-	}
+	if (folder) await ensureFolder(plugin.app.vault, folder);
 	const safeName = file.name.replace(/[\\/:*?"<>|]/g, "_");
 	const dot = safeName.lastIndexOf(".");
 	const stem = dot > 0 ? safeName.slice(0, dot) : safeName;

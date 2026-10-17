@@ -3,6 +3,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder, makeTableTemplate } from "../utils";
 import { buildTree, renderFolderTree, type TreeNode } from "../random-tables/FolderTree";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /**
  * Unified table/file picker modal.
@@ -159,9 +160,7 @@ export class FolderTreePickerModal extends HexmakerModal {
     btn.disabled = true;
     btn.setText("Creating…");
     try {
-      if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-        await this.app.vault.createFolder(folder);
-      }
+      if (folder) await ensureFolder(this.app.vault, folder);
       const rollerLink = this.plugin.buildRollerLink();
       const content = makeTableTemplate(
         this.plugin.settings.defaultTableDice,

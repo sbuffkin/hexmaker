@@ -51,6 +51,7 @@ import { PlacedMenu } from "../ui/placedMenu";
 import { DETAIL_REFRESH_MS, LIST_REFRESH_MS, ListSignatures, listSignature, touchesList, type ListFolders } from "./listRefresh";
 import { tableTitle } from "../encounterLinks";
 import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
+import { ensureFolder } from "../vault/ensureFolder";
 
 /** Collapse key (and key prefix) of the tree's "Made by the map" section. */
 const MAP_MADE_KEY = "map-made:";
@@ -349,9 +350,7 @@ export class RandomTableView extends ItemView {
       let srcFolder = "";
       if (!(file instanceof TFile)) {
         try {
-          if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-            await this.app.vault.createFolder(folder);
-          }
+          if (folder) await ensureFolder(this.app.vault, folder);
           const fromValue = fromFolderInput.value.trim();
           let srcFile: TFile | null = null;
           if (fromValue) {
@@ -900,13 +899,7 @@ export class RandomTableView extends ItemView {
       new Notice("Configure a workflows folder in settings first.");
       return;
     }
-    if (!this.app.vault.getAbstractFileByPath(wfFolder)) {
-      try {
-        await this.app.vault.createFolder(wfFolder);
-      } catch {
-        /* may exist */
-      }
-    }
+    await ensureFolder(this.app.vault, wfFolder);
 
     // Find unique name
     let baseName = "New Workflow";
