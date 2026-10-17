@@ -8,6 +8,7 @@
 
 import { MANIFEST_FILE, inferManifest, parseManifest, type PackManifest } from "./packManifest";
 import { isSafePackPath, keepBothPath, rewriteFolderLinks, vaultPathOf, type PackKind } from "./packKinds";
+import { paletteKey, planPalettes, renamePaletteRefs, type FindPalette } from "./packPalettes";
 
 /** A file of the pack (from a zip or a picked folder). */
 export interface PackFile {
@@ -76,6 +77,10 @@ export interface PlanItem {
   text: string;
   /** new: nothing there; same: an identical note is there; conflict: a different note is there. */
   status: PlanStatus;
+  /** A palette this vault already has, the same (K2): the vault's note. Left as is. */
+  alreadyHave?: string;
+  /** A palette whose name this vault has, different (K2): imported under `target`'s name instead of this one. */
+  renamedFrom?: string;
 }
 
 export interface ImportPlan {
@@ -93,6 +98,8 @@ export async function planImport(
   pack: LoadedPack,
   kinds: readonly PackKind[],
   read: (path: string) => Promise<string | null>,
+  /** The vault's palette of a name (packPalettes.ts); without it palettes are planned like any note. */
+  findPalette?: FindPalette,
 ): Promise<ImportPlan> {
   const items: PlanItem[] = [];
   const skipped: SkippedFile[] = [];
@@ -127,9 +134,45 @@ export async function planImport(
     const status: PlanStatus = existing === null ? "new" : existing === text ? "same" : "conflict";
     items.push({ packPath: f.path, kindId: where.kind.id, target: where.path, text, status });
   }
+  if (findPalette) await settlePalettes(items, kinds, read, findPalette);
   const present = new Set(pack.files.map((f) => f.path));
   const missing = pack.manifest.kinds.flatMap((k) => k.files).filter((p) => !present.has(p));
   return { items, skipped, missing };
+}
+
+/**
+ * Palettes whose name this vault has (K2): the same one is left out
+ * ("already have"); a different one is imported as "Name 2", and the
+ * pack's notes that name it follow.
+ */
+async function settlePalettes(items: PlanItem[], kinds: readonly PackKind[], read: (path: string) => Promise<string | null>, find: FindPalette): Promise<void> {
+  const palettes = items.filter((i) => i.kindId === "palettes" && paletteKey(i.text) !== null);
+  if (!palettes.length) return;
+  const plans = await planPalettes(palettes, find, async (p) => (await read(p)) !== null);
+  const renames = new Map<string, string>();
+  palettes.forEach((item, n) => {
+    const plan = plans[n];
+    if (plan.kind === "same") {
+      item.status = "same";
+      item.alreadyHave = plan.existing;
+    } else if (plan.kind === "renamed") {
+      item.renamedFrom = plan.from;
+      item.target = plan.target;
+      item.status = "new";
+      renames.set(plan.from.toLowerCase(), plan.to);
+    }
+  });
+  if (!renames.size) return;
+  const folder = kinds.find((k) => k.id === "palettes")?.folder ?? "";
+  for (const item of items) {
+    if (item.alreadyHave) continue;
+    const text = renamePaletteRefs(item.text, renames, folder);
+    if (text === item.text) continue;
+    item.text = text;
+    if (item.renamedFrom) continue;
+    const existing = await read(item.target);
+    item.status = existing === null ? "new" : existing === text ? "same" : "conflict";
+  }
 }
 
 /** What to do with a note that's already here. */

@@ -17,7 +17,7 @@ import {
   type PlanItem,
 } from "./packPlan";
 import { runImport, type ImportReport } from "./packIO";
-import { vaultWriteHost, zipsInVault } from "./packVault";
+import { vaultPaletteFinder, vaultWriteHost, zipsInVault } from "./packVault";
 
 /** Most files a picked folder may hold (a wrong pick, like a whole vault, stops here). */
 const MAX_FOLDER_FILES = 5000;
@@ -29,6 +29,8 @@ const CHOICES: ConflictChoice[] = ["both", "skip", "replace"];
  * content pack", see what goes where in this vault's folders, choose per
  * note what happens to one that's already here (Skip, Keep both as
  * "Name 2", or Replace after a backup), then import. Never deletes.
+ * A palette whose name this vault has is never a choice (K2): the same
+ * one is left out ("already have"), a changed one comes in as "Name 2".
  */
 export class PackImportModal extends HexmakerModal {
   protected surfaceId = "PackImport";
@@ -116,7 +118,7 @@ export class PackImportModal extends HexmakerModal {
       this.pack = pack;
       this.source = name;
       this.choices.clear();
-      this.plan = await planImport(pack, this.kinds, async (p) => (host.exists(p) ? host.read(p).catch(() => null) : null));
+      this.plan = await planImport(pack, this.kinds, async (p) => (host.exists(p) ? host.read(p).catch(() => null) : null), vaultPaletteFinder(this.plugin));
       this.renderPreview();
     } catch (e) {
       this.renderSource(`Couldn't read ${name}: ${e instanceof Error ? e.message : String(e)}`);
@@ -168,7 +170,9 @@ export class PackImportModal extends HexmakerModal {
         const rel = item.target.slice(kind.folder.length + 1).replace(/\.md$/i, "");
         filterText(r, rel);
         r.createSpan({ cls: "duckmage-pack-item-name", text: rel });
-        if (item.status === "new") r.createSpan({ cls: "duckmage-pack-tag", text: "new" });
+        if (item.renamedFrom) r.createSpan({ cls: "duckmage-pack-tag", text: `new name: yours called "${item.renamedFrom}" is different` });
+        else if (item.alreadyHave) r.createSpan({ cls: "duckmage-pack-tag", text: "already have" });
+        else if (item.status === "new") r.createSpan({ cls: "duckmage-pack-tag", text: "new" });
         else if (item.status === "same") r.createSpan({ cls: "duckmage-pack-tag", text: "same, left as is" });
         else {
           const sel = this.choiceSelect(r, this.choiceOf(item));
@@ -232,7 +236,7 @@ export class PackImportModal extends HexmakerModal {
 
   private renderReport(r: ImportReport): void {
     const el = this.clear();
-    const added = r.created.length + r.keptBoth.length;
+    const added = r.created.length + r.keptBoth.length + r.renamed.length;
     const summary = `Imported "${this.pack!.manifest.name}": ${added} added, ${r.replaced.length} replaced, ${r.skipped.length} left out${r.failed.length ? `, ${r.failed.length} failed` : ""}.`;
     new Notice(summary);
     el.createEl("p", { cls: "duckmage-wizard-text", text: summary });
@@ -246,6 +250,7 @@ export class PackImportModal extends HexmakerModal {
     section("Failed", r.failed.map((f) => `${f.path}: ${f.reason}`), true);
     section("Added", r.created);
     section("Kept both", r.keptBoth.map((k) => `${k.path} (yours stays at ${k.target})`));
+    section("Palettes added under a new name", r.renamed.map((k) => `${k.path} (yours called "${k.from}" is different)`));
     section("Replaced", r.replaced);
     section("Left out", r.skipped.map((s) => `${s.path}: ${s.reason}`));
     this.footer({ cancel: { text: "Done", onClick: () => this.close() } });

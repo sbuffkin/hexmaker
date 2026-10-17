@@ -77,6 +77,8 @@ export interface ImportReport {
   replaced: string[];
   /** Keep both: the pack note, written under a new name. */
   keptBoth: { target: string; path: string }[];
+  /** Palettes whose name this vault had, different (K2): written as "Name 2". */
+  renamed: { from: string; path: string }[];
   /** Left out: identical, chosen Skip, or unreadable (with why). */
   skipped: SkippedFile[];
   failed: SkippedFile[];
@@ -90,7 +92,7 @@ export interface ImportReport {
  * as skipped). One note failing doesn't stop the others.
  */
 export async function runImport(host: PackWriteHost, steps: readonly ImportStep[], label: string): Promise<ImportReport> {
-  const report: ImportReport = { created: [], replaced: [], keptBoth: [], skipped: [], failed: [] };
+  const report: ImportReport = { created: [], replaced: [], keptBoth: [], renamed: [], skipped: [], failed: [] };
   const replacing = steps.filter((s) => s.action === "replace" && host.exists(s.path));
   let canReplace = true;
   if (replacing.length) {
@@ -104,7 +106,8 @@ export async function runImport(host: PackWriteHost, steps: readonly ImportStep[
   }
   for (const s of steps) {
     if (s.action === "skip") {
-      report.skipped.push({ path: s.item.target, reason: s.item.status === "same" ? "already here, the same" : "already here, skipped" });
+      const reason = s.item.alreadyHave ? `already have this palette (${s.item.alreadyHave})` : s.item.status === "same" ? "already here, the same" : "already here, skipped";
+      report.skipped.push({ path: s.item.target, reason });
       continue;
     }
     try {
@@ -119,7 +122,8 @@ export async function runImport(host: PackWriteHost, steps: readonly ImportStep[
         report.replaced.push(s.path);
       } else {
         await host.create(s.path, s.item.text);
-        if (s.path === s.item.target) report.created.push(s.path);
+        if (s.item.renamedFrom && s.path === s.item.target) report.renamed.push({ from: s.item.renamedFrom, path: s.path });
+        else if (s.path === s.item.target) report.created.push(s.path);
         else report.keptBoth.push({ target: s.item.target, path: s.path });
       }
     } catch (e) {

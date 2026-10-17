@@ -12,6 +12,28 @@ import { writeBinaryToVault } from "../export/vaultWrite";
 import { ensureFolderPath } from "../vault/ensureFolder";
 import { PLUGIN_NAME } from "../ui/notify";
 import { buildPack, localDate, packFileName, type PackExportInput, type PackReadHost, type PackWriteHost } from "./packIO";
+import type { FindPalette } from "./packPalettes";
+import { buildPaletteNote, serializeSubmapDefaults } from "../palettes/paletteNote";
+import { setPathTypes } from "../palettes/pathTypeTable";
+
+/**
+ * This vault's palette of a name, any case (K2): its note, or (a palette
+ * not written to a note yet) the note it would be.
+ */
+export function vaultPaletteFinder(plugin: HexmakerPlugin): FindPalette {
+  return async (name) => {
+    const want = name.trim().toLowerCase();
+    const pal = plugin.settings.terrainPalettes.find((p) => p.name.trim().toLowerCase() === want);
+    if (!pal) return null;
+    const path = plugin.paletteStore?.notePathOf(pal.name) ?? `${pal.name}.md`;
+    const f = plugin.app.vault.getAbstractFileByPath(path);
+    if (f instanceof TFile) return { path, text: await plugin.app.vault.read(f) };
+    let text = buildPaletteNote(pal.terrains, pal.childPalette, pal.kind);
+    if (pal.pathTypes?.length) text = setPathTypes(text, pal.pathTypes);
+    if (pal.submapDefaults) text += `\n## Submap defaults\n${serializeSubmapDefaults(pal.submapDefaults)}\n`;
+    return { path, text };
+  };
+}
 
 /** Reads vault notes for an export. */
 export function vaultReadHost(app: App): PackReadHost {
