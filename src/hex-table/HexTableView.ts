@@ -930,7 +930,7 @@ export class HexTableView extends ItemView {
                 new LinkPickerModal(
                   this.app,
                   this.plugin,
-                  path,
+                  { x, y, mapName: region },
                   section,
                   sourceFolder,
                   () => void this.updateRow(path),

@@ -5,7 +5,7 @@
  * target ("Add to this hex") every roll made in the editor uses.
  */
 
-import { Notice, TFile } from "obsidian";
+import { TFile } from "obsidian";
 import { effectiveTerrainType } from "../../terrainTypes";
 import { workModeOf } from "../../workMode";
 import { normalizeFolder } from "../../utils";
@@ -166,19 +166,11 @@ export class TableSections extends EditorWritePart<TableSectionsHost> {
         })(),
       );
     const folder = contentFolder(this.plugin.settings, "tablesFolder");
+    // A new table (from the table template), then linked as a pick is.
     const create = (name: string) =>
       void (async () => {
-        const dir = normalizeFolder(folder);
-        const newPath = dir ? `${dir}/${name}.md` : `${name}.md`;
-        let file = this.app.vault.getAbstractFileByPath(newPath);
-        try {
-          if (dir && !this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
-          if (!(file instanceof TFile)) file = await this.app.vault.create(newPath, await this.plugin.newLinkedNoteContent("Encounters Table", name));
-        } catch (err) {
-          new Notice(`Could not create ${newPath}: ${String(err)}`);
-          return;
-        }
-        if (file instanceof TFile) use(file);
+        const file = await this.plugin.hexNotes.createLinkedNote("Encounters Table", folder, name, path);
+        if (file) use(file);
       })();
     const picker = new FileLinkSuggestModal(this.app, this.plugin, use, folder, ["md"], "link", {
       order: (files) => {

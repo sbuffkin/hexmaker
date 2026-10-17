@@ -562,9 +562,10 @@ describe("hex back-links are path-qualified (round 6 S2)", () => {
 	});
 
 	it("the hex editor and link picker pass an alias", () => {
+		// Both link through HexNotesService.linkNoteToHex, which passes it.
+		expect(readSurface("plugin")).toMatch(/addBacklinkToFile\([^)]*hexLinkAlias\(/);
 		for (const f of ["src/hex-map/HexEditorModal.ts", "src/hex-table/LinkPickerModal.ts"]) {
-			const src = readSource(f);
-			expect(src).toMatch(/addBacklinkToFile\([^)]*hexLinkAlias\(/);
+			expect(readSource(f)).toContain("this.plugin.hexNotes.linkNoteToHex(");
 		}
 	});
 
