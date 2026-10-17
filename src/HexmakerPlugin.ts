@@ -19,7 +19,7 @@ import type { BiomeStore } from "./overworld/BiomeStore";
 import { planKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled } from "./modules/runtime";
+import { createModuleStores, genPage, moduleCommands, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, moduleViews, runModuleLoad, runModuleUnload, runOnEnabled, runOnKindsEnabled } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
@@ -182,14 +182,9 @@ export default class HexmakerPlugin extends Plugin {
     this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
     this.registerView(VIEW_TYPE_PALETTE_EDITOR, (leaf) => new PaletteEditorView(leaf, this));
     this.registerView(VIEW_TYPE_GENERATOR, (leaf) => new GeneratorView(leaf, this));
-    this.registerView(
-      VIEW_TYPE_HEX_TABLE,
-      (leaf) => new HexTableView(leaf, this),
-    );
-    this.registerView(
-      VIEW_TYPE_RANDOM_TABLES,
-      (leaf) => new RandomTableView(leaf, this),
-    );
+    this.registerView(VIEW_TYPE_HEX_TABLE, (leaf) => new HexTableView(leaf, this));
+    this.registerView(VIEW_TYPE_RANDOM_TABLES, (leaf) => new RandomTableView(leaf, this));
+    for (const v of moduleViews()) this.registerView(v.type, (leaf) => v.create(leaf, this));
     // Ribbon icon, commands and the file menu (src/plugin/commands.ts).
     registerCommands(this);
     this.addSettingTab(new HexmakerSettingTab(this.app, this));
@@ -215,9 +210,11 @@ export default class HexmakerPlugin extends Plugin {
 
     // obsidian:// actions: tables, workflows, map and hex links (src/plugin/protocolHandlers.ts).
     registerProtocolHandlers(this);
+    await runModuleLoad(this);
   }
 
   onunload() {
+    runModuleUnload(this);
     closeNoticeBatch();
     this.pathPins.detach();
     void this.calloutMemory.save();
@@ -237,6 +234,8 @@ export default class HexmakerPlugin extends Plugin {
    * generator (the page says which biomes use it).
    */
   async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string; biome?: string } = {}): Promise<void> {
+    const page = genPage();
+    if (page) return page.open(this, select);
     if (select.mapName) generatorPageState.mapName = select.mapName;
     if (select.paletteName) generatorPageState.paletteName = select.paletteName;
     if (select.generatorPath) {

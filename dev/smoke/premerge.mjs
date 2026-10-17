@@ -3,14 +3,23 @@
  * `npm run premerge`: everything that must pass before merging into
  * feat/region-notes or deploying a build into the live vault (owner
  * decision WM5). Runs, in order, stopping at the first failure:
- *   build, lint, test type-check, unit tests, integration tests, the smoke vault matrix
- *   (on the build just made: --no-build).
- * Extra arguments go to the smoke suite (e.g. --only fresh,v155 --jobs 2).
+ *   build, lint, test type-check, unit tests, integration tests, the smoke
+ *   setups that exercise unreleased slices on a build with every slice
+ *   (--slices all, stamped last-pass.full.json), then the smoke vault matrix
+ *   on the release build just made (--no-build; last-pass.json).
+ * Extra arguments go to both smoke runs (e.g. --jobs 2); --only applies to
+ * the release matrix only.
  * Run it where npm works for this repo (WSL; see CLAUDE.md).
  */
 import { spawnSync } from "node:child_process";
+import { readSlices } from "../release/slices.mjs";
+import { SETUPS } from "./setups.mjs";
+import { unreleasedSetups } from "./lib/slices.mjs";
 
 const smokeArgs = process.argv.slice(2);
+// The full build's run takes the shared arguments, not the release matrix's --only.
+const sharedArgs = smokeArgs.filter((a, i) => a !== "--only" && smokeArgs[i - 1] !== "--only");
+const fullSetups = unreleasedSetups(SETUPS, readSlices());
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const steps = [
   ["build", npm, ["run", "build"]],
@@ -18,6 +27,9 @@ const steps = [
   ["test type-check", npm, ["run", "typecheck:tests"]],
   ["unit tests", npm, ["test"]],
   ["integration tests", npm, ["run", "test:integration"]],
+  ...(fullSetups.length
+    ? [["smoke, every slice (unreleased features)", process.execPath, ["dev/smoke/cli.mjs", "--slices", "all", "--stamp", "full", "--only", fullSetups.join(","), ...sharedArgs]]]
+    : []),
   ["smoke vault matrix", process.execPath, ["dev/smoke/cli.mjs", "--no-build", ...smokeArgs]],
 ];
 
@@ -37,4 +49,4 @@ for (const [name, cmd, args] of steps) {
     process.exit(1);
   }
 }
-banner([`PREMERGE PASSED in ${Math.round((Date.now() - t0) / 1000)} s`, "Stamp: dev/smoke/last-pass.json"]);
+banner([`PREMERGE PASSED in ${Math.round((Date.now() - t0) / 1000)} s`, `Stamp: dev/smoke/last-pass.json${fullSetups.length ? " (+ last-pass.full.json)" : ""}`]);

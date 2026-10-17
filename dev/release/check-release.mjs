@@ -3,21 +3,26 @@
  * npm run check:release — proves a slice built off leaves no trace in
  * main.js (plan-release-slicing §5.5, plan-code-modules P6).
  *
- * For each build checked (by default: every slice with a flag off on its
- * own, then all of them off; or `--off space` / `--off space,worldmaps`):
- *   1. build main.js into a temp folder with those slices off
- *      (esbuild.config.mjs production, HEXMAKER_SLICES_OFF);
- *   2. for each module of an off slice, look for what it owns
- *      (src/modules/<id>/index.ts `owns`): its command ids, its settings
- *      keys (as keys, not inside a placement id like "Settings.x"), its
- *      map-note keys and its own strings. Any hit fails, naming the slice
- *      and the text;
+ * The builds checked (each slice's "off" set includes the slices that
+ * require it, dev/release/slices.mjs offClosure):
+ *   - by default: every slice on but one (each in turn), the release set
+ *     (HEXMAKER_SLICES=released) and foundation alone (none);
+ *   - `--off space` / `--off space,worldmaps`: every slice on but those;
+ *   - `--slices <spec>`, or HEXMAKER_SLICES / _ON / _OFF in the environment:
+ *     that one build (the same switch as esbuild.config.mjs).
+ * For each:
+ *   1. build main.js into a temp folder (esbuild.config.mjs production);
+ *   2. for each module of a slice built off, look for what it owns
+ *      (src/modules/<id>/index.ts): its command ids, its settings keys (as
+ *      keys, not inside a placement id like "Settings.x"), its map-note
+ *      keys, its own strings, its placement ids and its work-mode ids.
+ *      Any hit fails, naming the slice and the text;
  *   3. the bundled help has no slice markers left;
  *   4. the release README the build wrote (dist/README.md beside main.js,
  *      README.md with the off slices' marked blocks removed) has no marker
  *      left, none of the off modules' own strings, and none of the text of
  *      the off slices' blocks in README.md.
- * A full build is checked too: it must contain every owned string, so the
+ * A full build is checked too: it must contain every owned name, so the
  * deny-list can't pass by accident (a renamed string would), and its
  * README every slice's block text.
  *
@@ -29,28 +34,39 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readSlices, releaseReadmePath, sliceBlockText } from "./slices.mjs";
+import { flaggedSlices, offClosure, readSlices, releaseReadmePath, resolveSlices, sliceBlockText, sliceSpecArg } from "./slices.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const args = process.argv.slice(2);
 const offArg = args.includes("--off") ? args[args.indexOf("--off") + 1] : undefined;
 
 const slices = readSlices();
-const flagged = Object.entries(slices).filter(([, s]) => s.define).map(([id]) => id);
+const flagged = flaggedSlices(slices);
 
-/** What each module owns, read from the source (tsx, every slice on). */
+/** The switch's env vars cleared: each build here sets exactly what it checks. */
+const NO_SWITCH = { HEXMAKER_SLICES: "", HEXMAKER_SLICES_ON: "", HEXMAKER_SLICES_OFF: "" };
+
+/**
+ * What each module owns, read from the source (every slice on). tsx runs
+ * through node (node_modules/.bin shims don't work where node_modules is
+ * a symlink, or on Windows without the .cmd).
+ */
 function readOwns() {
-	const tsx = join(ROOT, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
-	const out = execFileSync(tsx, ["--tsconfig", "./tsconfig.test.json", "--import", "./tests/register.mjs", "dev/release/owns.ts"], { cwd: ROOT, encoding: "utf8" });
+	const tsx = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+	const out = execFileSync(process.execPath, [tsx, "--tsconfig", "./tsconfig.test.json", "--import", "./tests/register.mjs", "dev/release/owns.ts"], {
+		cwd: ROOT,
+		encoding: "utf8",
+		env: { ...process.env, ...NO_SWITCH, HEXMAKER_SLICES: "all" },
+	});
 	return JSON.parse(out);
 }
 
-/** Build main.js (and the release README beside it) into `dir`; returns both. */
-function build(off, full, dir) {
+/** Build main.js (and the release README beside it) into `dir` with slice spec `spec`; returns both. */
+function build(spec, dir) {
 	const outfile = join(dir, "main.js");
-	execFileSync(process.execPath, ["esbuild.config.mjs", "production", ...(full ? ["--full"] : [])], {
+	execFileSync(process.execPath, ["esbuild.config.mjs", "production"], {
 		cwd: ROOT,
-		env: { ...process.env, HEXMAKER_SLICES_OFF: off.join(","), HEXMAKER_OUTFILE: outfile },
+		env: { ...process.env, ...NO_SWITCH, HEXMAKER_SLICES: spec, HEXMAKER_OUTFILE: outfile },
 		stdio: ["ignore", "inherit", "inherit"],
 	});
 	return { js: readFileSync(outfile, "utf8"), readme: readFileSync(releaseReadmePath(outfile), "utf8") };
@@ -78,6 +94,9 @@ function needles(mod) {
 		...o.settingsKeys.map((k) => ({ what: `settings key ${k}`, re: new RegExp(`(?<!"Settings\\.)\\b${escape(k)}\\b`) })),
 		...o.mapNoteKeys.map((k) => ({ what: `map-note key ${k}`, re: new RegExp(`["'\`]${escape(k)}["'\`]`) })),
 		...(o.strings ?? []).map((s) => ({ what: `string "${s}"`, re: new RegExp(inBundle(s)) })),
+		// Its own rows of the placement map and the work-mode tables (merged in only when it's built).
+		...(mod.placementIds ?? []).map((id) => ({ what: `placement id ${id}`, re: new RegExp(`["'\`]${escape(id)}["'\`]`) })),
+		...[...new Set(mod.modeActionIds ?? [])].filter((id) => !o.commands.includes(id)).map((id) => ({ what: `work-mode id ${id}`, re: new RegExp(`["'\`]${escape(id)}["'\`]`) })),
 	];
 }
 
@@ -88,7 +107,25 @@ for (const m of mods) {
 	if (!slices[m.slice].modules.includes(m.id)) throw new Error(`release-slices.json: slice "${m.slice}" doesn't list module ${m.id}`);
 }
 
-const runs = offArg ? [offArg.split(",").filter(Boolean)] : [...flagged.map((id) => [id]), ...(flagged.length > 1 ? [flagged] : [])];
+/** The builds to check: a label and the slice spec (the same grammar as HEXMAKER_SLICES). */
+const allBut = (ids) => {
+	const off = offClosure(ids, slices);
+	return { label: `every slice but ${off.join(" + ")}`, spec: ["all", ...off.map((id) => `-${id}`)].join(",") };
+};
+const asked = sliceSpecArg(args) ?? (["HEXMAKER_SLICES", "HEXMAKER_SLICES_ON", "HEXMAKER_SLICES_OFF"].some((k) => process.env[k]) ? "env" : undefined);
+let runs;
+if (offArg) runs = [allBut(offArg.split(",").filter(Boolean))];
+else if (asked) {
+	// The build the switch asks for, written out as one spec.
+	const r = asked === "env" ? resolveSlices({ spec: process.env.HEXMAKER_SLICES, on: process.env.HEXMAKER_SLICES_ON, off: process.env.HEXMAKER_SLICES_OFF }) : resolveSlices({ spec: asked });
+	runs = [{ label: `the ${r.channel} build`, spec: r.slices.length ? r.slices.join(",") : "none" }];
+} else {
+	runs = [
+		...flagged.map((id) => allBut([id])),
+		{ label: "the release build", spec: "released" },
+		...(flagged.length > 1 ? [{ label: "foundation alone", spec: "none" }] : []),
+	];
+}
 const tmp = mkdtempSync(join(tmpdir(), "hexmaker-release-"));
 let failed = 0;
 const report = (ok, line) => {
@@ -98,7 +135,7 @@ const report = (ok, line) => {
 
 try {
 	// The full build has every owned string (else the deny-list proves nothing).
-	const { js: full, readme: fullReadme } = build([], true, tmp);
+	const { js: full, readme: fullReadme } = build("all", tmp);
 	for (const id of flagged) {
 		for (const m of ofSlice(id)) {
 			const missing = needles(m).filter((n) => !n.re.test(full)).map((n) => n.what);
@@ -110,9 +147,10 @@ try {
 		report(text.length > 0 && lost.length === 0 && !/<!-- \/?slice/.test(fullReadme),
 			`full build's README holds ${id}'s ${text.length} marked lines${text.length ? "" : " (README.md marks none)"}${lost.length ? `; missing: ${lost.slice(0, 3).join(" | ")}` : ""}`);
 	}
-	for (const off of runs) {
-		const { js, readme } = build(off, false, tmp);
-		const label = `release build without ${off.join(" + ")} (${(js.length / 1024).toFixed(0)} KB)`;
+	for (const run of runs) {
+		const off = [...resolveSlices({ spec: run.spec, slices }).off];
+		const { js, readme } = build(run.spec, tmp);
+		const label = `${run.label} (off: ${off.join(", ") || "none"}; ${(js.length / 1024).toFixed(0)} KB)`;
 		const hits = [];
 		for (const id of off) {
 			for (const m of ofSlice(id)) {
@@ -133,7 +171,7 @@ try {
 			}
 			for (const t of readmeText(id)) if (readme.includes(t)) readmeHits.push(`[${id}] README text: ${t.slice(0, 100)}`);
 		}
-		report(readmeHits.length === 0, `release README without ${off.join(" + ")}` + (readmeHits.length ? `\n      ${readmeHits.join("\n      ")}` : ": none of their text"));
+		report(readmeHits.length === 0, `release README of ${run.label}` + (readmeHits.length ? `\n      ${readmeHits.join("\n      ")}` : ": none of their text"));
 	}
 } finally {
 	rmSync(tmp, { recursive: true, force: true });

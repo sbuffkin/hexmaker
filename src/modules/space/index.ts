@@ -79,6 +79,23 @@ export const spaceModule: HexmakerModule = {
       otherGenerators: true,
     },
   ],
+  // Where its controls sit (merged into src/ui/placement.ts PLACEMENT).
+  placement: {
+    "Settings.worldTypesFolder": "debug",
+    // Space: world types › Worlds tab
+    "WorldTypes.worldGenerator": "debug",
+    "WorldTypes.worldOptions": "debug",
+    // Space: world types › Preview
+    "WorldTypes.previewMap": "debug",
+    "WorldTypes.previewOrbit": "debug",
+    "WorldTypes.previewStar": "debug",
+    "WorldTypes.previewTemperature": "debug",
+    "WorldTypes.previewRolls": "debug",
+  },
+  // How the work modes treat its commands (merged into src/workMode.ts).
+  modeActions: {
+    commands: { "edit-world-types": "edit-biomes", "convert-world-types": "edit-biomes" },
+  },
   owns: {
     settingsKeys: ["worldTypesFolder", "worldTypesSeeded"],
     mapNoteKeys: [],

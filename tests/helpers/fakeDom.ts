@@ -48,6 +48,10 @@ export class FakeEl {
   prepend(el: FakeEl) { this.children = [el, ...this.children.filter((c) => c !== el)]; el.parent = this; }
   empty() { this.children = []; }
   setText(t: string) { this.text = t; }
+  appendText(t: string) { this.text += t; }
+  /** Obsidian's show/hide. */
+  hidden = false;
+  toggle(show: boolean) { this.hidden = !show; }
   getText() { return this.text; }
   setAttr(k: string, v: string) { this.attrs[k] = v; }
   setAttribute(k: string, v: string) { this.attrs[k] = v; }

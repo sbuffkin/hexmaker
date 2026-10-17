@@ -146,7 +146,7 @@ describe("the write-up in the new map's note", () => {
 
 describe("who may make and reroll a place (GM4, work modes)", () => {
 	it("arriving somewhere new is allowed in every mode (only into places that don't exist)", () => {
-		expect(ACTION_POLICY.discover.modes).toEqual(["play", "build", "god"]);
+		expect(ACTION_POLICY.discover!.modes).toEqual(["play", "build", "god"]);
 		expect(MENU_ACTIONS["hex.arrive"]).toBe("discover");
 		expect(allows("play", "lock-place")).toBe(true);
 	});

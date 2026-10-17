@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
-import { scanBoundary, totals } from "./moduleBoundary";
+import { readdirSync, statSync } from "node:fs";
+import { MODULE_DIRS, scanBoundary, totals } from "./moduleBoundary";
 
 /**
  * The module boundary ratchet (owner call CM8, plan-code-modules §3.4
@@ -39,6 +40,13 @@ function ratchet(kind: "imports" | "decisions"): void {
 describe("module boundary ratchet", () => {
   it("the core imports no more module code than the allow-list says", () => ratchet("imports"));
   it("the core branches on map types by name no more than the allow-list says", () => ratchet("decisions"));
+  it("every module folder (src/modules/<id>/) is in MODULE_DIRS, so the ratchet guards it", () => {
+    const root = new URL("../src/modules/", import.meta.url);
+    const dirs = readdirSync(root).filter((n) => statSync(new URL(n, root)).isDirectory()).sort();
+    const guarded = Object.entries(MODULE_DIRS).filter(([, ds]) => ds.length).flatMap(([id, ds]) => ds.includes(`src/modules/${id}/`) ? [id] : []).sort();
+    expect(guarded).toEqual(dirs);
+  });
+
   it("reports totals per module (for the record)", () => {
     expect(totals(now.imports)).toEqual(totals(allowed.imports));
     expect(totals(now.decisions)).toEqual(totals(allowed.decisions));

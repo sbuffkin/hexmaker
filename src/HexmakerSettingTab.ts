@@ -8,7 +8,7 @@ import { LINK_SECTIONS } from "./types";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { repointPaletteName } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
-import { moduleFolderSettings } from "./modules/runtime";
+import { addModuleSettings, isModuleFolderKey, moduleSettingChanged, moduleSettingRow } from "./settings/moduleSettings";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { disclosureOpen, setDisclosureOpen, subSectionKey } from "./ui/disclosure";
 import { layerOf, partitionSections } from "./ui/placement";
@@ -156,8 +156,7 @@ const FOLDER_PATH_KEYS = new Set<string>([
 ]);
 
 /** A folder-path key: the core's, or a module's folder setting (Space: World types folder). */
-const isFolderPathKey = (key: string): boolean =>
-  FOLDER_PATH_KEYS.has(key) || moduleFolderSettings().some((d) => d.key === key);
+const isFolderPathKey = (key: string): boolean => FOLDER_PATH_KEYS.has(key) || isModuleFolderKey(key);
 
 /** Settings keys whose change should re-render open hex map views. */
 const MAP_REFRESH_KEYS = new Set<string>([
@@ -485,8 +484,6 @@ export class HexmakerSettingTab extends PluginSettingTab {
           T("Settings.workflowsFolder", folderText("Workflows folder", "workflowsFolder", "World/workflows", "Vault-relative folder for workflow notes. Browsable from the random tables view via the workflows tab.")),
           T("Settings.templatesFolder", folderText("Templates folder", "templatesFolder", "World/templates", TEMPLATES_FOLDER_DESC)),
           T("Settings.palettesFolder", folderText("Palettes folder", "palettesFolder", "World/palettes", PALETTES_FOLDER_DESC)),
-          // Each module's folder settings.
-          ...moduleFolderSettings().map((d) => T(d.id, folderText(d.name, d.key, d.placeholder, d.desc))),
         ],
       },
       {
@@ -514,6 +511,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
         ],
       },
     ];
+    // Each module's settings (its folders and the rest), in the sections they name.
+    addModuleSettings(sections, (c) => moduleSettingRow(c, this.plugin));
     this.watchDebugMode(() => this.refresh());
     return this.layoutDefinitions(sections);
   }
@@ -572,7 +571,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     }
     return this.plugin.saveSettings().then(() => {
       if (MAP_REFRESH_KEYS.has(key)) this.plugin.refreshHexMap();
-      moduleFolderSettings().find((d) => d.key === key)?.changed?.(this.plugin);
+      moduleSettingChanged(this.plugin, key);
       if (key === "iconsFolder") this.plugin.loadAvailableIcons();
     });
   }

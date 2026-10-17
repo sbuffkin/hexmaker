@@ -28,7 +28,7 @@ import { LIVE_PREVIEW_DELAY_MS, sizeForScalePick, sizeFromInput, wheelStep } fro
 import { keepScroll } from "./ui/keepScroll";
 import { scalePalette, scalesFor, type MapScaleDef } from "./mapScales";
 import { wizardKinds, wizardScale } from "./wizardKinds";
-import { moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "./modules/runtime";
+import { moduleScaleChoices, moduleWizardOffers, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "./modules/runtime";
 import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, wizardOptionId } from "./wizardText";
 import { newMapOptionId } from "./worldgen/newMapOptionIds";
 import { Disclosure } from "./ui/disclosure";
@@ -914,12 +914,11 @@ function makeDoneStep(plugin: HexmakerPlugin): WizardStep {
 			});
 			openBtn.addEventListener("click", () => void cb.onComplete(true));
 
-			const exploreBtn = ctaRow.createEl("button", {
-				text: "I'll explore on my own",
-				cls: "duckmage-wizard-skip-btn",
-			});
+			const exploreBtn = ctaRow.createEl("button", { text: "I'll explore on my own", cls: "duckmage-wizard-skip-btn" });
 			exploreBtn.addEventListener("click", () => void cb.onComplete(false));
 			renderPackImportOffer(container, plugin.app);
+			// The modules' offers on this step (ModuleRuntime.wizardOffers).
+			for (const offer of moduleWizardOffers("done")) offer.render(container, plugin);
 		},
 		// Final step — Next button is hidden; CTAs are inline
 		canProceed: () => false,

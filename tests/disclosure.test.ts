@@ -17,6 +17,7 @@ import { DISCLOSURE_OPEN_KEY, FOLD_STATE_KEY, disclosureOpen, foldOpen, setDiscl
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
 import { readSurface, ownerFile, readSource } from "./helpers/source";
+import { allPlacement, moduleOn } from "./helpers/slices";
 
 /** Obsidian's per-vault local storage, in memory. */
 class FakeStore implements LocalStore {
@@ -38,7 +39,9 @@ describe("placement map", () => {
     expect(subSectionOf("Settings.hexFolder")).toBe("Folders");
     expect(layerOf("Settings.generateWorldData")).toBe("advanced");
     expect(subSectionOf("Settings.generateWorldData")).toBeUndefined();
-    expect(layerOf("Settings.biomesFolder")).toBe("debug");
+    // A module's own rows (World maps': its folders) sit in its module.
+    expect(layerOf("Settings.biomesFolder", allPlacement())).toBe("debug");
+    expect(layerOf("Settings.biomesFolder")).toBe(moduleOn("world-maps") ? "debug" : "main");
     expect(layerOf("GenPage.clumping")).toBe("advanced");
     expect(subSectionOf("GenPage.clumping")).toBe("Engine tuning");
     expect(layerOf("GenPage.symmetry")).toBe("main");
@@ -66,10 +69,10 @@ describe("placement map", () => {
     expect(layerOf("Settings.worldFolder")).toBe("main");
     // The setup tools are in the README's manual setup, so Advanced, not Debug.
     expect(idsOn("advanced")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData", "GenPage.scatter", "GenPage.mixStrength"]));
-    expect(idsOn("debug")).toEqual(expect.arrayContaining(["Settings.biomesFolder", "Settings.biomePoolsFolder", "Settings.worldTypesFolder"]));
+    expect(idsOn("debug", allPlacement())).toEqual(expect.arrayContaining(["Settings.biomesFolder", "Settings.biomePoolsFolder", "Settings.worldTypesFolder"]));
     // Nothing on the generator page needs debug mode (owner), except the biome
     // view's per-biome tuning, which the owner asked for in Debug (2026-10-12).
-    expect(idsOn("debug").filter((id) => /^(GenPage|BiomePage)./.test(id) && !id.startsWith("BiomePage.tune."))).toEqual([]);
+    expect(idsOn("debug", allPlacement()).filter((id) => /^(GenPage|BiomePage)./.test(id) && !id.startsWith("BiomePage.tune."))).toEqual([]);
     // Customisation is not "advanced" (rule 5): the custom icons folder stays main.
     expect(layerOf("Settings.iconsFolder")).toBe("main");
   });
@@ -269,13 +272,19 @@ describe("settings definitions (Obsidian 1.13+)", () => {
     const order = advanced.items!.map((i) => i.name);
     expect(order.indexOf("Generate terrain tables & hex links")).toBeLessThan(order.indexOf("Folders"));
     // Debug: only while debug mode is on (and Advanced is open).
+    // (The modules' storage folders: only those of the modules built.)
     defs = tabWith(store).getSettingDefinitions() as Item[];
-    const debug = defs.find((d) => d.heading === "Debug")!;
-    expect(names(debug.items!)).toEqual(expect.arrayContaining(["Biomes folder", "Biome pools folder", "World types folder"]));
     expect(names(advanced.items!)).toEqual(expect.arrayContaining(["Generate terrain tables & hex links", "Set up folders"]));
-    expect(shown(debug.visible)).toBe(false);
+    const plumbing = [
+      ...(moduleOn("world-maps") ? ["Biomes folder", "Biome pools folder"] : []),
+      ...(moduleOn("space") ? ["World types folder"] : []),
+    ];
+    const debug = defs.find((d) => d.heading === "Debug");
+    if (!plumbing.length) return;
+    expect(names(debug!.items!)).toEqual(expect.arrayContaining(plumbing));
+    expect(shown(debug!.visible)).toBe(false);
     setDebugMode(store, true);
-    expect(shown(debug.visible)).toBe(true);
+    expect(shown(debug!.visible)).toBe(true);
     setDebugMode(store, false);
   });
 });

@@ -199,7 +199,8 @@ describe("play log (SF3): one dated note per day, plain bullets", () => {
 
   it("the hex editor offers the log among the targets and writes it through the log writer", () => {
     const editor = readSurface("hex-editor");
-    expect(editor).toMatch(/sections: \[\{ key: PLAY_LOG_TARGET, label: "Play log" \}/);
+    // (after the modules' own targets, ModuleRuntime.play.rollTargets)
+    expect(editor).toMatch(/sections: \[\.\.\.extra\.map\([^\n]*?\), \{ key: PLAY_LOG_TARGET, label: "Play log" \}/);
     expect(editor).toMatch(/if \(key === PLAY_LOG_TARGET\) \{ await addToPlayLog\(/);
   });
 });
@@ -231,7 +232,7 @@ describe("Show on map (SF4): a per-section option, never by name in code", () =>
   });
 
   it("works where linking works: every mode, and it counts as the user's own edit", () => {
-    expect(ACTION_POLICY["show-place-icon"].modes).toEqual(ACTION_POLICY["link-note"].modes);
+    expect(ACTION_POLICY["show-place-icon"]!.modes).toEqual(ACTION_POLICY["link-note"]!.modes);
     expect(HAND_EDIT_ACTIONS.has("show-place-icon")).toBe(true);
     expect(readSurface("hex-editor")).toMatch(/setIconOverrideInFile\(this\.app, path, icon, "show-place-icon"\)/);
   });
@@ -258,7 +259,7 @@ describe("solo play controls: placement and work modes", () => {
     expect(MENU_ACTIONS["hex.visited"]).toBe("token");
     expect(MENU_ACTIONS["hex.log"]).toBe("edit-note");
     expect(COMMAND_ACTIONS["open-play-log"]).toBe("edit-note");
-    for (const a of ["token", "edit-note"] as const) expect(ACTION_POLICY[a].modes).toContain("play");
+    for (const a of ["token", "edit-note"] as const) expect(ACTION_POLICY[a]!.modes).toContain("play");
   });
 
   it("the setup wizard asks for the play log folder with the other folders", () => {

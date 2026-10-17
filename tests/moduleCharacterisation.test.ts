@@ -36,6 +36,7 @@ import { ENGINE_ROLES } from "../src/worldgen/tableRoles";
 import { defaultPathTypeFor } from "../src/worldgen/generatorPathTypes";
 import { moonPlanetLinks } from "../src/space/moonLinks";
 import type { MapData, TerrainColor, TerrainPalette } from "../src/types";
+import { describeWith } from "./helpers/slices";
 
 /**
  * Characterisation snapshot for the module refactor (plan-code-modules
@@ -230,7 +231,8 @@ async function collect(): Promise<Record<string, unknown>> {
   return out;
 }
 
-describe("module refactor characterisation (P0)", () => {
+// Recorded with every module built: only checked while they all are.
+describeWith(["worldmaps", "space", "hexflower"], "module refactor characterisation (P0)", () => {
   it("answers exactly as recorded", async () => {
     const now = JSON.parse(JSON.stringify(await collect())) as Record<string, unknown>;
     if (process.env.UPDATE_SNAPSHOT === "1" || !existsSync(SNAP)) {

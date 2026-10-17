@@ -14,11 +14,14 @@ npm run build
 # Full build: every slice, released or not (owner and test vaults)
 npm run build:full
 
-# Prove a slice built off leaves no trace in main.js (builds each slice off, then all off)
+# Prove a slice built off leaves no trace in main.js (each slice off, the release set, none)
 npm run check:release        # or: node dev/release/check-release.mjs --off space
 
 # Run tests (node:test via tsx; every slice on; runs every tests/*.test.ts)
 npm test
+
+# The contract suite with each slice off, the release set and none (CI runs one set per job)
+npm run test:slices          # or: node dev/release/test-slices.mjs --only off:space
 
 # Type-check the tests (tsconfig.test.json; also in premerge)
 npm run typecheck:tests
@@ -45,6 +48,29 @@ Each coding session:
    **Before copying a build into this folder**, check which branch the current vault build came from — other sessions deploy from their own branches, and a deploy reverts theirs.
 3. Use `/rebuild` for a final production build before committing (runs the TypeScript type-check and tests too)
 
+## Feature switches (release slices)
+
+Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space` and `hexflower` today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
+
+| Variable | Meaning |
+|---|---|
+| `HEXMAKER_SLICES` | The base set: `released`, `all`, `none`, or a list read left to right: `space,worldmaps` (exactly those), `+hexflower` / `-space` (on top of the default), `all,-space`, `none,+space` |
+| `HEXMAKER_SLICES_ON` | Ids added on top (`a,b`) |
+| `HEXMAKER_SLICES_OFF` | Ids removed last; **off wins** |
+| `--slices <spec>` / `--slices=<spec>` | On the esbuild command line, the same as `HEXMAKER_SLICES` and ahead of it; `--full` = `--slices all` |
+
+Defaults: `npm run build` → `released`; `npm run dev`, `build:full` and the tests → `all`. `foundation` can't be turned off; an unknown id is an error; a slice built on while a slice it `requires` is off is an error naming both (no silent cascade; turn the dependent off too). The bundle's banner says the channel (`release`, `full` or `custom +x -y`) and the slices built, as does the `__HEXMAKER_SLICES__` define (`builtSlices()`).
+
+```bash
+HEXMAKER_SLICES_OFF=hexflower node esbuild.config.mjs production   # release build without hex flowers
+HEXMAKER_SLICES=none node esbuild.config.mjs production             # foundation only
+HEXMAKER_SLICES=all node dev/release/check-release.mjs              # check that one build
+HEXMAKER_SLICES_OFF=space npm test                                  # the tests without Space
+npm run smoke -- --slices all --only fresh                          # smoke a build with every slice
+```
+
+**Adding a slice:** the module goes in `src/modules/<id>/` (`index.ts` data, `runtime.ts` what needs the plugin) and its own folder in `tests/moduleBoundary.ts` `MODULE_DIRS`; add the slice to `release-slices.json` (`define`, `modules`, `released`, `requires`, `docs`), its flag to `src/slices.d.ts`, and one `if (__SLICE_X__) compiled.push(…)` line each in `src/modules/index.ts` and `runtime.ts`. It plugs into the core only through its contributions (`src/modules/types.ts` and `contributions.ts`: placement rows, work-mode rows, commands, settings, views, export form parts, wizard offers, lifecycle, Play hooks, `genPage()`), never by the core importing it. List what it owns in `owns` (`check:release` also takes its placement and work-mode ids), mark its README/help text `<!-- slice:<id> -->…<!-- /slice -->`, add its `off:<id>` set to the `slices` matrix in `.github/workflows/ci.yml`, and write `tests/slice-<id>.test.ts` with an "off" twin (`describeWith` / `describeWithout` / `itWith` from `tests/helpers/slices.ts`). Before landing: `npm run test:slices` and `npm run check:release`.
+
 ## Running from a Windows-native session
 
 `node_modules` is installed from WSL (Linux esbuild binary, no `.cmd` shims), so npm scripts fail when run from Windows. Run them through WSL:
@@ -58,7 +84,8 @@ MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'cd /mnt/c/Users/markr/Documents/KB/journ
 **Before merging into `feat/region-notes` (or master) or deploying a build into the live vault, run `npm run premerge`** (from WSL, like every npm script here) and only go ahead when it ends with `PREMERGE PASSED`. It runs build → lint → test type-check → unit tests → integration tests → the **smoke vault matrix**, stopping loudly at the first failure (owner decision WM5: the matrix runs locally, not in CI; CI keeps the Obsidian-free tests).
 
 - The matrix (`dev/smoke/run.mjs`, plan [[plan-work-modes]] §3) builds 9 vault setups (fresh install, a synthetic 1.5.5 vault, a copy of the owner's real data `C:/Users/markr/work/tmp/migtest/seedF` + a copy of the live `data.json`, space only, overworld + regions, neighbours world, a custom palette with no default names, everything deleted, 80 maps), each in its own sandboxed Obsidian (fresh-eyes `sandbox.mjs`, up to 4 at once), and checks: no plugin console errors; settings saved; every map opens and renders; untouched files unchanged on disk (migrations verified separately: map notes, backups, hex data vs the old frontmatter, paths resolve, palette upgrades keep every terrain); a restart rewrites nothing; paint → undo round trip; registered commands; Play refuses a path edit. ~5 minutes, mostly the real-data migration.
-- Run parts of it: `npm run smoke -- --only fresh,v155 --jobs 2` (`--list` for the setup ids, `--keep` to keep run folders, `--build <dir>` to test another build). A failed setup keeps its run folder (path in `dev/smoke/last-run.json`); a full pass writes `dev/smoke/last-pass.json` (commit, build hash, per-check results).
+- Run parts of it: `npm run smoke -- --only fresh,v155 --jobs 2` (`--list` for the setup ids, `--keep` to keep run folders, `--build <dir>` to test another build, `--slices <spec>` to build a set of features into the run folder). A failed setup keeps its run folder (path in `dev/smoke/last-run.json`); a full pass writes `dev/smoke/last-pass.json` (commit, build hash, the slices built, per-check results).
+- premerge also runs the setups that exercise an unreleased slice (a setup's `slices`; today `fresh`, for the hex flower check C10) on a build with every slice, stamped `dev/smoke/last-pass.full.json`, before the release matrix.
 - It only stops the sandboxes it started and checks every other Obsidian process is still there (`otherObsidianBefore == otherObsidianAfter`). Never point it at the main vault.
 - A new feature with a user-visible write path (paint, paths, a new note type, a migration) should get a smoke check in `dev/smoke/lib/page.mjs` / `setups.mjs` as well as unit tests.
 

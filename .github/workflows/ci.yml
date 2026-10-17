@@ -26,3 +26,29 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  # Feature switches (release-slices.json): the contract suite with each
+  # slice built off, the release set and none, then check:release for the
+  # same set (dev/release/test-slices.mjs). One set per job; a new slice adds
+  # its `off:<id>` here (tests/releaseSlices.test.ts checks the list).
+  slices:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        set: ["off:worldmaps", "off:space", "off:hexflower", "released", "none"]
+    name: slices (${{ matrix.set }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Contract suite and check:release (${{ matrix.set }})
+        run: node dev/release/test-slices.mjs --only "${{ matrix.set }}" --check-release

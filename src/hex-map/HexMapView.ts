@@ -11,7 +11,7 @@ import { lockedNotice } from "./godOffer";
 import { partyClick } from "../play/partyTravel";
 import { nearestHex } from "./hitTest";
 import type { MapData, MapPath, TokenEntry } from "../types";
-import { worldMaps } from "../modules/runtime";
+import { modulePartyClick, worldMaps } from "../modules/runtime";
 import type { WorldMapsApi } from "../modules/world-maps/api";
 import type { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { regionMapAt } from "../maps/submaps";
@@ -890,10 +890,9 @@ export class HexMapView extends ItemView {
     // Play, a party token selected: a neighbouring hex is a step (SF5).
     if (!this.drawingMode && this.tokens.selectedParty && !e?.ctrlKey && !e?.metaKey && this.owView(this.getActiveMap()) !== "regions") {
       const party = this.activeParty();
-      if (party && partyClick(party, hexKey(x, y), this.plugin.settings.hexOrientation, this.getActiveStagger()) === "move") {
-        await this.tokens.moveParty(party, hexKey(x, y));
-        return;
-      }
+      const click = party && { map: party.map, token: party.filePath, from: party.hex, to: hexKey(x, y), orientation: this.plugin.settings.hexOrientation, stagger: this.getActiveStagger() };
+      // A step by the core's rule, or by a module's (ModuleRuntime.play.partyClick).
+      if (party && click && (partyClick(party, click.to, click.orientation, click.stagger) === "move" || modulePartyClick(this.plugin, click) === "move")) return this.tokens.moveParty(party, click.to);
     }
 
     // Overworlds: the full view jumps into the region at the clicked hex;

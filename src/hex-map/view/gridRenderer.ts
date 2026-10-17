@@ -29,7 +29,7 @@ import { revealedNow } from "../revealBounce";
 import { regionsViewTip } from "../hexHover";
 import { whenSized } from "../whenSized";
 import type { MapData } from "../../types";
-import { moduleUnchartedKeys } from "../../modules/runtime";
+import { moduleGridDecorations, moduleUnchartedKeys } from "../../modules/runtime";
 import { renderUnchartedLayer, unchartedKeys } from "../unchartedLayer";
 import { FrameThrottle } from "../../frameThrottle";
 import { terrainDiff } from "../terrainDiff";
@@ -331,6 +331,8 @@ export class GridRenderer {
 
     // Hexes the party has stood on (SF5): a mark the layers menu can hide.
     const visitedHexes = new Set(parseVisited(region.visited));
+    // The modules' own marks per hex (ModuleRuntime.play.gridDecorations), asked once before drawing.
+    const decorate = moduleGridDecorations(this.plugin, region);
     // Hexes exploring just filled bounce in (HF3; revealBounce.ts).
     const revealed = revealedNow(region.name);
     const addHex = (parent: HTMLElement, x: number, y: number) => {
@@ -422,6 +424,7 @@ export class GridRenderer {
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
         hexEl.addClass("is-selected");
       if (visitedHexes.has(hexKey(x, y))) hexEl.addClass("duckmage-hex-visited");
+      for (const cls of decorate(hexKey(x, y))) hexEl.addClass(cls);
       const ring = revealed.get(hexKey(x, y));
       // Only a hex that has terrain bounces in (one undone since stays still).
       if (ring !== undefined && ownTerrain) {

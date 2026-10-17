@@ -17,6 +17,7 @@ import {
 import { Disclosure, Fold } from "../ui/disclosure";
 import { uniqueMapsByName } from "../maps/mapTree";
 import { openPackExport } from "../packs/packOpeners";
+import { moduleExportForm } from "../modules/runtime";
 
 /**
  * The map export form: PNG, PDF with reference table, hexcrawl manual.
@@ -152,6 +153,9 @@ export function renderMapExportForm(
   const partChecks = MANUAL_PARTS.map((p) => ({ key: p.key, cb: inlineCheck(partsRow, p.label, true) }));
   manualBox.track(() => playerEdition.checked);
   for (const { cb } of partChecks) manualBox.track(() => !cb.checked);
+  // The modules' parts of the form (ModuleRuntime.exportForm): their options here, then their file, button and notes below.
+  let partsChanged = (): void => {};
+  const parts = moduleExportForm().map((c) => c.render({ plugin, mapName, options: optsForm, changed: () => partsChanged() }));
 
   // Output size: presets of hex radius (the image size also depends on the grid).
   const sizeRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
@@ -204,13 +208,15 @@ export function renderMapExportForm(
     suffixEl.setText(suffix);
     suffixEl.toggle(!!suffix);
     suffixEl.setAttr("title", suffix ? "Added for the overlays you ticked, so each variant gets its own file" : null);
-    preview.setText(`Writes: ${n.png} (PNG) · ${n.pdf} (PDF) · ${n.manual} (manual)`);
+    const more = parts.flatMap((p) => (p.fileName ? [` · ${p.fileName(nameInput.value)} (${p.fileLabel ?? "file"})`] : []));
+    preview.setText(`Writes: ${n.png} (PNG) · ${n.pdf} (PDF) · ${n.manual} (manual)${more.join("")}`);
   };
   for (const input of [nameInput, showFactionOverlay, showRegionOverlay, playerEdition]) {
     input.addEventListener("input", updatePreview);
     input.addEventListener("change", updatePreview);
   }
   updatePreview();
+  partsChanged = updatePreview;
 
   const collectOpts = () => ({
     outputName: mapExportStem({
@@ -264,6 +270,16 @@ export function renderMapExportForm(
     form.onExport?.();
   });
 
+  for (const p of parts) {
+    const button = p.button;
+    if (!button) continue;
+    actions.createEl("button", { text: button.label }).addEventListener("click", () => {
+      remember();
+      void button.run(collectOpts(), p.fileName?.(nameInput.value));
+      form.onExport?.();
+    });
+  }
+
   // What players would see: the map images never carry GM content.
   const included = el.createDiv({ cls: "duckmage-export-included" });
   included.createDiv({ cls: "duckmage-export-included-title", text: "What's in each file" });
@@ -287,6 +303,13 @@ export function renderMapExportForm(
     openPackExport();
   });
   disclosure.place("MapExport.contentPack", packBox);
+  for (const p of parts) {
+    if (p.describe) list.createEl("li", { text: p.describe });
+    if (!p.box) continue;
+    const box = el.createDiv({ cls: "duckmage-export-group" });
+    p.box.render(box, () => form.onExport?.());
+    disclosure.place(p.box.placementId, box);
+  }
   disclosure.toEnd();
 }
 

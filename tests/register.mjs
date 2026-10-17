@@ -1,11 +1,14 @@
 import { register, createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { slicesFromEnv } from "../dev/release/slices.mjs";
 
-// Release slice flags (esbuild defines in a build; see release-slices.json):
-// tests run with every slice on.
-globalThis.__SLICE_WORLDMAPS__ = true;
-globalThis.__SLICE_SPACE__ = true;
-globalThis.__SLICE_HEXFLOWER__ = true;
+// Release slice flags (esbuild defines in a build; see release-slices.json),
+// from the same switch as the build (dev/release/slices.mjs): tests run with
+// every slice on unless HEXMAKER_SLICES / _ON / _OFF say otherwise
+// (npm run test:slices runs the contract suite with each slice off).
+const slices = slicesFromEnv(process.env, [], "all");
+for (const [flag, on] of Object.entries(slices.flags)) globalThis[flag] = on;
+globalThis.__HEXMAKER_SLICES__ = JSON.stringify(slices.slices);
 
 // Stub .png and .md for CJS mode (tsx CLI uses CJS transforms; without this, tsx's
 // .js fallback handler tries to parse binary/markdown files as TypeScript and crashes).

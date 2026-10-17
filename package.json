@@ -8,6 +8,7 @@
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "build:full": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production --full",
     "check:release": "node dev/release/check-release.mjs",
+    "test:slices": "node dev/release/test-slices.mjs",
     "version": "node version-bump.mjs && npm run compat:snapshot && git add manifest.json versions.json tests/fixtures/compat",
     "compat:snapshot": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs tests/compat/snapshot.ts",
     "test": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test \"tests/*.test.ts\"",
@@ -19,7 +20,7 @@
     "test:e2e": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test tests/integration/e2e-*.integration.ts",
     "lint": "eslint . --ext .js,.ts",
     "obsidian:login": "node dev/obsidian-login.mjs",
-    "preview:overworld": "esbuild dev/overworld-preview.ts --bundle --format=iife --loader:.md=text --define:__SLICE_WORLDMAPS__=true --define:__SLICE_SPACE__=true --define:__SLICE_HEXFLOWER__=true --outfile=dev/overworld-preview.js"
+    "preview:overworld": "node dev/release/preview-overworld.mjs"
   },
   "keywords": [
     "obsidian",

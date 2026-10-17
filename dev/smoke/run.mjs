@@ -4,7 +4,7 @@
  * LOCALLY before merging into feat/region-notes and before any live-vault
  * deploy; CI keeps the Obsidian-free tests).
  *
- *   node dev/smoke/run.mjs [--jobs N] [--only fresh,v155] [--build <dir>] [--no-build] [--keep] [--list]
+ *   node dev/smoke/run.mjs [--jobs N] [--only fresh,v155] [--build <dir>] [--no-build] [--slices <spec>] [--stamp <name>] [--keep] [--list]
  *
  * Windows node (Obsidian is a Windows app). From WSL use `npm run smoke`,
  * which hands over to node.exe (dev/smoke/cli.mjs).
@@ -12,7 +12,9 @@
  * 1. Builds the plugin through WSL (or takes --build <dir>, or the repo's
  *    current main.js with --no-build) and snapshots main.js / manifest.json /
  *    styles.css into a temp folder, so a running `npm run dev` can't change
- *    the plugin mid-suite.
+ *    the plugin mid-suite. --slices <spec> builds that set of features
+ *    instead (the HEXMAKER_SLICES grammar: all, released, none, +id/-id…)
+ *    into the run folder, leaving the repo's main.js as it is.
  * 2. Per vault setup (setups.mjs): builds the fixture, `sandbox.mjs create`
  *    (own vault + Electron profile), optionally a prep launch that builds
  *    maps through the plugin API, then a check launch running C1–C8, then a
@@ -24,7 +26,10 @@
  *    (the owner's, other sessions' runs) may start or stop meanwhile; they
  *    are only reported, never counted against the run.
  * 4. Writes dev/smoke/last-run.json, and dev/smoke/last-pass.json when
- *    every setup passed: { commit, dirty, buildHash, setups, results }.
+ *    every setup passed: { commit, dirty, buildHash, slices, setups, results }
+ *    (`slices`: the spec asked for, and the channel and slices the build's
+ *    banner names). --stamp <name> writes last-run.<name>.json /
+ *    last-pass.<name>.json instead (premerge's full-build run: "full").
  *
  * Never touches the main vault: fixtures are generated or copied into the
  * sandbox's own run folder; the open vault is checked before any script runs.
@@ -43,6 +48,7 @@ import { snapshot, diff, legacyTruth, verifyMigration, verifyBackups, noteTextHa
 import * as P from "./lib/page.mjs";
 import { canon, jsonDiff, oneTimeOnly } from "./lib/compare.mjs";
 import { SETUPS } from "./setups.mjs";
+import { bannerSlices, stampFiles } from "./lib/slices.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
@@ -53,8 +59,10 @@ const argv = process.argv.slice(2);
 const flag = (k) => argv.includes(`--${k}`);
 const val = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
 if (flag("help") || flag("h")) {
-  console.log("usage: node dev/smoke/run.mjs [--jobs N] [--only a,b] [--build <dir>] [--no-build] [--keep] [--list]");
-  console.log("  --jobs N  sandboxes at once (1-4); default: picked from free memory and CPU load");
+  console.log("usage: node dev/smoke/run.mjs [--jobs N] [--only a,b] [--build <dir>] [--no-build] [--slices <spec>] [--stamp <name>] [--keep] [--list]");
+  console.log("  --jobs N         sandboxes at once (1-4); default: picked from free memory and CPU load");
+  console.log("  --slices <spec>  build these features (HEXMAKER_SLICES: all, released, none, +id/-id) into the run folder");
+  console.log("  --stamp <name>   write last-run.<name>.json / last-pass.<name>.json");
   process.exit(0);
 }
 if (flag("list")) {
@@ -73,6 +81,12 @@ if (only) {
   if (unknown.length) { console.error(`unknown setup(s): ${unknown.join(", ")} (see --list)`); process.exit(2); }
 }
 const keep = flag("keep");
+const sliceSpec = val("slices", null);
+if (sliceSpec && (flag("no-build") || val("build", null))) {
+  console.error("--slices builds its own main.js; leave out --no-build and --build");
+  process.exit(2);
+}
+const stamps = stampFiles(val("stamp", null));
 
 const log = (...a) => console.log(`[smoke ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync("git", ["-C", ROOT, ...a], { encoding: "utf8" }).trim(); } catch { return null; } };
@@ -84,6 +98,19 @@ const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").
 const work = path.join(process.platform === "linux" ? path.join(os.homedir(), ".cache") : os.tmpdir(), "hexmaker-smoke", stamp);
 fs.mkdirSync(work, { recursive: true });
 let source = val("build", null);
+if (!source && sliceSpec) {
+  // That slice set, built into the run folder (the repo's main.js stays as it is). Type-checking is the caller's (premerge).
+  source = path.join(work, "slice-build");
+  fs.mkdirSync(source);
+  log(`building with slices "${sliceSpec}"…`);
+  if (process.platform === "linux") {
+    execFileSync(process.execPath, ["esbuild.config.mjs", "production"], { cwd: ROOT, stdio: "inherit", env: { ...process.env, HEXMAKER_SLICES: sliceSpec, HEXMAKER_SLICES_ON: "", HEXMAKER_SLICES_OFF: "", HEXMAKER_OUTFILE: path.join(source, "main.js") } });
+  } else {
+    const out = toWsl(path.join(source, "main.js"));
+    execFileSync("wsl.exe", ["-e", "bash", "-lc", `cd '${toWsl(ROOT)}' && HEXMAKER_SLICES='${sliceSpec.replace(/'/g, "")}' HEXMAKER_SLICES_ON= HEXMAKER_SLICES_OFF= HEXMAKER_OUTFILE='${out}' node esbuild.config.mjs production`], { stdio: "inherit", env: { ...process.env, MSYS_NO_PATHCONV: "1" } });
+  }
+  for (const f of ["manifest.json", "styles.css"]) if (fs.existsSync(path.join(ROOT, f))) fs.copyFileSync(path.join(ROOT, f), path.join(source, f));
+}
 if (!source) {
   source = ROOT;
   if (!flag("no-build")) {
@@ -112,7 +139,8 @@ const pluginId = manifest.id;
 const mainJs = fs.readFileSync(path.join(buildDir, "main.js"), "utf8");
 // Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
 const expectedCommands = [...new Set([...mainJs.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => `${pluginId}:${m[1]}`))];
-log(`build ${buildHash} (${manifest.version}) from ${source}; ${expectedCommands.length} commands`);
+const builtSlices = bannerSlices(mainJs);
+log(`build ${buildHash} (${manifest.version}) from ${source}; ${expectedCommands.length} commands; channel ${builtSlices.channel ?? "?"}, slices ${JSON.stringify(builtSlices.on)}`);
 
 // ── 2. the matrix ─────────────────────────────────────────────────────────
 const selected = SETUPS.filter((s) => !only || only.includes(s.id)).sort((a, b) => Number(!!b.slow) - Number(!!a.slow));
@@ -461,6 +489,8 @@ const record = {
   dirty: (git("status", "--porcelain", "--untracked-files=no") ?? "") !== "",
   buildHash,
   buildSource: path.resolve(source),
+  // The features under test: the spec asked for (null: the build as given) and what the build's banner says.
+  slices: { spec: sliceSpec, channel: builtSlices.channel, on: builtSlices.on },
   version: manifest.version,
   seconds: Math.round((Date.now() - t0) / 1000),
   jobs,
@@ -469,8 +499,8 @@ const record = {
   safety,
   results: Object.fromEntries(results.map((r) => [r.id, { ok: r.ok, ...(r.skipped ? { skipped: r.skipped } : {}), title: r.title, seconds: r.seconds, runDir: r.ok && !keep ? null : r.runDir, checks: r.checks }])),
 };
-fs.writeFileSync(path.join(HERE, "last-run.json"), JSON.stringify(record, null, 2));
-if (allOk) fs.writeFileSync(path.join(HERE, "last-pass.json"), JSON.stringify(record, null, 2));
+fs.writeFileSync(path.join(HERE, stamps.run), JSON.stringify(record, null, 2));
+if (allOk) fs.writeFileSync(path.join(HERE, stamps.pass), JSON.stringify(record, null, 2));
 
 // Passed runs are deleted (the real-data copy is ~150 MB); failed ones stay for a look.
 if (!keep) {
@@ -488,5 +518,5 @@ for (const r of results) {
 }
 console.log(`sandbox processes left: ${safety.sandboxProcessesLeft} (other Obsidian, not counted: ${safety.otherObsidianBefore} before, ${safety.otherObsidianAfter} after)`);
 const skipped = results.filter((r) => r.skipped).length;
-console.log(`${allOk ? "SMOKE PASSED" : "SMOKE FAILED"}${skipped ? ` (${skipped} setup(s) SKIPPED)` : ""} (${record.seconds} s, build ${buildHash}, commit ${record.commit?.slice(0, 7)}${record.dirty ? " +dirty" : ""}) → ${path.join(HERE, allOk ? "last-pass.json" : "last-run.json")}`);
+console.log(`${allOk ? "SMOKE PASSED" : "SMOKE FAILED"}${skipped ? ` (${skipped} setup(s) SKIPPED)` : ""} (${record.seconds} s, build ${buildHash}${builtSlices.channel ? ` ${builtSlices.channel}` : ""}, commit ${record.commit?.slice(0, 7)}${record.dirty ? " +dirty" : ""}) → ${path.join(HERE, allOk ? stamps.pass : stamps.run)}`);
 process.exit(allOk ? 0 : 1);

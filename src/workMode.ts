@@ -26,9 +26,14 @@
  * (src/modeGate.ts → MapStore.set, the path gate), and the UI asks the
  * same table to hide or disable.
  *
+ * A module classifies its own entry points (HexmakerModule.modeActions,
+ * src/modules/<id>/index.ts): its rows are merged in after the core's, so
+ * a build without the module carries none of its ids.
+ *
  * Pure: no Obsidian imports.
  */
 import type { DrawingMode } from "./hex-map/toolMode";
+import { MODULES } from "./modules";
 
 export type WorkMode = "play" | "build" | "god";
 
@@ -63,7 +68,8 @@ export type ModeAction =
   | "switch-mode" // the mode switch itself
   | "new-top-map" // a new map that isn't made from a hex of another map
   | "discover" // arrival: make a place where nothing exists yet (only when the world is set to make places)
-  | "grow-while-exploring" // a map the party explores grows (blank hexes only) as the party nears its edge (HF4)
+  // a module's own action, classified by its module (modeActions.policy)
+  | "grow-while-exploring"
   | "lock-place" // lock a place made on arrival (after that, rerolling it needs God)
   | "show-place-icon" // "Show on map": a linked note's section icon as the hex's icon (SF4; works where linking works)
   // ── Build and God ──
@@ -94,8 +100,8 @@ const ALL: readonly WorkMode[] = ["play", "build", "god"];
 const BUILD: readonly WorkMode[] = ["build", "god"];
 const GOD: readonly WorkMode[] = ["god"];
 
-/** THE classification: which modes allow each action. */
-export const ACTION_POLICY: Record<ModeAction, ActionPolicy> = {
+/** THE classification: which modes allow each action (the core's; modules add their own). */
+export const CORE_ACTION_POLICY: Readonly<Partial<Record<ModeAction, ActionPolicy>>> = {
   view: { modes: ALL, verb: "look around" },
   navigate: { modes: ALL, verb: "move around" },
   "open-editor": { modes: ALL, verb: "open the editor" },
@@ -110,7 +116,6 @@ export const ACTION_POLICY: Record<ModeAction, ActionPolicy> = {
   "switch-mode": { modes: ALL, verb: "switch modes" },
   "new-top-map": { modes: ALL, verb: "make a map" },
   discover: { modes: ALL, verb: "go somewhere new" },
-  "grow-while-exploring": { modes: ALL, verb: "grow the map as the party explores" },
   "lock-place": { modes: ALL, verb: "lock a new submap" },
   "show-place-icon": { modes: ALL, verb: "show a linked place on the map" },
   "paint-terrain": { modes: BUILD, verb: "paint terrain" },
@@ -129,11 +134,21 @@ export const ACTION_POLICY: Record<ModeAction, ActionPolicy> = {
   "delete-map": { modes: GOD, verb: "delete the map" },
 };
 
+/** A table of the core's with each module's rows after it (a module never shadows a core id). */
+function withModuleRows<K extends string, V>(core: Readonly<Partial<Record<K, V>>>, rows: readonly (Readonly<Partial<Record<K, V>>> | undefined)[]): Readonly<Partial<Record<K, V>>> {
+  const out: Partial<Record<K, V>> = { ...core };
+  for (const r of rows) for (const [k, v] of Object.entries(r ?? {}) as [K, V][]) if (!(k in out)) out[k] = v;
+  return out;
+}
+
+/** Every action this build knows: the core's and those of the modules compiled in. */
+export const ACTION_POLICY: Readonly<Partial<Record<ModeAction, ActionPolicy>>> = withModuleRows(CORE_ACTION_POLICY, MODULES.map((m) => m.modeActions?.policy));
+
 export const MODE_ACTIONS = Object.keys(ACTION_POLICY) as ModeAction[];
 
-/** May `action` be done in `mode`? */
+/** May `action` be done in `mode`? An action no module of this build classifies: only in God. */
 export function allows(mode: WorkMode, action: ModeAction): boolean {
-  return ACTION_POLICY[action].modes.includes(mode);
+  return (ACTION_POLICY[action]?.modes ?? GOD).includes(mode);
 }
 
 /** The lowest mode that allows `action` (Play < Build < God). */
@@ -143,7 +158,7 @@ export function modeFor(action: ModeAction): WorkMode {
 
 /** "Switch to Build to paint terrain." */
 export function lockedHint(action: ModeAction): string {
-  return `Switch to ${WORK_MODE_TEXT[modeFor(action)].label} to ${ACTION_POLICY[action].verb}.`;
+  return `Switch to ${WORK_MODE_TEXT[modeFor(action)].label} to ${ACTION_POLICY[action]?.verb ?? "do that"}.`;
 }
 
 /**
@@ -190,7 +205,7 @@ export function mapAllows(map: { workMode?: string } | undefined, action: ModeAc
 // ── Entry points → actions (checked by tests/workModeCoverage.test.ts) ──
 
 /** Every drawing tool (DrawingMode in src/hex-map/toolMode.ts). */
-export const TOOL_ACTIONS: Record<DrawingMode, ModeAction> = {
+const CORE_TOOL_ACTIONS: Record<DrawingMode, ModeAction> = {
   path: "edit-path",
   terrain: "paint-terrain",
   icon: "paint-icon",
@@ -204,15 +219,15 @@ export const TOOL_ACTIONS: Record<DrawingMode, ModeAction> = {
   biome: "place-biome",
 };
 
-/** Every registered command id (addCommand in src/). */
-export const COMMAND_ACTIONS: Record<string, ModeAction> = {
+/** The core's drawing tools, then the modules' (HexmakerModule.modeActions.tools). */
+export const TOOL_ACTIONS = withModuleRows<string, ModeAction>(CORE_TOOL_ACTIONS, MODULES.map((m) => m.modeActions?.tools)) as Readonly<Record<DrawingMode, ModeAction> & Partial<Record<string, ModeAction>>>;
+
+/** Every registered command id of the core (addCommand in src/); modules classify their own. */
+export const CORE_COMMAND_ACTIONS: Readonly<Record<string, ModeAction>> = {
   "open-hex-map": "view",
   "open-hex-table": "view",
   "open-terrain-generator": "view",
   "open-palette-editor": "settings",
-  "edit-world-types": "edit-biomes",
-  "convert-world-types": "edit-biomes",
-  "new-overworld": "new-top-map",
   "map-go-up": "navigate",
   "map-go-back": "navigate",
   "map-go-forward": "navigate",
@@ -235,8 +250,15 @@ export const COMMAND_ACTIONS: Record<string, ModeAction> = {
   "open-play-log": "edit-note",
 };
 
-/** Every item of the map view's menus (ModeMenu in src/hex-map/modeMenu.ts). */
-export const MENU_ACTIONS = {
+/** Every command id this build registers: the core's and the modules'. */
+export const COMMAND_ACTIONS: Readonly<Record<string, ModeAction>> = withModuleRows<string, ModeAction>(CORE_COMMAND_ACTIONS, MODULES.map((m) => m.modeActions?.commands)) as Readonly<Record<string, ModeAction>>;
+
+/**
+ * Every item of the map view's menus (ModeMenu in src/hex-map/modeMenu.ts)
+ * the core adds; a module's own items (its hex menu, World maps' overworld
+ * menu) are classified by the module.
+ */
+export const CORE_MENU_ACTIONS = {
   // hex right-click menu
   "hex.center": "navigate",
   "hex.copy-link": "navigate",
@@ -256,20 +278,9 @@ export const MENU_ACTIONS = {
   "hex.visited": "token",
   "hex.clear-terrain": "paint-terrain",
   "hex.remove-icon": "paint-icon",
-  // modules' hex menu items (ModuleRuntime.hexMenu): rolling an unknown hex
-  "hex.explore-roll": "discover",
-  "hex.explore-reroll": "discover",
-  // overworld hex menu
-  "ow.enter-region": "navigate",
+  // overworld hex menu (the items the core adds; World maps classifies the rest)
   "ow.arrive": "discover",
-  "ow.edit-region": "open-editor",
-  // Only on a new (open) region: changing it is placing it (regionChangeAction), Build.
-  "ow.reroll": "place-biome",
-  "ow.lock": "lock-place",
-  "ow.set-biome": "place-biome",
-  "ow.center": "navigate",
   "ow.copy-link": "navigate",
-  "ow.locations": "navigate",
   "ow.create-token": "token",
   // token menu
   "token.info": "view",
@@ -285,7 +296,13 @@ export const MENU_ACTIONS = {
   "editor.manage-locations": "link-map",
 } as const satisfies Record<string, ModeAction>;
 
-export type MenuActionId = keyof typeof MENU_ACTIONS;
+/** A menu item id a module classifies (its modeActions.menus): `<menu>.<item>`. */
+export type ModuleMenuActionId = `${"hex" | "ow" | "token" | "editor"}.${string}`;
+
+export type MenuActionId = keyof typeof CORE_MENU_ACTIONS | ModuleMenuActionId;
+
+/** Every menu item id this build classifies: the core's and the modules'. */
+export const MENU_ACTIONS: Readonly<Record<string, ModeAction>> = withModuleRows<string, ModeAction>(CORE_MENU_ACTIONS, MODULES.map((m) => m.modeActions?.menus)) as Readonly<Record<string, ModeAction>>;
 
 // ── The map note's `mode:` ──
 

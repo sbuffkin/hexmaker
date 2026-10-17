@@ -21,6 +21,7 @@ import { openTableInView } from "../../workspace/views";
 import { contentFolder } from "../../notePickers";
 import { addToPlayLog } from "../../play/playLogWriter";
 import { PLAY_LOG_TARGET, rollDefaultSection } from "../../play/playLog";
+import { moduleRollTargets } from "../../modules/runtime";
 import { EditorWritePart, type EditorWriteHost } from "./host";
 
 export interface TableSectionsHost extends EditorWriteHost {
@@ -207,12 +208,17 @@ export class TableSections extends EditorWritePart<TableSectionsHost> {
     const terrain = getTerrainFromFile(this.app, this.plugin.hexPath(hx, hy, this.mapName)) ?? undefined;
     const entry = terrain ? this.plugin.getMapPalette(this.mapName).find((t) => t.name === terrain) : undefined;
     const type = entry ? effectiveTerrainType(entry) : undefined;
+    const mode = workModeOf(this.plugin.getMap(this.mapName));
+    // The modules' places a roll can go (ModuleRuntime.play.rollTargets), first in the list.
+    const extra = moduleRollTargets(this.plugin, { map: this.mapName, x: hx, y: hy, mode });
     return {
       label: `hex ${hx}, ${hy}`,
       context: { ...(terrain ? { terrain } : {}), ...(type ? { type } : {}) },
-      sections: [{ key: PLAY_LOG_TARGET, label: "Play log" }, ...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
-      defaultSection: rollDefaultSection(workModeOf(this.plugin.getMap(this.mapName)), defaultSection),
+      sections: [...extra.map((t) => ({ key: t.key, label: t.label })), { key: PLAY_LOG_TARGET, label: "Play log" }, ...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
+      defaultSection: extra.find((t) => t.defaultIn?.includes(mode))?.key ?? rollDefaultSection(mode, defaultSection),
       add: async (key, text) => {
+        const target = extra.find((t) => t.key === key);
+        if (target) { await target.add(text); return; }
         if (key === PLAY_LOG_TARGET) { await addToPlayLog(this.plugin, this.mapName, hx, hy, text); return; }
         // Still on this hex with the box showing: add through the box.
         const box = hx === this.x && hy === this.y ? this.textBoxes.get(key) : undefined;
