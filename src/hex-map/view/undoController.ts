@@ -22,6 +22,7 @@ import { hexKey } from "../../hexKey";
 import { applyGridUndo, prepareGrid } from "../gridChange";
 import { applyNoteSection, prepareNoteSection } from "../noteUndo";
 import { gridBoxOf, type GridBox } from "../../maps/gridGrowth";
+import { logWarn } from "../../log";
 
 export interface UndoHost {
   plugin: HexmakerPlugin;
@@ -334,18 +335,12 @@ export class UndoController {
         );
         if (hexEl) this.host.applyTerrainToHexEl(hexEl, terrain);
       } catch (err) {
-        console.warn(
-          `[hexmaker] stroke visual update failed for ${entry.path}:`,
-          err,
-        );
+        logWarn(`stroke visual update failed for ${entry.path}:`, err);
       }
       try {
         this.host.writes.terrain.schedule(entry.path, { x: entry.x, y: entry.y, terrain });
       } catch (err) {
-        console.warn(
-          `[hexmaker] stroke write scheduling failed for ${entry.path}:`,
-          err,
-        );
+        logWarn(`stroke write scheduling failed for ${entry.path}:`, err);
       }
     }
   }

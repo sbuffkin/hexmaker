@@ -39,6 +39,7 @@ import { takeUpgradeReport } from "../migrations/upgradeReport";
 import { writeUpgradeNote } from "../migrations/upgradeNote";
 import changelog from "../../CHANGELOG.md";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { logError } from "../log";
 
 /** What SettingsPersistence uses of the plugin. */
 export type SettingsHost = HexmakerPlugin;
@@ -190,7 +191,7 @@ export class SettingsPersistence {
         const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
         link = { text: `What changed, and the backups: ${name}`, open: () => void this.openVaultNote(path) };
       } catch (e) {
-        console.error("Hexmap World Creator: couldn't write the upgrade note", e);
+        logError("couldn't write the upgrade note", e);
       }
     }
     endNoticeBatch(link);

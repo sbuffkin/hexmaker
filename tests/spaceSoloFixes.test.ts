@@ -119,7 +119,7 @@ describe("F12: no notices for expected, harmless cases", () => {
 	it("generated paths with no path type on the new map are skipped quietly", () => {
 		const setup = readSurface("new-map-setup");
 		expect(setup).not.toContain("new Notice(`Skipped paths with no matching path type");
-		expect(setup).toMatch(/if \(missing\.length\) console\.warn\(/);
+		expect(setup).toMatch(/if \(missing\.length\) logWarn\(/);
 	});
 
 	it("a palette installed for a new map is quiet; Add palette still says so", () => {

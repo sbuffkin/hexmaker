@@ -26,6 +26,7 @@ import {
 } from "../sections";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { logError } from "../log";
+import { ensureFolder, ensureFolderPath } from "../vault/ensureFolder";
 import { hexKey, hexXY } from "../hexKey";
 
 /** What TerrainTablesService uses of the plugin. */
@@ -98,13 +99,8 @@ export class TerrainTablesService {
     const plan = shippedTablesToInstall(registry.shippedTables(kinds), normalizeFolder(this.plugin.settings.tablesFolder), (p) => !!this.plugin.app.vault.getAbstractFileByPath(p));
     const written: string[] = [];
     for (const t of plan) {
-      const parts = t.path.split("/").slice(0, -1);
-      for (let i = 1; i <= parts.length; i++) {
-        const dir = parts.slice(0, i).join("/");
-        if (!this.plugin.app.vault.getAbstractFileByPath(dir)) {
-          try { await this.plugin.app.vault.createFolder(dir); } catch { /* made meanwhile */ }
-        }
-      }
+      const dir = t.path.split("/").slice(0, -1).join("/");
+      if (dir) await ensureFolderPath(this.plugin.app.vault, dir);
       try {
         await this.plugin.app.vault.create(t.path, t.text);
         this.plugin.tableNotes.put(t.path, t.text);
@@ -151,13 +147,7 @@ export class TerrainTablesService {
     for (const sectionType of ["landmark", "hidden", "secret"] as const) {
       const path = folder ? `${folder}/${sectionType}.md` : `${sectionType}.md`;
       if (!this.plugin.app.vault.getAbstractFileByPath(path)) {
-        if (folder && !this.plugin.app.vault.getAbstractFileByPath(folder)) {
-          try {
-            await this.plugin.app.vault.createFolder(folder);
-          } catch {
-            /* may already exist */
-          }
-        }
+        if (folder) await ensureFolder(this.plugin.app.vault, folder);
         try {
           await this.plugin.app.vault.create(
             path,
@@ -185,24 +175,11 @@ export class TerrainTablesService {
 
     // Terrain-specific tables
     const subfolder = folder ? `${folder}/terrain` : "terrain";
-    if (!this.plugin.app.vault.getAbstractFileByPath(subfolder)) {
-      try {
-        await this.plugin.app.vault.createFolder(subfolder);
-      } catch {
-        /* may already exist */
-      }
-    }
+    await ensureFolder(this.plugin.app.vault, subfolder);
 
     // Ensure type subfolders exist
     for (const tableType of ["description", "encounters"] as const) {
-      const typeSubfolder = `${subfolder}/${tableType}`;
-      if (!this.plugin.app.vault.getAbstractFileByPath(typeSubfolder)) {
-        try {
-          await this.plugin.app.vault.createFolder(typeSubfolder);
-        } catch {
-          /* may already exist */
-        }
-      }
+      await ensureFolder(this.plugin.app.vault, `${subfolder}/${tableType}`);
     }
 
     // Old flat-named tables ({name} - {type}.md) move into the type folders.
@@ -254,12 +231,7 @@ export class TerrainTablesService {
     const folder = normalizeFolder(this.plugin.settings.tablesFolder);
     const subfolder = folder ? `${folder}/terrain` : "terrain";
     for (const dir of [subfolder, `${subfolder}/description`, `${subfolder}/encounters`]) {
-      if (this.plugin.app.vault.getAbstractFileByPath(dir)) continue;
-      try {
-        await this.plugin.app.vault.createFolder(dir);
-      } catch {
-        /* may already exist */
-      }
+      await ensureFolder(this.plugin.app.vault, dir);
     }
     for (const entry of terrains) {
       for (const tableType of ["description", "encounters"] as const) {
@@ -435,13 +407,7 @@ export class TerrainTablesService {
     const folder = normalizeFolder(this.plugin.settings.tablesFolder);
     const subfolder = folder ? `${folder}/regions` : "regions";
 
-    if (!this.plugin.app.vault.getAbstractFileByPath(subfolder)) {
-      try {
-        await this.plugin.app.vault.createFolder(subfolder);
-      } catch {
-        /* may already exist */
-      }
-    }
+    await ensureFolder(this.plugin.app.vault, subfolder);
 
     const path = `${subfolder}/${regionName}.md`;
     if (!this.plugin.app.vault.getAbstractFileByPath(path)) {
@@ -628,7 +594,7 @@ export class TerrainTablesService {
       const json = JSON.stringify({ kind: "terrain-rename", palette: paletteName, from: oldName, to: newName, savedAt: new Date().toISOString(), notes });
       where = await writeJsonBackup(this.plugin.app.vault.adapter, dir, "before-rename", json);
     } catch (e) {
-      console.error("Hexmap World Creator: couldn't back up before renaming a terrain; nothing was changed", e);
+      logError("couldn't back up before renaming a terrain; nothing was changed", e);
       new Notice(`Couldn't save a backup, so "${oldName}" wasn't renamed. Nothing was changed.`, 10000);
       return null;
     }
@@ -657,6 +623,7 @@ export class TerrainTablesService {
   private async renameTerrainTables(oldName: string, newName: string, keepOld = true): Promise<void> {
     // Tables still being made for the old name (a just-added terrain) first.
     await this.terrainTablesQueue;
+    const failed: string[] = [];
     for (const type of ["description", "encounters"] as const) {
       const oldPath = this.terrainTablePath(oldName, type);
       const newPath = this.terrainTablePath(newName, type);
@@ -673,7 +640,10 @@ export class TerrainTablesService {
               .replace(/^.*obsidian:\/\/duckmage-roll.*$\n?/m, ""),
           );
           await this.plugin.ensureRollerLink(newPath);
-        } catch { /* ignore */ }
+        } catch (e) {
+          logError(`couldn't move ${oldPath} to ${newPath} for the terrain rename`, e);
+          failed.push(oldPath);
+        }
         continue;
       }
       try {
@@ -684,7 +654,16 @@ export class TerrainTablesService {
         content = content.replace(/^.*obsidian:\/\/duckmage-roll.*$\n?/m, "");
         await this.plugin.app.vault.create(newPath, content);
         await this.plugin.ensureRollerLink(newPath);
-      } catch { /* ignore */ }
+      } catch (e) {
+        logError(`couldn't copy ${oldPath} to ${newPath} for the terrain rename`, e);
+        failed.push(oldPath);
+      }
     }
+    if (failed.length) new Notice(renameTablesFailedText(oldName, newName, failed), 10000);
   }
+}
+
+/** The notice when a renamed terrain's tables couldn't follow it. */
+export function renameTablesFailedText(oldName: string, newName: string, failed: readonly string[]): string {
+  return `Renamed "${oldName}" to "${newName}", but couldn't move or copy ${failed.length === 1 ? "its table" : "its tables"} ${failed.join(", ")}: ${failed.length === 1 ? "it's" : "they're"} still under the old name.`;
 }

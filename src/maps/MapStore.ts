@@ -47,7 +47,8 @@ import {
   type MapNotesMigrationHost,
 } from "../migrations/v1.5-map-data-to-map-notes";
 import { upgradeMapSettings as upgradeAreaSettings } from "../migrations/map-note-5-to-6-area-names";
-import { logError } from "../log";
+import { logError, logWarn } from "../log";
+import { ensureFolder, ensureFolderPath } from "../vault/ensureFolder";
 
 /** One hex changed during MapStore.record: its data before and after. */
 export interface HexCellChange {
@@ -183,7 +184,7 @@ export class MapStore {
     if (this.missing.has(map)) return;
     this.missing.add(map);
     this.dirty.delete(map);
-    console.warn(`Hexmap World Creator: the map note of "${map}" is gone; the map is marked missing (Restore or Remove it in the map list).`);
+    logWarn(`the map note of "${map}" is gone; the map is marked missing (Restore or Remove it in the map list).`);
   }
 
   /** Where the last known copy of each map note is kept (plugin folder, outside the vault's notes). */
@@ -212,7 +213,7 @@ export class MapStore {
       await adapter.write(path, text);
       this.cached.set(map, text);
     } catch (e) {
-      console.error(`Hexmap World Creator: couldn't save the map cache for ${map}`, e);
+      logError(`couldn't save the map cache for ${map}`, e);
     }
   }
 
@@ -266,7 +267,7 @@ export class MapStore {
         out = typeof r === "object" ? { error: `The map note ${path} is back but can't be read: ${r.unreadable}` } : { source: "note" };
         return;
       }
-      await this.ensureFolders(this.mapFolder(name));
+      await ensureFolderPath(this.plugin.app.vault, this.mapFolder(name));
       if (this.lastKey.has(name)) {
         this.missing.delete(name);
         await this.writeNote(map);
@@ -289,17 +290,6 @@ export class MapStore {
       await this.plugin.saveData(this.plugin.settings);
       this.plugin.refreshHexMap();
     }).then(() => out);
-  }
-
-  private async ensureFolders(folder: string): Promise<void> {
-    const { vault } = this.plugin.app;
-    const parts = folder.split("/");
-    for (let i = 1; i <= parts.length; i++) {
-      const p = parts.slice(0, i).join("/");
-      if (!vault.getAbstractFileByPath(p)) {
-        try { await vault.createFolder(p); } catch { /* made meanwhile */ }
-      }
-    }
   }
 
   /** A note or folder was deleted: maps whose note went with it are marked missing (after a moment, so the plugin's own deletes settle first). */
@@ -669,7 +659,7 @@ export class MapStore {
     try {
       await writePathReport(this.plugin.app.vault.adapter, this.backupDir(), map, report);
     } catch (e) {
-      console.error(`Hexmap World Creator: couldn't save the path report for ${map}`, e);
+      logError(`couldn't save the path report for ${map}`, e);
     }
   }
 
@@ -862,9 +852,7 @@ export class MapStore {
     } else {
       const data = this.dataFor(map);
       const folder = this.mapFolder(map.name);
-      if (!vault.getAbstractFileByPath(folder)) {
-        try { await vault.createFolder(folder); } catch { /* exists */ }
-      }
+      await ensureFolder(vault, folder);
       const ctx = this.contextFor(map);
       const content = buildMapNote(map.name, data, ctx);
       this.lastDerived.set(map.name, JSON.stringify(ctx));
@@ -887,7 +875,7 @@ export class MapStore {
     const dropsHexes = disk.hexes.size > 0 && data.hexes.size === 0 && !this.clearedHexes.has(map.name);
     if (!dropsPaths && !dropsHexes) return false;
     const what = droppedWhat(dropsPaths ? disk.paths.length : 0, dropsHexes ? disk.hexes.size : 0);
-    console.error(`Hexmap World Creator: a save of ${path} would have removed ${what}, but nothing was deleted, so the note's copy was kept.`, { map: map.name, paths: map.paths, hexes: data.hexes.size });
+    logError(`a save of ${path} would have removed ${what}, but nothing was deleted, so the note's copy was kept.`, { map: map.name, paths: map.paths, hexes: data.hexes.size });
     noticeBackground(`a save of ${path} would have removed ${what}. Nothing was deleted, so the note's copy was kept. If you meant to remove it, delete again.`, 15000);
     if (dropsHexes) this.hexes.set(map.name, this.matchCase(map, disk.hexes));
     if (dropsPaths) {
@@ -1164,7 +1152,7 @@ export class MapStore {
       await adapter.write(path, text);
       return true;
     } catch (e) {
-      console.error(`Hexmap World Creator: couldn't back up the map note for ${map}; it wasn't converted`, e);
+      logError(`couldn't back up the map note for ${map}; it wasn't converted`, e);
       return false;
     }
   }
@@ -1198,7 +1186,7 @@ export class MapStore {
     const fixes = regionMirrorFixes(maps, (m, k) => this.get(m, k), (m) => this.all(m))
       .filter((f) => !skip.includes(f.map) && !this.broken.has(f.map) && !this.missing.has(f.map));
     for (const f of fixes) {
-      console.warn(`Hexmap World Creator: fixed a region link: ${f.map} hex ${f.hex}: ${f.reason}.`);
+      logWarn(`fixed a region link: ${f.map} hex ${f.hex}: ${f.reason}.`);
       this.set(f.map, f.hex, f.patch);
     }
     return fixes.length;

@@ -13,6 +13,8 @@
 import { Notice, TFile, type App } from "obsidian";
 import { HexmakerModal } from "./HexmakerModal";
 import { listNoteBackups, planRestore, writeJsonBackup, type BackupAdapter, type BackupReadAdapter, type NoteBackup, type RestoreStatus } from "./backup";
+import { logError } from "./log";
+import { ensureFolder } from "./vault/ensureFolder";
 
 /** What the commands need from the plugin. */
 export interface BackupsHost {
@@ -42,7 +44,7 @@ export async function openBackupsFolder(host: BackupsHost): Promise<void> {
       return;
     }
   } catch (e) {
-    console.error("Hexmap World Creator: couldn't open the backups folder", e);
+    logError("couldn't open the backups folder", e);
   }
   const where = adapter.getFullPath ? adapter.getFullPath(folder) : folder;
   new Notice(`The backups are in ${where}`, 15000);
@@ -82,9 +84,7 @@ export async function restoreBackup(app: App, backupsFolder: string, backup: Not
       await app.vault.process(f, () => text);
     } else {
       const dir = s.path.includes("/") ? s.path.slice(0, s.path.lastIndexOf("/")) : "";
-      if (dir && !app.vault.getAbstractFileByPath(dir)) {
-        try { await app.vault.createFolder(dir); } catch { /* made meanwhile */ }
-      }
+      if (dir) await ensureFolder(app.vault, dir);
       await app.vault.create(s.path, text);
     }
     restored.push(s.path);
@@ -185,7 +185,7 @@ export class RestoreBackupModal extends HexmakerModal {
         12000,
       );
     } catch (e) {
-      console.error("Hexmap World Creator: restore failed", e);
+      logError("restore failed", e);
       new Notice(`Couldn't save a backup of the notes as they are now, so nothing was restored (${String(e)}).`, 12000);
     }
   }

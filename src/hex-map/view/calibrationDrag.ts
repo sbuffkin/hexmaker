@@ -18,15 +18,8 @@ export interface DragMove {
  *
  * `begin` runs first (swap the hex cells for the colour snapshot) and `end`
  * runs on stop, after the final move (swap them back).
- *
- * When `window.DUCKMAGE_PERF` is truthy it records, for the drag's lifetime:
- * mousemove count, frames run, mean synchronous work() time per frame, and
- * the median inter-frame gap — logged on stop(). A cheap work() paired with a
- * large frame gap means the drag is paint/composite-bound (the scene, not our
- * JS) — the expected signature when resizing over a big background image.
  */
 export function coalesceDragMove(
-  label: string,
   work: (ev: MouseEvent) => void,
   begin: () => void,
   end: () => void,
@@ -38,35 +31,15 @@ export function coalesceDragMove(
   begin();
   let latest: MouseEvent | null = null;
   let frameId: number | null = null;
-  const perf = !!(window as unknown as { DUCKMAGE_PERF?: unknown })
-    .DUCKMAGE_PERF;
-  let moves = 0,
-    frames = 0,
-    workMs = 0,
-    lastTickAt = 0;
-  const gaps: number[] = [];
-  const run = (ev: MouseEvent) => {
-    if (!perf) {
-      work(ev);
-      return;
-    }
-    const now = performance.now();
-    if (lastTickAt) gaps.push(now - lastTickAt);
-    lastTickAt = now;
-    work(ev);
-    workMs += performance.now() - now;
-    frames++;
-  };
   const tick = () => {
     frameId = null;
     if (latest) {
-      run(latest);
+      work(latest);
       latest = null;
     }
   };
   return {
     onMove: (ev: MouseEvent) => {
-      if (perf) moves++;
       latest = ev;
       if (frameId === null) frameId = window.requestAnimationFrame(tick);
     },
@@ -76,19 +49,10 @@ export function coalesceDragMove(
         frameId = null;
       }
       if (latest) {
-        run(latest);
+        work(latest);
         latest = null;
       }
       end();
-      if (perf) {
-        const sorted = gaps.slice().sort((a, b) => a - b);
-        const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
-        console.warn(
-          `[duckmage perf] ${label}: moves=${moves} frames=${frames} ` +
-            `workMs/frame=${(workMs / Math.max(1, frames)).toFixed(2)} ` +
-            `medianFrameGapMs=${med.toFixed(1)}`,
-        );
-      }
     },
   };
 }
@@ -128,7 +92,7 @@ export function attachResizeHandles(
   el: HTMLElement,
   opts: ResizeOpts,
   zoom: () => number,
-  coalesce: (label: string, work: (ev: MouseEvent) => void) => DragMove,
+  coalesce: (work: (ev: MouseEvent) => void) => DragMove,
 ): void {
   type Handle =
     | "nw" | "n" | "ne"
@@ -162,7 +126,7 @@ export function attachResizeHandles(
       const ay = h.includes("s") ? 0 : h.includes("n") ? H0 : H0 / 2;
 
       const startX = e.clientX, startY = e.clientY;
-      const { onMove, stop } = coalesce(`resize-${h}`, (ev) => {
+      const { onMove, stop } = coalesce((ev) => {
         // Cursor delta in screen pixels → pre-transform pixels (undo viewport zoom)
         const dx = (ev.clientX - startX) / viewportZoom;
         const dy = (ev.clientY - startY) / viewportZoom;
