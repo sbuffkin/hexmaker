@@ -19,7 +19,84 @@ export interface YBlock {
 
 const indentOf = (l: string) => /^[ \t]*/.exec(l)![0].replace(/\t/g, "  ").length;
 const isBlankOrComment = (l: string) => !l.trim() || /^\s*#/.test(l);
-const KEY_LINE = /^\s*("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s#:"'][^:]*?)\s*:(?:\s+(.*?))?\s*$/;
+const isSpace = (c: string | undefined) => c !== undefined && /\s/.test(c);
+const isLineBreak = (c: string) => c === "\n" || c === "\r" || c === "\u2028" || c === "\u2029";
+
+/**
+ * A `key: value` line: the key as written (quotes kept) and the value with
+ * the spaces around it trimmed (undefined when nothing follows the colon),
+ * or null when the line isn't one. Keys are `"double"` or `'single'` quoted
+ * (`''` is a quote inside) or plain (up to the first colon, not starting
+ * with a space, `#`, `:` or a quote); the colon is followed by a space or
+ * the line's end.
+ *
+ * Hand-written to run in linear time: the regex it replaces
+ * (`/^\s*(…|[^\s#:"'][^:]*?)\s*:(?:\s+(.*?))?\s*$/`) backtracked over long
+ * runs of spaces, about a minute for one 400k-character line. It matches
+ * exactly what that regex matched (tests/yamlLooseKeyLine.test.ts).
+ */
+export function keyLine(line: string): { key: string; rest: string | undefined } | null {
+  const n = line.length;
+  let i = 0;
+  while (i < n && isSpace(line[i])) i++;
+  if (i === n) return null;
+  // The value's last non-space character, and the last line break before it
+  // (a value may not hold one), once for the whole line.
+  let last = n - 1;
+  while (last >= 0 && isSpace(line[last])) last--;
+  let breakBeforeLast = -1;
+  for (let k = last - 1; k >= 0; k--) if (isLineBreak(line[k])) { breakBeforeLast = k; break; }
+
+  /** The rest of the line after a key ending at `end`: `\s*:` then a value or nothing. */
+  const after = (end: number): { rest: string | undefined } | null => {
+    let p = end;
+    while (p < n && isSpace(line[p])) p++;
+    if (line[p] !== ":") return null;
+    p++;
+    if (p === n) return { rest: undefined };
+    if (!isSpace(line[p])) return null;
+    let s = p;
+    while (s < n && isSpace(line[s])) s++;
+    if (s > last) return { rest: "" };
+    if (breakBeforeLast > s) return null;
+    return { rest: line.slice(s, last + 1) };
+  };
+
+  const c = line[i];
+  if (c === '"') {
+    for (let j = i + 1; j < n; j++) {
+      if (line[j] === "\\") {
+        if (j + 1 >= n || isLineBreak(line[j + 1])) return null;
+        j++;
+      } else if (line[j] === '"') {
+        const r = after(j + 1);
+        return r && { key: line.slice(i, j + 1), rest: r.rest };
+      }
+    }
+    return null;
+  }
+  if (c === "'") {
+    // Each quote may end the key; `''` may also be a quote inside it. The
+    // longest key that is followed by a colon wins (as the regex's greedy loop).
+    const ends: number[] = [];
+    for (let j = i + 1; j < n; j++) {
+      if (line[j] !== "'") continue;
+      ends.push(j + 1);
+      if (line[j + 1] === "'") j++;
+      else break;
+    }
+    for (let k = ends.length - 1; k >= 0; k--) {
+      const r = after(ends[k]);
+      if (r) return { key: line.slice(i, ends[k]), rest: r.rest };
+    }
+    return null;
+  }
+  if (c === "#" || c === ":") return null;
+  const colon = line.indexOf(":", i);
+  if (colon < 0) return null;
+  const r = after(colon);
+  return r && { key: line.slice(i, colon).trimEnd(), rest: r.rest };
+}
 
 function unquoteKey(k: string): string {
   if (/^".*"$/.test(k)) { try { return JSON.parse(k) as string; } catch { return k.slice(1, -1); } }
@@ -32,8 +109,8 @@ export function yamlBlocks(src: string): YBlock[] {
   const out: YBlock[] = [];
   for (const line of src.split("\n")) {
     const top = !/^\s/.test(line) && line.trim() !== "";
-    const kv = top && !line.startsWith("#") && !line.startsWith("-") ? KEY_LINE.exec(line) : null;
-    if (kv) out.push({ key: unquoteKey(kv[1]), lines: [line] });
+    const kv = top && !line.startsWith("#") && !line.startsWith("-") ? keyLine(line) : null;
+    if (kv) out.push({ key: unquoteKey(kv.key), lines: [line] });
     else if (out.length && (!top || line.startsWith("-"))) out[out.length - 1].lines.push(line);
     else out.push({ key: null, lines: [line] });
   }
@@ -96,8 +173,24 @@ function scalarNode(raw: string): YNode {
     return { t: "m", v: m };
   }
   // "foo # comment" is YAML for "foo"; "Thornwood #2" keeps its "#2".
-  t = t.replace(/\s+#\s.*$/, "");
-  return { t: "s", v: t, q: false };
+  return { t: "s", v: withoutComment(t), q: false };
+}
+
+/**
+ * `t` without a trailing ` # comment` (spaces, `#`, a space, then the rest
+ * of the line). What `t.replace(/\s+#\s.*$/, "")` did, in linear time: that
+ * regex backtracked over long runs of spaces.
+ */
+export function withoutComment(t: string): string {
+  let lastBreak = -1;
+  for (let k = t.length - 1; k >= 0; k--) if (isLineBreak(t[k])) { lastBreak = k; break; }
+  for (let q = 1; q + 1 < t.length; q++) {
+    if (t[q] !== "#" || !isSpace(t[q - 1]) || !isSpace(t[q + 1]) || lastBreak >= q + 2) continue;
+    let p = q - 1;
+    while (p > 0 && isSpace(t[p - 1])) p--;
+    return t.slice(0, p);
+  }
+  return t;
 }
 
 /** Parse a nested block (the lines under a `key:` with no inline value). */
@@ -116,7 +209,7 @@ function blockNode(lines: string[]): YNode | undefined {
       t: "l",
       v: items.map((it) => {
         const first = it[0].trim();
-        if (KEY_LINE.test(first) && !/^["'[{]/.test(first)) return blockNode(it) ?? { t: "s", v: "", q: false };
+        if (keyLine(first) && !/^["'[{]/.test(first)) return blockNode(it) ?? { t: "s", v: "", q: false };
         return it.length > 1 ? scalarNode([first, ...it.slice(1).map((l) => l.trim())].join(" ")) : scalarNode(first);
       }),
     };
@@ -131,8 +224,8 @@ function blockNode(lines: string[]): YNode | undefined {
     if (node) m.set(key, node);
   };
   for (const l of body) {
-    const kv = atInd(l) ? KEY_LINE.exec(l) : null;
-    if (kv) { finish(); key = unquoteKey(kv[1]); rest = kv[2] ?? ""; kids = []; }
+    const kv = atInd(l) ? keyLine(l) : null;
+    if (kv) { finish(); key = unquoteKey(kv.key); rest = kv.rest ?? ""; kids = []; }
     else kids.push(l);
   }
   finish();
@@ -158,8 +251,8 @@ export function parseYamlLoose(src: string): { blocks: YBlock[]; values: Map<str
   const values = new Map<string, YNode>();
   for (const b of blocks) {
     if (b.key === null) continue;
-    const kv = KEY_LINE.exec(b.lines[0])!;
-    const node = valueNode(kv[2] ?? "", b.lines.slice(1));
+    const kv = keyLine(b.lines[0])!;
+    const node = valueNode(kv.rest ?? "", b.lines.slice(1));
     values.set(b.key, node ?? { t: "s", v: "", q: false });
   }
   return { blocks, values };
@@ -173,6 +266,7 @@ export function toJs(n: YNode): unknown {
   const t = n.v.trim();
   if (/^(true|false)$/i.test(t)) return t.toLowerCase() === "true";
   if (t === "" || t === "~" || /^null$/i.test(t)) return null;
-  if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(t)) return Number(t);
+  // (Not `\d+\.?\d*`: that form backtracks quadratically on a long run of digits.)
+  if (/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/.test(t)) return Number(t);
   return t;
 }
