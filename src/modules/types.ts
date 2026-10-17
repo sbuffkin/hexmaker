@@ -31,6 +31,8 @@ import type { WorldMapsApi } from "./world-maps/api";
 import type { TAbstractFile } from "obsidian";
 import type { PackKind } from "../packs/packKinds";
 import type { UndoItem } from "../hex-map/undoItems";
+import type { Placement } from "../ui/placement";
+import type { ModeAction, WorkMode } from "../workMode";
 
 /** A map type id ("world", "space"). Stable, never reused. */
 export type KindId = string;
@@ -253,6 +255,18 @@ export interface HexmakerModule {
    * the keys as the user's own.
    */
   mapNoteFields?: readonly MapNoteField[];
+  /**
+   * Where its own controls sit (rows of the placement map, src/ui/placement.ts),
+   * merged after the core's: a build without the module has none of these ids.
+   * Never a core id (tests/placementModules.test.ts).
+   */
+  placement?: Readonly<Record<string, Placement>>;
+  /**
+   * How the work modes treat its own entry points (src/workMode.ts), merged
+   * after the core's tables: its commands, map-view menu items, drawing
+   * tools, and any action of its own (with the modes that allow it).
+   */
+  modeActions?: ModeActionContributions;
   /** Data the module owns (release slicing derives its lists from these). */
   owns: {
     settingsKeys: readonly string[];
@@ -265,6 +279,18 @@ export interface HexmakerModule {
      */
     strings?: readonly string[];
   };
+}
+
+/** A module's rows of the work-mode tables (src/workMode.ts); ids never shadow the core's. */
+export interface ModeActionContributions {
+  /** Actions of its own: which modes allow each, and the verb for "Switch to Build to <verb>." */
+  policy?: Readonly<Partial<Record<ModeAction, { modes: readonly WorkMode[]; verb: string }>>>;
+  /** Its command ids → action. */
+  commands?: Readonly<Record<string, ModeAction>>;
+  /** Its map-view menu item ids ("hex.explore-roll", "ow.edit-region") → action. */
+  menus?: Readonly<Record<string, ModeAction>>;
+  /** Its drawing tools → action. */
+  tools?: Readonly<Record<string, ModeAction>>;
 }
 
 /**

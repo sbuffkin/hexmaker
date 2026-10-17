@@ -9,6 +9,10 @@ import expect from "expect";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PLACEMENT, layerOf, parsePlacement, partitionSections, subSectionOf, type Layer, type Placement } from "../src/ui/placement";
+import { allPlacement } from "./helpers/slices";
+
+/** Every control\'s placement, the modules\' rows included whichever slices are built (the worksheet lists them all). */
+const ALL_PLACEMENT = allPlacement();
 import { Disclosure, DISCLOSURE_OPEN_KEY, disclosureOpen, setDisclosureOpen, subSectionKey } from "../src/ui/disclosure";
 import { setDebugMode, type LocalStore } from "../src/ui/debugMode";
 import { addPlacedMenuItems, placeCommand } from "../src/ui/commandPlacement";
@@ -92,17 +96,17 @@ describe("owner worksheet: every tagged id on these surfaces is honoured", () =>
     const want = expectedLayer(id, tier);
     it(`${r.id} (${r.choice}${id !== r.id ? `, twin of ${id}` : ""}) → ${want}`, () => {
       if (want === "dropped") {
-        expect(Object.prototype.hasOwnProperty.call(PLACEMENT, r.id)).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(ALL_PLACEMENT, r.id)).toBe(false);
         return;
       }
-      const got = layerOf(id);
+      const got = layerOf(id, ALL_PLACEMENT);
       if (want === "main") expect(["main", "more"]).toContain(got);
       else expect(got).toBe(want);
       // Simple ones are never below the fold either.
       if (tier === "simple" && !EXCEPTIONS[id]) expect(got).toBe("main");
       // Generator-page overkill: in a named Advanced sub-section.
       // (Round 10: the biome page's Seed was a one-item sub-section, so it's plain Advanced.)
-      if (tier === "overkill" && /^(GenPage|BiomePage)\./.test(id) && id !== "BiomePage.seed") expect(subSectionOf(id)).toBeTruthy();
+      if (tier === "overkill" && /^(GenPage|BiomePage)\./.test(id) && id !== "BiomePage.seed") expect(subSectionOf(id, ALL_PLACEMENT)).toBeTruthy();
     });
   }
 
@@ -110,7 +114,7 @@ describe("owner worksheet: every tagged id on these surfaces is honoured", () =>
     const tab = readSurface("settings-tab");
     for (const r of ROWS.filter((x) => x.id.startsWith("Settings.legacy"))) {
       expect(tab).not.toContain(r.id);
-      expect(Object.prototype.hasOwnProperty.call(PLACEMENT, r.id)).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(ALL_PLACEMENT, r.id)).toBe(false);
     }
   });
 
@@ -119,7 +123,7 @@ describe("owner worksheet: every tagged id on these surfaces is honoured", () =>
     // BiomePage.tune.* came from an owner request (2026-10-12), not the worksheet; so did the
     // hex flower module's (plan-hex-flower, 2026-10-14): its folder setting and wizard options.
     const later = (k: string) => k.startsWith("BiomePage.tune.") || k === "Settings.hexFlowersFolder" || k.startsWith("Wizard.flower");
-    for (const id of Object.keys(PLACEMENT).filter((k) => /^(Settings|Wizard|Plugin|GenPage|BiomePage|GenLib|MakeGen)\./.test(k) && !later(k))) {
+    for (const id of Object.keys(ALL_PLACEMENT).filter((k) => /^(Settings|Wizard|Plugin|GenPage|BiomePage|GenLib|MakeGen)\./.test(k) && !later(k))) {
       expect([id, known.has(id)]).toEqual([id, true]);
     }
   });
@@ -296,7 +300,7 @@ describe("Advanced sub-sections", () => {
     put("GenPage.routeOn"); // advanced/Paths
     put("Settings.generateWorldData"); // plain advanced
     put("GenPage.scatter"); // advanced/Engine tuning again
-    put("Settings.biomesFolder"); // debug
+    put("HexTable.refresh"); // debug
     d.toEnd();
     const details = host.find("duckmage-disclosure")[0];
     expect(host.children[host.children.length - 1]).toBe(details);
@@ -315,7 +319,7 @@ describe("Advanced sub-sections", () => {
     expect(subs.every((s) => s.open === false)).toBe(true);
     expect(subs[0].children[1].children.map((c) => c.text)).toEqual(["GenPage.clumping", "GenPage.scatter"]);
     expect(subs[1].children[1].children.map((c) => c.text)).toEqual(["GenPage.routeOn"]);
-    expect(details.children[3].children.map((c) => c.text)).toEqual(["Debug", "Settings.biomesFolder"]);
+    expect(details.children[3].children.map((c) => c.text)).toEqual(["Debug", "HexTable.refresh"]);
     setDebugMode(store, false);
   });
 
@@ -347,7 +351,7 @@ describe("Advanced sub-sections", () => {
     const box = d.target("GenPage.seed", here as unknown as HTMLElement) as unknown as FakeEl;
     expect(box.cls).toBe("duckmage-disclosure-sub-body");
     expect(box.parent?.children[0].text).toBe("Seed");
-    expect(d.target("Settings.biomesFolder", here as unknown as HTMLElement)).toBeNull();
+    expect(d.target("HexTable.refresh", here as unknown as HTMLElement)).toBeNull();
     // section() accepts a sub-section by name too, and returns the same box.
     expect(d.section("advanced/Seed")).toBe(box as unknown as HTMLElement);
   });
@@ -372,23 +376,23 @@ describe("generator page and wizard place their controls by id", () => {
   };
 
   it("every non-main generator control is placed (or carried by one that is, in the same spot)", () => {
-    for (const r of ROWS.filter((x) => /^(GenPage|BiomePage)\./.test(x.id) && layerOf(x.id) !== "main")) {
+    for (const r of ROWS.filter((x) => /^(GenPage|BiomePage)\./.test(x.id) && layerOf(x.id, ALL_PLACEMENT) !== "main")) {
       const carrier = CARRIED[r.id] ?? r.id;
-      expect([r.id, PLACEMENT[r.id]]).toEqual([r.id, PLACEMENT[carrier]]);
+      expect([r.id, ALL_PLACEMENT[r.id]]).toEqual([r.id, ALL_PLACEMENT[carrier]]);
       const src = carrier.startsWith("BiomePage.") ? biome : panel;
       expect([r.id, src.includes(`place("${carrier}"`)]).toEqual([r.id, true]);
     }
   });
 
   it("the generator page's Advanced has Engine tuning, Paths and Seed, and no Debug", () => {
-    const subs = new Set(Object.keys(PLACEMENT).filter((id) => id.startsWith("GenPage.")).map((id) => subSectionOf(id)));
+    const subs = new Set(Object.keys(ALL_PLACEMENT).filter((id) => id.startsWith("GenPage.")).map((id) => subSectionOf(id, ALL_PLACEMENT)));
     expect([...subs].sort()).toEqual(["Engine tuning", "Paths", "Seed"]);
     // Except the biome view's per-biome tuning, which the owner asked for in Debug (2026-10-12).
-    expect(Object.keys(PLACEMENT).filter((id) => /^(GenPage|BiomePage)\./.test(id) && layerOf(id) === "debug" && !id.startsWith("BiomePage.tune."))).toEqual([]);
+    expect(Object.keys(ALL_PLACEMENT).filter((id) => /^(GenPage|BiomePage)\./.test(id) && layerOf(id, ALL_PLACEMENT) === "debug" && !id.startsWith("BiomePage.tune."))).toEqual([]);
   });
 
   it("the earlier proof placements are undone: Symmetry, Edge style and the guarantees are main (keep)", () => {
-    for (const id of ["GenPage.symmetry", "GenPage.edgeStyle", "GenPage.guaranteedFeatures", "GenPage.connectedLand"]) expect(layerOf(id)).toBe("main");
+    for (const id of ["GenPage.symmetry", "GenPage.edgeStyle", "GenPage.guaranteedFeatures", "GenPage.connectedLand"]) expect(layerOf(id, ALL_PLACEMENT)).toBe("main");
   });
 
   it("the wizard's generator options and per-folder paths go in its Advanced dropdowns", () => {
@@ -413,7 +417,7 @@ describe("dropped controls are gone", () => {
   });
 
   it("no drop-tagged id on these surfaces has a placement entry", () => {
-    for (const r of ROWS.filter((x) => x.choice === "drop")) expect(Object.prototype.hasOwnProperty.call(PLACEMENT, r.id)).toBe(false);
+    for (const r of ROWS.filter((x) => x.choice === "drop")) expect(Object.prototype.hasOwnProperty.call(ALL_PLACEMENT, r.id)).toBe(false);
   });
 });
 

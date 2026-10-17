@@ -43,6 +43,9 @@
  * (src/ui/disclosure.ts) or, in the settings tab, layoutDefinitions.
  */
 
+import { MODULES } from "../modules";
+import type { HexmakerModule } from "../modules/types";
+
 export type Layer = "main" | "more" | "advanced" | "debug" | "hidden";
 
 /** A layer, or a named sub-section of Advanced (`advanced/<Sub-section>`). */
@@ -59,7 +62,11 @@ const DEBUG_SUB_PREFIX = "debug/";
 // path bar Cross impassable, layers Region overlay, terrain-filter type rows, token
 // Description, path picker Paths on this map, path type Carves, export Region overlay,
 // path menu Split here / Reverse. Biome page Seed stays Advanced without a sub-section.
-export const PLACEMENT: Readonly<Record<string, Placement>> = {
+//
+// A module's own controls are placed by its module (HexmakerModule.placement,
+// src/modules/<id>/index.ts), merged in after these: a build without the
+// module has none of its ids. These rows are the core's.
+export const CORE_PLACEMENT: Readonly<Record<string, Placement>> = {
   // ── Settings ──
   // The world folder and custom icons folder stay main (keep); the rest of
   // the folder layout is Advanced. Storage plumbing for overworlds and
@@ -78,24 +85,6 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "Settings.workflowsFolder": "advanced/Folders",
   "Settings.templatesFolder": "advanced/Folders",
   "Settings.palettesFolder": "advanced/Folders",
-  "Settings.biomesFolder": "debug",
-  "Settings.biomePoolsFolder": "debug",
-  "Settings.worldTypesFolder": "debug",
-  "Settings.hexFlowersFolder": "debug",
-  // ── Hex flowers (plan-hex-flower): the generator page's Hex flowers tab (its own surface,
-  // FlowerPage) puts dice, walk length and seed in Advanced, the note's read report and the
-  // odds matrix in Debug. The Hex flower generator's Party token and Reveal options are main
-  // on New map and in the setup wizard (owner HF9, 2026-10-16: "both above the fold, this is
-  // pretty standard functionality"). ──
-  "FlowerPage.dice": "advanced",
-  "FlowerPage.walkLength": "advanced",
-  "FlowerPage.seed": "advanced",
-  "FlowerPage.report": "debug",
-  "FlowerPage.matrix": "debug",
-  "NewMap.flowerParty": "main",
-  "NewMap.flowerReveal": "main",
-  "Wizard.flowerParty": "main",
-  "Wizard.flowerReveal": "main",
   // Overkill in the worksheet, but the README's manual setup uses it and
   // the "table not found" messages point here (repairHint.ts), so it sits
   // at the top of Advanced, not in a sub-section or Debug.
@@ -152,9 +141,6 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // should be above the fold". The generator's options are main; the
   // step's Advanced holds a trimmed set of engine tuning sliders instead.
   "Wizard.tuning": "advanced",
-  // World maps' Biomes scale makes an overworld; "Make every region now"
-  // is off and out of the way (a 16 × 12 overworld is 192 regions).
-  "Wizard.makeAllRegions": "advanced",
 
   // ── Commands & menus ──
   "Plugin.cmd.addRollRanges": "debug",
@@ -197,43 +183,6 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // stays by the preview.
   "GenPage.seed": "advanced/Seed",
   "GenPage.seedLock": "advanced/Seed",
-  "BiomePage.seed": "advanced",
-  // Biome tuning (owner 2026-10-12): every generator constant of a biome, in
-  // Debug sub-sections (src/overworld/biomeTuning.ts TUNING_PARAMS; one id per
-  // param, `BiomePage.tune.<camelCase key>`). Engine only shows for a biome
-  // that links a generator.
-  "BiomePage.tune.reach": "debug/Layout",
-  "BiomePage.tune.wiggleScale": "debug/Layout",
-  "BiomePage.tune.halo": "debug/Layout",
-  "BiomePage.tune.blendK": "debug/Borders & transitions",
-  "BiomePage.tune.wiggle": "debug/Borders & transitions",
-  "BiomePage.tune.nameSharpness": "debug/Borders & transitions",
-  "BiomePage.tune.neighbourInfluence": "debug/Borders & transitions",
-  "BiomePage.tune.contextDepth": "debug/Borders & transitions",
-  "BiomePage.tune.neighbourFade": "debug/Borders & transitions",
-  "BiomePage.tune.bandKeep": "debug/Borders & transitions",
-  "BiomePage.tune.keepMix": "debug/Borders & transitions",
-  "BiomePage.tune.islandMax": "debug/Water & islands",
-  "BiomePage.tune.islandEdge": "debug/Water & islands",
-  "BiomePage.tune.beach": "debug/Water & islands",
-  "BiomePage.tune.coastWidth": "debug/Water & islands",
-  "BiomePage.tune.shoreLean": "debug/Water & islands",
-  "BiomePage.tune.shoreRagged": "debug/Water & islands",
-  "BiomePage.tune.smoothing": "debug/Patches & detail",
-  "BiomePage.tune.fieldHold": "debug/Patches & detail",
-  "BiomePage.tune.patchSize": "debug/Patches & detail",
-  "BiomePage.tune.patchMax": "debug/Patches & detail",
-  "BiomePage.tune.patchEdge": "debug/Patches & detail",
-  "BiomePage.tune.clumping": "debug/Engine",
-  "BiomePage.tune.mixStrength": "debug/Engine",
-  "BiomePage.tune.featureSize": "debug/Engine",
-  "BiomePage.tune.scatter": "debug/Engine",
-  "BiomePage.tune.randomness": "debug/Engine",
-  "BiomePage.tune.edgeSmoothing": "debug/Engine",
-  "BiomePage.tune.speckSize": "debug/Engine",
-  "BiomePage.tune.keepRare": "debug/Engine",
-  "BiomePage.tune.edgeStrength": "debug/Engine",
-  "BiomePage.tune.directionalBias": "debug/Engine",
   // ── Owner worksheet 2026-10-11 (dev/ui-inventory/inputs-tags-resolved.json):
   // maps, new maps, regions/overworlds/biomes, world types, palette editor,
   // random tables, workflows, export. simple = main, advanced = advanced,
@@ -281,40 +230,10 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // Every generator option is main; New map's Advanced holds the trimmed
   // engine tuning sliders instead, and a scale's own choices.
   "NewMap.tuning": "advanced",
-  // World maps' Biomes scale: "Make every region now" (default off, so
-  // the first-map step stays simple; the overworld form keeps it in view).
-  "NewMap.makeAllRegions": "advanced",
-  // New maps & map links › New land beside a map
-  "WalkOW.seed": "debug",
-  // Regions, overworlds & biomes › New overworld
-  "NewOverworld.seed": "debug",
-  // Regions, overworlds & biomes › Biome library & biome form
-  "BiomeForm.chance": "debug",
-  // Regions, overworlds & biomes › Biome picker & paint
-  "BiomePicker.enterRegion": "main",
-  // Regions, overworlds & biomes › Region settings
-  "RegionGen.wigglyBorders": "debug",
-  "RegionGen.seed": "debug",
-  // Regions, overworlds & biomes › Edit region
-  "EditRegion.name": "main",
-  "EditRegion.enterRegion": "main",
-  "EditRegion.openMapNote": "main",
-  "EditRegion.locationsList": "main",
-  "EditRegion.notes": "main",
-  "EditRegion.blendIntoBiome": "advanced",
   // Regions, overworlds & biomes › Overworld right-click menu: Reroll and
   // Lock, only on a new (open) region (owner 2026-10-12).
   "OverworldMenu.reroll": "main",
   "OverworldMenu.lock": "main",
-  // Space: world types › Worlds tab
-  "WorldTypes.worldGenerator": "debug",
-  "WorldTypes.worldOptions": "debug",
-  // Space: world types › Preview
-  "WorldTypes.previewMap": "debug",
-  "WorldTypes.previewOrbit": "debug",
-  "WorldTypes.previewStar": "debug",
-  "WorldTypes.previewTemperature": "debug",
-  "WorldTypes.previewRolls": "debug",
   // Palette editor › Submap defaults
   "PaletteEditor.generatorOptions": "debug",
   // Random tables › Tables list
@@ -370,6 +289,25 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "PackImport.conflictAll": "main",
   "PackImport.import": "main",
 };
+
+/**
+ * The core's rows with each module's own after them (in module order). A
+ * module never re-places a core id (tests/placementModules.test.ts), so
+ * the core's row wins if one ever does.
+ */
+export function withModulePlacement(
+  core: Readonly<Record<string, Placement>>,
+  modules: readonly Pick<HexmakerModule, "placement">[],
+): Readonly<Record<string, Placement>> {
+  const out: Record<string, Placement> = { ...core };
+  for (const m of modules) {
+    for (const [id, at] of Object.entries(m.placement ?? {})) if (!Object.prototype.hasOwnProperty.call(out, id)) out[id] = at;
+  }
+  return out;
+}
+
+/** The placement map of this build: the core's rows and those of the modules compiled in. */
+export const PLACEMENT: Readonly<Record<string, Placement>> = withModulePlacement(CORE_PLACEMENT, MODULES);
 
 /** Read a placement value: its layer and, for `advanced/<Sub>`, the sub-section. Null when it isn't one. */
 export function parsePlacement(value: unknown): { layer: Layer; sub?: string } | null {

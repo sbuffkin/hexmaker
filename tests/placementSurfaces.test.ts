@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { PLACEMENT, layerOf, type Layer } from "../src/ui/placement";
+import { layerOf, type Layer } from "../src/ui/placement";
 import { PlacedMenu, type MenuLike } from "../src/ui/placedMenu";
 import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "./__mocks__/obsidian"; // the mock records shown menus
 import type { Menu as RealMenu } from "obsidian";
@@ -23,6 +23,10 @@ import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS } from "../src/overworld/worldBio
 import { ORBIT_TYPE_KEY, ROUTE_TYPE_KEY } from "../src/worldgen/generatorPathTypes";
 import { LIST_REFRESH_MS, DETAIL_REFRESH_MS, ListSignatures, listSignature, touchesList } from "../src/random-tables/listRefresh";
 import { readSurface } from "./helpers/source";
+import { allPlacement, moduleOn } from "./helpers/slices";
+
+/** Every control's placement, the modules' rows included whichever slices are built (the worksheet lists them all). */
+const ALL = allPlacement();
 
 interface Resolved { id: string; group: string; subgroup: string; choice: string }
 
@@ -81,17 +85,17 @@ describe("worksheet placement: maps, new maps, regions, world types, palettes, t
   for (const item of resolved.filter((x) => x.choice !== "drop")) {
     const want = OVERRIDES[item.id] ?? TIER[item.choice];
     it(`${item.id} (${item.choice}) is ${want}`, () => {
-      expect(layerOf(item.id)).toBe(want);
+      expect(layerOf(item.id, ALL)).toBe(want);
       // keep is the default (and so is an override to main): no entry. simple is listed as main.
-      if (item.choice === "keep" || OVERRIDES[item.id] === "main") expect(Object.prototype.hasOwnProperty.call(PLACEMENT, item.id)).toBe(false);
-      else expect(PLACEMENT[item.id]).toBe(want);
+      if (item.choice === "keep" || OVERRIDES[item.id] === "main") expect(Object.prototype.hasOwnProperty.call(ALL, item.id)).toBe(false);
+      else expect(ALL[item.id]).toBe(want);
       // Anything off the main layer is asked for by id in the code (place / target / add).
       if (want !== "main") expect(SRC.includes(`"${item.id}"`)).toBe(true);
     });
   }
 
   it("dropped ids have no placement entry (the control is removed, not hidden)", () => {
-    for (const item of resolved.filter((x) => x.choice === "drop")) expect(PLACEMENT[item.id]).toBeUndefined();
+    for (const item of resolved.filter((x) => x.choice === "drop")) expect(ALL[item.id]).toBeUndefined();
   });
 
   it("grouped controls share one layer", () => {
@@ -137,14 +141,17 @@ describe("dropped controls are gone", () => {
 });
 
 describe("New map form: generator options by inventory id", () => {
+  // Each generator's options, for the modules built in this run (npm run test:slices).
   const optionKeys: Record<string, string[]> = {
     [OVERLAND_ID]: OVERLAND_OPTIONS.map((o) => o.key),
-    [PLANET_SURFACE_ID]: PLANET_SURFACE_OPTIONS.map((o) => o.key),
     [REGION_DETAIL_ID]: REGION_DETAIL_OPTIONS.map((o) => o.key),
-    [WORLD_BIOMES_ID]: WORLD_BIOMES_OPTIONS.map((o) => o.key),
-    [STAR_SCATTER_ID]: [...STAR_SCATTER_OPTIONS.map((o) => o.key), ROUTE_TYPE_KEY],
-    [ORBITS_ID]: [...ORBITS_OPTIONS.map((o) => o.key), ORBIT_TYPE_KEY],
-    [HEX_FLOWER_GENERATOR_ID]: ["flower", ...Object.keys(FLOWER_OPTIONS)],
+    ...(moduleOn("world-maps") ? { [WORLD_BIOMES_ID]: WORLD_BIOMES_OPTIONS.map((o) => o.key) } : {}),
+    ...(moduleOn("space") ? {
+      [PLANET_SURFACE_ID]: PLANET_SURFACE_OPTIONS.map((o) => o.key),
+      [STAR_SCATTER_ID]: [...STAR_SCATTER_OPTIONS.map((o) => o.key), ROUTE_TYPE_KEY],
+      [ORBITS_ID]: [...ORBITS_OPTIONS.map((o) => o.key), ORBIT_TYPE_KEY],
+    } : {}),
+    ...(moduleOn("hex-flower") ? { [HEX_FLOWER_GENERATOR_ID]: ["flower", ...Object.keys(FLOWER_OPTIONS)] } : {}),
   };
 
   it("every mapped option is a real option of its generator", () => {
@@ -159,11 +166,15 @@ describe("New map form: generator options by inventory id", () => {
       // The Hex flower card's Party token and Reveal too (owner HF9, 2026-10-16).
       for (const key of Object.keys(keys)) expect([kind, key, layerOf(newMapOptionId(kind, key)!)]).toEqual([kind, key, "main"]);
     }
-    expect(layerOf(newMapOptionId(STAR_SCATTER_ID, ROUTE_TYPE_KEY)!)).toBe("main");
-    expect(layerOf(newMapOptionId(ORBITS_ID, ORBIT_TYPE_KEY)!)).toBe("main");
+    if (moduleOn("space")) {
+      expect(layerOf(newMapOptionId(STAR_SCATTER_ID, ROUTE_TYPE_KEY)!)).toBe("main");
+      expect(layerOf(newMapOptionId(ORBITS_ID, ORBIT_TYPE_KEY)!)).toBe("main");
+    }
     expect(layerOf("NewMap.tuning")).toBe("advanced");
-    expect(layerOf("NewMap.makeAllRegions")).toBe("advanced");
-    expect(layerOf("Wizard.makeAllRegions")).toBe("advanced");
+    // World maps' own rows (its Biomes scale's choice).
+    expect(layerOf("NewMap.makeAllRegions", ALL)).toBe("advanced");
+    expect(layerOf("Wizard.makeAllRegions", ALL)).toBe("advanced");
+    expect(layerOf("NewMap.makeAllRegions")).toBe(moduleOn("world-maps") ? "advanced" : "main");
     expect(newMapOptionId("nope", "water")).toBeUndefined();
   });
 });

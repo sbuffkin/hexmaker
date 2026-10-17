@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { HexmakerModule } from "../../src/modules/types";
+import { CORE_PLACEMENT, withModulePlacement, type Placement } from "../../src/ui/placement";
 
 type SliceDef = { define: string | null; modules: string[]; released: boolean; requires?: string[] };
 
@@ -87,3 +88,11 @@ export function everyModule(): HexmakerModule[] {
   });
 }
 
+/**
+ * The placement map with every module's rows, whichever slices are built
+ * (the owner's worksheets list every control): for tests that check where
+ * a control sits rather than what this build shows.
+ */
+export function allPlacement(): Readonly<Record<string, Placement>> {
+  return withModulePlacement(CORE_PLACEMENT, everyModule());
+}

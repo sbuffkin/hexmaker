@@ -4,10 +4,14 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readSource } from "./helpers/source";
+import { everyModule, moduleOn } from "./helpers/slices";
 import {
 	ACTION_POLICY,
 	allows,
 	COMMAND_ACTIONS,
+	CORE_ACTION_POLICY,
+	CORE_COMMAND_ACTIONS,
+	CORE_MENU_ACTIONS,
 	lockedHint,
 	lockedSummary,
 	MENU_ACTIONS,
@@ -16,6 +20,15 @@ import {
 	TOOL_ACTIONS,
 	type ModeAction,
 } from "../src/workMode";
+
+/**
+ * The tables with every module's rows, whichever slices this run builds
+ * (npm run test:slices): the scan below reads every module's source.
+ */
+const MODULES_ALL = everyModule();
+const ALL_COMMANDS: Record<string, ModeAction> = Object.assign({}, CORE_COMMAND_ACTIONS, ...MODULES_ALL.map((m) => m.modeActions?.commands ?? {}));
+const ALL_MENUS: Record<string, ModeAction> = Object.assign({}, CORE_MENU_ACTIONS, ...MODULES_ALL.map((m) => m.modeActions?.menus ?? {}));
+const ALL_ACTIONS = Object.keys(Object.assign({}, CORE_ACTION_POLICY, ...MODULES_ALL.map((m) => m.modeActions?.policy ?? {})));
 
 /**
  * Regression guard for the work modes (plan-work-modes §2.6): every
@@ -47,9 +60,9 @@ describe("work mode classification covers every entry point", () => {
 				.flatMap((f) => [...read(f).matchAll(/\{\s*id:\s*"([^"]+)",\s*name:\s*"/g)].map((m) => m[1])),
 		];
 		expect(ids.length).toBeGreaterThan(10);
-		const missing = ids.filter((id) => !(id in COMMAND_ACTIONS));
+		const missing = ids.filter((id) => !(id in ALL_COMMANDS));
 		expect(missing).toEqual([]);
-		const stale = Object.keys(COMMAND_ACTIONS).filter((id) => !ids.includes(id));
+		const stale = Object.keys(ALL_COMMANDS).filter((id) => !ids.includes(id));
 		expect(stale).toEqual([]);
 	});
 
@@ -76,16 +89,38 @@ describe("work mode classification covers every entry point", () => {
 		// The overworld menu's ids come from overworldMenu() as `ow.<id>`.
 		const owIds = /id:\s*("[^;]+?");/.exec(read("src/overworld/overworldInput.ts"))![1];
 		for (const m of owIds.matchAll(/"([^"]+)"/g)) used.add(`ow.${m[1]}`);
-		const unclassified = [...used].filter((id) => !(id in MENU_ACTIONS));
+		const unclassified = [...used].filter((id) => !(id in ALL_MENUS));
 		expect(unclassified).toEqual([]);
-		const stale = Object.keys(MENU_ACTIONS).filter((id) => !used.has(id));
+		const stale = Object.keys(ALL_MENUS).filter((id) => !used.has(id));
 		expect(stale).toEqual([]);
 	});
 
 	it("every mapping points at a real action", () => {
-		for (const a of [...Object.values(COMMAND_ACTIONS), ...Object.values(TOOL_ACTIONS), ...Object.values(MENU_ACTIONS)]) {
-			expect(MODE_ACTIONS).toContain(a);
+		for (const a of [...Object.values(ALL_COMMANDS), ...Object.values(TOOL_ACTIONS), ...Object.values(ALL_MENUS)]) {
+			expect(ALL_ACTIONS).toContain(a);
 		}
+		// In this build: every mapping of the modules built points at an action this build knows.
+		for (const a of [...Object.values(COMMAND_ACTIONS), ...Object.values(MENU_ACTIONS)]) expect(MODE_ACTIONS).toContain(a);
+	});
+
+	it("a module's rows are its own: none shadows a core id, and a build has exactly the rows of the modules built", () => {
+		for (const m of MODULES_ALL) {
+			const rows = m.modeActions ?? {};
+			for (const id of Object.keys(rows.commands ?? {})) expect({ m: m.id, id, core: id in CORE_COMMAND_ACTIONS }).toEqual({ m: m.id, id, core: false });
+			for (const id of Object.keys(rows.menus ?? {})) expect({ m: m.id, id, core: id in CORE_MENU_ACTIONS }).toEqual({ m: m.id, id, core: false });
+			for (const id of Object.keys(rows.policy ?? {})) expect({ m: m.id, id, core: id in CORE_ACTION_POLICY }).toEqual({ m: m.id, id, core: false });
+			const on = moduleOn(m.id);
+			for (const id of Object.keys(rows.commands ?? {})) expect({ id, built: id in COMMAND_ACTIONS }).toEqual({ id, built: on });
+			for (const id of Object.keys(rows.menus ?? {})) expect({ id, built: id in MENU_ACTIONS }).toEqual({ id, built: on });
+			for (const id of Object.keys(rows.policy ?? {})) expect({ id, built: id in ACTION_POLICY }).toEqual({ id, built: on });
+		}
+	});
+
+	it("an action no module of this build classifies is God's only (never throws)", () => {
+		const unknown = "no-such-action" as ModeAction;
+		expect(allows("play", unknown)).toBe(false);
+		expect(allows("god", unknown)).toBe(true);
+		expect(lockedHint(unknown)).toBe("Switch to God to do that.");
 	});
 });
 
@@ -93,7 +128,7 @@ describe("work mode policy", () => {
 	it("God may do everything; every action is allowed somewhere", () => {
 		for (const a of MODE_ACTIONS) {
 			expect(allows("god", a)).toBe(true);
-			expect(ACTION_POLICY[a].modes.length).toBeGreaterThan(0);
+			expect(ACTION_POLICY[a]!.modes.length).toBeGreaterThan(0);
 		}
 	});
 
@@ -110,8 +145,11 @@ describe("work mode policy", () => {
 	});
 
 	it("an explored map grows (blank hexes only) as the party nears its edge, in every mode like discovering (HF4)", () => {
-		expect(ACTION_POLICY["grow-while-exploring"].modes).toEqual(["play", "build", "god"]);
-		expect(ACTION_POLICY["grow-while-exploring"].modes).toEqual(ACTION_POLICY.discover.modes);
+		// Hex flower's own action (its module classifies it).
+		const grow = MODULES_ALL.find((m) => m.id === "hex-flower")!.modeActions!.policy!["grow-while-exploring"]!;
+		expect(grow.modes).toEqual(["play", "build", "god"]);
+		expect(grow.modes).toEqual(ACTION_POLICY.discover!.modes);
+		expect(allows("play", "grow-while-exploring")).toBe(moduleOn("hex-flower"));
 		// Growing by hand stays Build's.
 		expect(allows("play", "grow-map")).toBe(false);
 	});
@@ -132,7 +170,7 @@ describe("work mode policy", () => {
 	});
 
 	it("never locks note text, settings or palettes (WM2, WM4)", () => {
-		for (const a of ["edit-note", "settings", "tables"] as ModeAction[]) expect(ACTION_POLICY[a].modes).toEqual(["play", "build", "god"]);
+		for (const a of ["edit-note", "settings", "tables"] as ModeAction[]) expect(ACTION_POLICY[a]!.modes).toEqual(["play", "build", "god"]);
 	});
 
 	it("tools: Play keeps tokens and note links, loses painting and paths", () => {

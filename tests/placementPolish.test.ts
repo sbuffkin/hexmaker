@@ -141,7 +141,7 @@ describe("one-item Advanced dropdowns and sub-sections show inline (owner, round
     setDebugMode(store, true);
     const { host, put } = page(store, "Settings");
     put("Settings.hexFolder");
-    put("Settings.biomesFolder"); // Debug
+    put("HexTable.refresh"); // Debug (a core Debug row)
     await settled();
     expect(host.find("duckmage-disclosure")).toHaveLength(1);
     setDebugMode(store, false);
@@ -208,7 +208,7 @@ describe("Advanced · N set: dropdown headers count the controls that are on", (
     const { d, put, header } = page(store, "HexTable");
     put("Nowhere.main", () => true);
     d.track("Nowhere.main", () => true);
-    d.track("Settings.biomesFolder", () => true); // Debug, debug mode off
+    d.track("HexTable.refresh", () => true); // Debug, debug mode off
     expect(header).toThrow(); // no dropdown was made at all
     d.track("HexTable.xMin", () => true);
     expect(header()).toBe("Advanced · 1 set");
@@ -218,7 +218,7 @@ describe("Advanced · N set: dropdown headers count the controls that are on", (
     const store = new FakeStore();
     setDebugMode(store, true);
     const { host, put, header } = page(store, "Settings");
-    put("Settings.biomesFolder", () => true);
+    put("HexTable.refresh", () => true);
     expect(header()).toBe("Advanced · 1 set");
     expect(host.find("duckmage-disclosure-debug-title")[0].text).toBe("Debug · 1 set");
     setDebugMode(store, false);
