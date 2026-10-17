@@ -1,7 +1,8 @@
 /**
  * Measure a region's biome identity among made neighbours (owner 2026-10-12:
  * "new regions mesh with their neighbours at the seams, but the region must
- * still clearly be its own biome"). Not a test file itself.
+ * still clearly be its own biome"). The cases and measures live in
+ * tests/helpers/biomeIdentity.ts (shared with tests/biomeIdentity.test.ts).
  *
  * - ring: a region of biome X with all six neighbours (biome N) made first,
  *   e.g. Alpine among Temperate forest. Its type shares, the identity
@@ -13,72 +14,19 @@
  * - worlds: every parity world and the owner's: seam continuity and the
  *   mean identity distance of the regions made after a neighbour.
  *
- *   npx tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs tests/measureBiomeIdentity.ts
+ *   npx tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs dev/measureBiomeIdentity.ts
  */
-import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
-import { BIOME_PRESETS } from "../src/overworld/biomePresets";
-import { profileFromFields, type BiomeProfile } from "../src/overworld/biomes";
-import type { BiomeNoteFields } from "../src/overworld/biomeNote";
-import { regionCells, neighbourRegions, type RegionLayout } from "../src/overworld/layout";
-import { interiorAgreement, mixDistance, seamContinuity, seamStats } from "../src/overworld/regionGen";
+
+import { mixDistance, seamContinuity, seamStats, interiorAgreement } from "../src/overworld/regionGen";
 import { paletteTypeOf, planRegion, regionOrder, worldSeed } from "../src/overworld/regionWorld";
-import { SCENARIOS, scenarioBiomes, scenarioProfiles } from "./biomeParityFixtures";
-import { OWNER_BIOMES, OWNER_LAYOUT, OWNER_WORLD_ID, ownerProfiles, ownerTypeOf } from "./regionMeshFixtures";
-import type { BiomeTuning } from "../src/overworld/biomeTuning";
-
-const typeOf = paletteTypeOf(DEFAULT_TERRAIN_PALETTE);
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-
-/** Every shipped biome (the new ones too), with `tuning` merged over its own. */
-export function allProfiles(tuning?: BiomeTuning): Map<string, BiomeProfile> {
-	const out = new Map<string, BiomeProfile>();
-	for (const p of BIOME_PRESETS) {
-		if (!p.mix.length) continue;
-		const { kind: _k, ...f } = p;
-		const fields = f as BiomeNoteFields;
-		const prof = profileFromFields(tuning ? { ...fields, tuning: { ...(fields.tuning ?? {}), ...tuning } } : fields, DEFAULT_TERRAIN_PALETTE);
-		if (prof.types.size) out.set(p.id, prof);
-	}
-	return out;
-}
-const blendOf = (id: string) => BIOME_PRESETS.find((p) => p.id === id)?.blend;
-
-export const RING_LAYOUT: RegionLayout = { footprint: "rect", size: 8, orientation: "flat", parentStagger: "odd", childStagger: "odd" };
-
-/** Region (2, 2) of biome `centre`, its six neighbours of biome `around` made first. */
-export function ringCase(centre: string, around: string, opts: { tuning?: BiomeTuning; seed?: number } = {}) {
-	const layout = RING_LAYOUT;
-	const ring = neighbourRegions(layout, 2, 2);
-	const biomes = new Map<string, string>([["2_2", centre], ...ring.map(([x, y]) => [`${x}_${y}`, around] as [string, string])]);
-	const ws = opts.seed ?? worldSeed("identity-ring");
-	const plain = allProfiles();
-	const pinned = new Map<string, string>();
-	for (const [px, py] of regionOrder(ring, layout.orientation, layout.parentStagger)) {
-		const plan = planRegion({ layout, parent: [px, py], biomes, profiles: plain, pinned, typeOf, worldSeed: ws, seed: ws, ...blendArg(around) });
-		for (const [k, t] of plan.cells) pinned.set(k, t);
-	}
-	const profiles = allProfiles(opts.tuning);
-	const plan = planRegion({ layout, parent: [2, 2], biomes, profiles, pinned, typeOf, worldSeed: ws, seed: ws, ...blendArg(centre) });
-	return { cells: plan.cells, pinned, profile: profiles.get(centre)!, layout };
-}
-const blendArg = (id: string) => (blendOf(id) ? { blend: blendOf(id)! } : {});
-
-/** Type → share of a region's typed cells. */
-export function typeShares(cells: ReadonlyMap<string, string>, tOf = typeOf): Map<string, number> {
-	const n = new Map<string, number>();
-	let all = 0;
-	for (const t of cells.values()) {
-		const ty = tOf(t);
-		if (!ty) continue;
-		n.set(ty, (n.get(ty) ?? 0) + 1);
-		all++;
-	}
-	return new Map([...n].map(([k, v]) => [k, v / all]));
-}
+import { regionCells } from "../src/overworld/layout";
+import { SCENARIOS, scenarioBiomes, scenarioProfiles } from "../tests/biomeParityFixtures";
+import { OWNER_BIOMES, OWNER_LAYOUT, OWNER_WORLD_ID, ownerProfiles, ownerTypeOf } from "../tests/regionMeshFixtures";
+import { allProfiles, pct, ringCase, typeOf, typeShares } from "../tests/helpers/biomeIdentity";
 
 const fmtShares = (s: Map<string, number>) => [...s].sort((a, b) => b[1] - a[1]).map(([t, v]) => `${t} ${Math.round(v * 100)}`).join(", ");
 
-if (process.argv[1]?.endsWith("measureBiomeIdentity.ts")) {
+{
 	console.log("## Ring: biome X with all six neighbours (biome N) made first; 8x8 regions");
 	console.log("centre | around | identity no ctx | identity with ctx | continuity | shares with ctx");
 	const RINGS: [string, string][] = [

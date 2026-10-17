@@ -8,10 +8,10 @@
  * cells whose type the region's own biome has (so context doesn't wash the
  * biome out), and ms per region.
  *
- *   npx tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs tests/measureRegionMesh.ts [influence] [depth]
+ *   npx tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs dev/measureRegionMesh.ts [influence] [depth]
  */
-import { SCENARIOS, scenarioBiomes, scenarioProfiles } from "./biomeParityFixtures";
-import { OWNER_BIOMES, OWNER_LAYOUT, OWNER_WORLD_ID, ownerProfiles } from "./regionMeshFixtures";
+import { SCENARIOS, scenarioBiomes, scenarioProfiles } from "../tests/biomeParityFixtures";
+import { OWNER_BIOMES, OWNER_LAYOUT, OWNER_WORLD_ID, ownerProfiles } from "../tests/regionMeshFixtures";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { interiorAgreement, seamContinuity, seamStats } from "../src/overworld/regionGen";
 import { paletteTypeOf, planRegion, regionOrder, worldSeed } from "../src/overworld/regionWorld";

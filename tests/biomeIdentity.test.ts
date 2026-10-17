@@ -8,7 +8,7 @@
  * seams first, the seam band keeping its land and water), and min patches
  * may paint over a type the context pushed over its share.
  *
- * Numbers before and after: tests/measureBiomeIdentity.ts.
+ * Numbers before and after: dev/measureBiomeIdentity.ts.
  */
 import { describe, it, afterEach } from "node:test";
 import expect from "expect";
@@ -22,7 +22,7 @@ import { dominantTerrain, paletteTypeOf, planRegion, regionOrder, worldSeed } fr
 import { mulberry32 } from "../packages/hex-wfc/src/rng";
 import { SCENARIOS, scenarioBiomes, scenarioProfiles } from "./biomeParityFixtures";
 import { OWNER_BIOMES, OWNER_LAYOUT, OWNER_WORLD_ID, ownerProfiles, ownerTypeOf } from "./regionMeshFixtures";
-import { allProfiles, ringCase, typeShares } from "./measureBiomeIdentity";
+import { allProfiles, ringCase, typeShares } from "./helpers/biomeIdentity";
 
 const typeOf = paletteTypeOf(DEFAULT_TERRAIN_PALETTE);
 const profile = (id: string) => profileFromFields(biomePreset(id)!, DEFAULT_TERRAIN_PALETTE);
