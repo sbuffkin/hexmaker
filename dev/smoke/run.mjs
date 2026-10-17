@@ -359,7 +359,7 @@ async function runSetup(setup) {
 
     // Setup-specific checks.
     if (setup.extra) {
-      const ctx = { pluginId, state, ev, log: sess.log, readyMs: ready.ms, firstOpen, wizardAtLoad, runDir, vault, snap0, prepInfo };
+      const ctx = { pluginId, state, ev, log: sess.log, readyMs: ready.ms, firstOpen, wizardAtLoad, runDir, vault, snap0, prepInfo, slices: builtSlices.on };
       for (const c of await setup.extra(ctx)) rec(c.check, c.ok, c.detail);
       state = await ev(P.state, pluginId);
     }
