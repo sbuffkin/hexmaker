@@ -199,7 +199,8 @@ describe("play log (SF3): one dated note per day, plain bullets", () => {
 
   it("the hex editor offers the log among the targets and writes it through the log writer", () => {
     const editor = readSurface("hex-editor");
-    expect(editor).toMatch(/sections: \[\{ key: PLAY_LOG_TARGET, label: "Play log" \}/);
+    // (after the modules' own targets, ModuleRuntime.play.rollTargets)
+    expect(editor).toMatch(/sections: \[\.\.\.extra\.map\([^\n]*?\), \{ key: PLAY_LOG_TARGET, label: "Play log" \}/);
     expect(editor).toMatch(/if \(key === PLAY_LOG_TARGET\) \{ await addToPlayLog\(/);
   });
 });

@@ -12,7 +12,18 @@ import type { NoteRewrite } from "../migrations/noteRewrites";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type {
   CommandContribution,
+  ExportFormContribution,
   FolderSettingContribution,
+  GenPageApi,
+  HexAt,
+  LogWriterContribution,
+  PartyClick,
+  RollTargetContribution,
+  SettingContribution,
+  TokenAt,
+  TokenMenuContribution,
+  ViewContribution,
+  WizardOfferContribution,
   GeneratorPageTab,
   HexMenuContribution,
   PartyAt,
@@ -33,6 +44,7 @@ import type { TableSource } from "../worldgen/tableRoles";
 import type { WorldMapsApi } from "./world-maps/api";
 import type { PackKind } from "../packs/packKinds";
 import type { UndoItem } from "../hex-map/undoItems";
+import type { MapData } from "../types";
 import { registry } from "./index";
 import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
@@ -73,6 +85,98 @@ export function moduleCommands(): { command: CommandContribution; kind?: string 
 /** Every module's folder settings, in module order. */
 export function moduleFolderSettings(): FolderSettingContribution[] {
   return MODULE_RUNTIMES.flatMap((m) => [...(m.folderSettings ?? [])]);
+}
+
+/**
+ * Every module's settings, in module order: its folder settings (as folder
+ * rows) then its other settings. The settings tab draws these in both paths.
+ */
+export function moduleSettings(): SettingContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => [
+    ...(m.folderSettings ?? []).map((d): SettingContribution => ({
+      id: d.id,
+      name: d.name,
+      desc: d.desc,
+      control: { type: "folder", key: d.key, placeholder: d.placeholder },
+      ...(d.changed ? { changed: (plugin: HexmakerPlugin) => d.changed?.(plugin) } : {}),
+    })),
+    ...(m.settings ?? []),
+  ]);
+}
+
+/** Every module's workspace views, in module order. */
+export function moduleViews(): ViewContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.views ?? [])]);
+}
+
+/** Every module's parts of the Map export form, in module order. */
+export function moduleExportForm(): ExportFormContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.exportForm ?? [])]);
+}
+
+/** The modules' offers on setup wizard step `step`, in module order. */
+export function moduleWizardOffers(step: string): WizardOfferContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => (m.wizardOffers ?? []).filter((o) => o.step === step));
+}
+
+/** Each module's start-up, at the end of the plugin's onload, in module order. A failure is logged and skipped. */
+export async function runModuleLoad(plugin: HexmakerPlugin): Promise<void> {
+  for (const m of MODULE_RUNTIMES) {
+    try {
+      await m.lifecycle?.onload?.(plugin);
+    } catch (e) {
+      logError(`${m.id} start-up`, e);
+    }
+  }
+}
+
+/** Each module's clean-up, in reverse module order (before the core's). */
+export function runModuleUnload(plugin: HexmakerPlugin): void {
+  for (const m of [...MODULE_RUNTIMES].reverse()) {
+    try {
+      m.lifecycle?.onunload?.(plugin);
+    } catch (e) {
+      logError(`${m.id} clean-up`, e);
+    }
+  }
+}
+
+/** The generator page (undefined in a build without the module that provides it). */
+export function genPage(): GenPageApi | undefined {
+  for (const m of MODULE_RUNTIMES) if (m.genPage) return m.genPage();
+  return undefined;
+}
+
+/** Does any module make this click on a hex the selected party's step? */
+export function modulePartyClick(plugin: HexmakerPlugin, click: PartyClick): "move" | "none" {
+  return MODULE_RUNTIMES.some((m) => m.play?.partyClick?.(plugin, click) === "move") ? "move" : "none";
+}
+
+/**
+ * The modules' extra CSS classes per hex of map `map`, asked once per render
+ * (read-then-write: call it before drawing, then per hex while drawing).
+ */
+export function moduleGridDecorations(plugin: HexmakerPlugin, map: MapData): (hex: string) => string[] {
+  const each = MODULE_RUNTIMES.flatMap((m) => {
+    const f = m.play?.gridDecorations?.(plugin, map);
+    return f ? [f] : [];
+  });
+  return each.length ? (hex) => each.flatMap((f) => [...f(hex)]) : () => [];
+}
+
+/** The modules' items for a token's right-click menu, in module order. */
+export function moduleTokenMenu(plugin: HexmakerPlugin, token: TokenAt): TokenMenuContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.play?.tokenMenu?.(plugin, token) ?? []);
+}
+
+/** The places a roll made on a hex can go besides its sections, in module order. */
+export function moduleRollTargets(plugin: HexmakerPlugin, at: HexAt): RollTargetContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.play?.rollTargets?.(plugin, at) ?? []);
+}
+
+/** The modules' "Add to log" links for the hex editor, in module order. */
+export function moduleLogWriters(): LogWriterContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.play?.logWriters ?? [])]);
 }
 
 /** Every module's "ref-links" rewriters for its own notes. */

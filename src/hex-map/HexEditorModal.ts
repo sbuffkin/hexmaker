@@ -26,6 +26,7 @@ import { contentFolder } from "../notePickers";
 import { terrainStartsCollapsed } from "./terrainSection";
 import { addToPlayLog } from "../play/playLogWriter";
 import { PlayLogModal } from "../play/PlayLogModal";
+import { moduleLogWriters } from "../modules/runtime";
 import { NeighbourFlower, type NeighbourFlowerHost } from "./editor/NeighbourFlower";
 import { MapsStrip, type MapsStripHost } from "./editor/MapsStrip";
 import { TerrainIconSections, type TerrainIconHost } from "./editor/TerrainIconSections";
@@ -247,11 +248,9 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-editor-open-link",
       attr: { title: "Write what happened here in today's play log" },
     });
-    logLink.addEventListener("click", () => {
-      new PlayLogModal(this.app, `${this.plugin.mapLabel(this.mapName)} ${this.x}, ${this.y}`, (text) =>
-        addToPlayLog(this.plugin, this.mapName, this.x, this.y, text),
-      ).open();
-    });
+    logLink.addEventListener("click", () => new PlayLogModal(this.app, `${this.plugin.mapLabel(this.mapName)} ${this.x}, ${this.y}`, (text) => addToPlayLog(this.plugin, this.mapName, this.x, this.y, text)).open());
+    // The modules' "Add to log" links (ModuleRuntime.play.logWriters).
+    for (const w of moduleLogWriters()) titleLeft.createEl("a", { text: w.label, cls: "duckmage-editor-open-link", attr: { title: w.title } }).addEventListener("click", () => w.open(this.plugin, { map: this.mapName, x: this.x, y: this.y }));
     this.flower.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);
     this.mapsStrip.renderMapsStrip(contentEl);

@@ -32,7 +32,24 @@ import type { TAbstractFile } from "obsidian";
 import type { PackKind } from "../packs/packKinds";
 import type { UndoItem } from "../hex-map/undoItems";
 import type { Placement } from "../ui/placement";
-import type { ModeAction, WorkMode } from "../workMode";
+import type {
+  ExportFormContribution,
+  GenPageApi,
+  HexAt,
+  LifecycleHooks,
+  LogWriterContribution,
+  ModeActionContributions,
+  PartyClick,
+  RollTargetContribution,
+  SettingContribution,
+  TokenAt,
+  TokenMenuContribution,
+  ViewContribution,
+  WizardOfferContribution,
+} from "./contributions";
+
+// The contribution points of ./contributions.ts, also importable from here.
+export type * from "./contributions";
 
 /** A map type id ("world", "space"). Stable, never reused. */
 export type KindId = string;
@@ -281,18 +298,6 @@ export interface HexmakerModule {
   };
 }
 
-/** A module's rows of the work-mode tables (src/workMode.ts); ids never shadow the core's. */
-export interface ModeActionContributions {
-  /** Actions of its own: which modes allow each, and the verb for "Switch to Build to <verb>." */
-  policy?: Readonly<Partial<Record<ModeAction, { modes: readonly WorkMode[]; verb: string }>>>;
-  /** Its command ids → action. */
-  commands?: Readonly<Record<string, ModeAction>>;
-  /** Its map-view menu item ids ("hex.explore-roll", "ow.edit-region") → action. */
-  menus?: Readonly<Record<string, ModeAction>>;
-  /** Its drawing tools → action. */
-  tools?: Readonly<Record<string, ModeAction>>;
-}
-
 /**
  * A map setting a module keeps in the map note: the MapData field (one the
  * core doesn't declare), its frontmatter key, and how it's written
@@ -509,6 +514,23 @@ export interface PlayHooks {
    * selected in Play (Hex flower: Reveal 1 · 2 · 3). None: nothing shown.
    */
   partyControls?(plugin: HexmakerPlugin, party: PartyAt): PartyControl[];
+  /**
+   * A hex clicked while a party token is selected in Play: "move" makes it
+   * the party's step (the core moves the token); any module saying so wins.
+   */
+  partyClick?(plugin: HexmakerPlugin, click: PartyClick): "move" | "none";
+  /**
+   * Extra CSS classes for the hexes of map `map` (Solo play: visited).
+   * Asked once per render, before the hexes are drawn; the answer is asked
+   * per hex while drawing (read-then-write: never read layout in it).
+   */
+  gridDecorations?(plugin: HexmakerPlugin, map: MapData): ((hex: string) => readonly string[]) | undefined;
+  /** Items for a token's right-click menu, after the core's. */
+  tokenMenu?(plugin: HexmakerPlugin, token: TokenAt): TokenMenuContribution[];
+  /** Places a roll made on a hex can go, listed before the hex's sections. */
+  rollTargets?(plugin: HexmakerPlugin, at: HexAt): RollTargetContribution[];
+  /** "Add to log" links in the hex editor. */
+  logWriters?: readonly LogWriterContribution[];
 }
 
 /** Where the selected party stands. */
@@ -580,7 +602,20 @@ export interface ModuleRuntime {
   /** Note stores, made once with the plugin. */
   stores?(plugin: HexmakerPlugin): ModuleStore[];
   commands?: readonly CommandContribution[];
+  /** Folder settings (a SettingContribution with a folder control, kept for the modules that have them). */
   folderSettings?: readonly FolderSettingContribution[];
+  /** Settings of any kind (a folder, a yes/no, a row it draws), in both settings paths. */
+  settings?: readonly SettingContribution[];
+  /** Workspace views it registers. */
+  views?: readonly ViewContribution[];
+  /** Its parts of the Map export form. */
+  exportForm?: readonly ExportFormContribution[];
+  /** Offers on the setup wizard's steps. */
+  wizardOffers?: readonly WizardOfferContribution[];
+  /** Start and stop with the plugin. */
+  lifecycle?: LifecycleHooks;
+  /** The generator page, when this module provides it (named, like worldMaps()). */
+  genPage?(): GenPageApi;
   refLinkers?(plugin: HexmakerPlugin): RefLinker[];
   /** One-time rewrites of the module's own notes, run after the core's (src/migrations/noteRewrites.ts). */
   noteRewrites?(plugin: HexmakerPlugin): NoteRewrite[];

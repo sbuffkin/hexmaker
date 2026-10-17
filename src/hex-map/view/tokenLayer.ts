@@ -9,7 +9,8 @@ import { TFile, type App } from "obsidian";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { applyTokenFrontmatter, getTokenDataFromCache, readTokenPlace, removeTokenFrontmatter, setTokenHex } from "../../frontmatter";
 import { guardWrite } from "../../modeGate";
-import { runPartyEntered } from "../../modules/runtime";
+import { moduleTokenMenu, runPartyEntered } from "../../modules/runtime";
+import type { MenuActionId } from "../../workMode";
 import { openNoteFocused } from "../../openNote";
 import { markVisited, parseVisited, unmarkVisited } from "../../play/partyTravel";
 import { addToPlayLog } from "../../play/playLogWriter";
@@ -479,6 +480,10 @@ export class TokenLayer {
       const file = this.app.vault.getAbstractFileByPath(token.filePath);
       if (file instanceof TFile) void openNoteFocused(this.app, file);
     });
+    // The modules' items (ModuleRuntime.play.tokenMenu), classified by their modules.
+    for (const it of moduleTokenMenu(this.plugin, { map: token.map, hex: token.hex, token: token.filePath, party: !!token.party })) {
+      menu.add(it.id as MenuActionId, it.label, it.icon, () => it.run(), { checked: it.checked, place: it.placementId });
+    }
     menu.addSeparator();
     menu.add("token.remove", "Remove token", "trash", () => this.removeToken(token));
     // The token covers its hex's centre, so the hex's own items follow
