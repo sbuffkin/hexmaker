@@ -356,10 +356,13 @@ describe("map notes: plain keys instead of JSON (#42)", () => {
 		expect(parseMapNote(bg, { resolveLink: (l) => (l === "bg.png" ? "art/bg.png" : undefined) })!.settings.backgroundImage!.path).toBe("art/bg.png");
 	});
 
-	it("long decimals are written to 4 places", () => {
-		const note = buildMapNote("m", { settings: { gridDisplayScaleX: 1.0123456789012345, gridDisplayOffsetY: -3.3333333333333335 }, hexes: new Map(), paths: [] });
-		expect(note).toContain("grid-display-scale-x: 1.0123\n");
-		expect(note).toContain("grid-display-offset-y: -3.3333\n");
+	it("numbers are written exactly, so a calibrated background doesn't move (migration audit)", () => {
+		const settings = { gridDisplayScaleX: 1.0123456789012345, gridDisplayOffsetY: -3.3333333333333335, gridDisplayOffsetX: 3008.5676934435032, hexGap: 0.3 };
+		const note = buildMapNote("m", { settings, hexes: new Map(), paths: [] });
+		expect(note).toContain(`grid-display-scale-x: ${String(1.0123456789012345)}\n`);
+		expect(note).toContain("grid-display-offset-y: -3.3333333333333335\n");
+		const back = parseMapNote(note)!.settings as Record<string, unknown>;
+		for (const [k, v] of Object.entries(settings)) expect(back[k]).toBe(v);
 	});
 
 	it("reads the old JSON form and the old key names, and converts them on the next write", () => {
