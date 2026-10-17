@@ -74,7 +74,7 @@ export function renamePaletteRefs(text: string, renames: ReadonlyMap<string, str
   let out = text;
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(out);
   if (fm) {
-    const body = fm[1].replace(/^((?:child-)?palette:[ \t]*)(.*)$/gm, (line, key: string, raw: string) => {
+    const body = fm[1].replace(/^((?:child-)?palette:[ \t]*)([^\r\n]*)$/gm, (line, key: string, raw: string) => {
       const q = /^(["'])(.*)\1\s*$/.exec(raw.trim());
       const value = q ? q[2] : raw.trim();
       const to = renames.get(lower(refBasename(value)));
@@ -99,14 +99,16 @@ export function renamePaletteRefs(text: string, renames: ReadonlyMap<string, str
 /** What happens to one of the pack's palettes. */
 export type PalettePlan =
   | { kind: "new" }
-  | { kind: "same"; existing: string }
+  | { kind: "same"; existing: string; from?: string; to?: string }
   | { kind: "renamed"; from: string; to: string; target: string };
 
 /**
  * Decide each pack palette (`targets`: where each would go, in pack
  * order; `texts`: their notes): new, the same as the vault's palette of
  * that name, or a different one renamed to the first free "Name N" (free
- * of the vault's palettes, notes, and the pack's other palettes).
+ * of the vault's palettes, notes, and the pack's other palettes). A "Name N"
+ * that already holds this same palette (the pack imported before) is
+ * "same", with `from`/`to` so the pack's notes point at that copy.
  */
 export async function planPalettes(
   palettes: readonly { target: string; text: string }[],
@@ -133,7 +135,14 @@ export async function planPalettes(
     for (let n = 2; ; n++) {
       const to = `${name} ${n}`;
       const target = `${dir}${to}.md`;
-      if (packNames.has(lower(to)) || claimed.has(lower(to)) || (await find(to)) || (await noteExists(target))) continue;
+      if (packNames.has(lower(to)) || claimed.has(lower(to))) continue;
+      const earlier = await find(to);
+      if (earlier && incoming !== null && incoming === paletteKey(earlier.text)) {
+        claimed.add(lower(to));
+        out.push({ kind: "same", existing: earlier.path, from: name, to });
+        break;
+      }
+      if (earlier || (await noteExists(target))) continue;
       claimed.add(lower(to));
       out.push({ kind: "renamed", from: name, to, target });
       break;

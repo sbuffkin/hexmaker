@@ -98,6 +98,11 @@ describe("K2: references inside the pack follow the new name", () => {
 		expect(renamePaletteRefs('---\nchild-palette: "Coast"\n---\n', renames, "world/palettes")).toBe('---\nchild-palette: "Coast 2"\n---\n');
 	});
 
+	it("keeps a CRLF note's line endings", () => {
+		const text = '---\r\npalette: coast\r\ncols: 8\r\n---\r\n';
+		expect(renamePaletteRefs(text, renames, "world/palettes")).toBe('---\r\npalette: Coast 2\r\ncols: 8\r\n---\r\n');
+	});
+
 	it("leaves other palettes, other keys and body text alone", () => {
 		const text = '---\npalette: "[[world/palettes/Coastal]]"\nname: Coast\n---\npalette: Coast\n[[world/tables/Coast]]\n';
 		expect(renamePaletteRefs(text, renames, "world/palettes")).toBe(text);
@@ -150,6 +155,27 @@ describe("K2: importing a pack", () => {
 		expect(r.created).toEqual(["world/generators/Valley.md"]);
 		expect(v.files.get("world/palettes/Coast.md")).toBe(mine);
 		expect(parsePaletteNote(v.files.get("world/palettes/Coast 2.md")!)!.map((t) => t.name)).toEqual(["ocean", "beach", "hills", "reef"]);
+	});
+
+	it("importing the same pack again finds its Name 2: no Name 3, the generator isn't duplicated", async () => {
+		const v = vaultWith({ Coast: coastNote() });
+		// A finder over the live files, so the Coast 2 the first import made is seen.
+		const find = async (name: string): Promise<VaultPalette | null> => {
+			const path = [...v.files.keys()].find((p) => p.toLowerCase() === `world/palettes/${name.toLowerCase()}.md`);
+			return path ? { path, text: v.files.get(path)! } : null;
+		};
+		const pack = () => packOf({ "pack.md": manifest, "palettes/Coast.md": changed, "generators/Valley.md": generator });
+		const first = await planImport(pack(), kinds, v.read, find);
+		await runImport(memHost(v.files), resolveSteps(first.items, () => "both", (p) => v.files.has(p)), "Coast pack");
+		const again = await planImport(pack(), kinds, v.read, find);
+		const pal = again.items.find((i) => i.kindId === "palettes")!;
+		expect(pal).toMatchObject({ status: "same", alreadyHave: "world/palettes/Coast 2.md" });
+		const gen = again.items.find((i) => i.kindId === "generators")!;
+		expect(gen.text).toBe('---\npalette: "[[world/palettes/Coast 2]]"\n---\n# Valley\n');
+		expect(gen.status).toBe("same");
+		await runImport(memHost(v.files), resolveSteps(again.items, () => "both", (p) => v.files.has(p)), "Coast pack");
+		expect([...v.files.keys()].filter((p) => p.startsWith("world/palettes/")).sort()).toEqual(["world/palettes/Coast 2.md", "world/palettes/Coast.md"]);
+		expect([...v.files.keys()].filter((p) => p.startsWith("world/generators/"))).toEqual(["world/generators/Valley.md"]);
 	});
 
 	it("without a palette finder, palettes are planned like any note (Keep both / Replace)", async () => {

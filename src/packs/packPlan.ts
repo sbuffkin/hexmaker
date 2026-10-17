@@ -155,6 +155,8 @@ async function settlePalettes(items: PlanItem[], kinds: readonly PackKind[], rea
     if (plan.kind === "same") {
       item.status = "same";
       item.alreadyHave = plan.existing;
+      // The "Name 2" a previous import of this pack made: its notes point there again.
+      if (plan.from && plan.to) renames.set(plan.from.toLowerCase(), plan.to);
     } else if (plan.kind === "renamed") {
       item.renamedFrom = plan.from;
       item.target = plan.target;
