@@ -53,6 +53,7 @@ import {
   setTokenHex,
 } from "../frontmatter";
 import { PainterContextMenu } from "./PainterContextMenu";
+import { CacheCatchup } from "./cacheCatchup";
 
 type TerrainUndoEntry = {
   x: number;
@@ -257,6 +258,17 @@ export class HexMapView extends ItemView {
     { x: number; y: number; list: string[] }
   >();
   private flushing = new Set<string>(); // "t:<path>", "i:<path>", or "g:<path>"
+  /** Redraws the map once Obsidian has read hex notes that were drawn blank
+   *  because the metadata cache didn't have them yet (1.5.8). */
+  private cacheCatchup = new CacheCatchup(
+    () => this.renderGrid(),
+    () =>
+      this.pendingTerrainWrites.size +
+        this.pendingIconWrites.size +
+        this.pendingGmIconWrites.size +
+        this.flushing.size >
+      0,
+  );
   // Per-map viewport state saved when navigating away; restored on return (or fit on first visit).
   // fontSize must be saved alongside zoom/panX/panY because bakeZoom() encodes the visual zoom
   // into viewportEl.style.fontSize and resets this.zoom to 1. Restoring without the fontSize
@@ -885,6 +897,10 @@ export class HexMapView extends ItemView {
     );
 
     this.registerEvent(
+      this.app.metadataCache.on("resolved", () => this.cacheCatchup.poke()),
+    );
+
+    this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
         // Clear stale pending/erased entries for this file
         this.pendingFactionLinks.delete(file.path);
@@ -897,7 +913,10 @@ export class HexMapView extends ItemView {
         const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
         const mapPrefix =
           (hexFolder ? hexFolder + "/" : "") + this.activeMapName + "/";
-        if (file.path.startsWith(mapPrefix)) this.markStaleFromExternal();
+        if (file.path.startsWith(mapPrefix)) {
+          this.markStaleFromExternal();
+          this.cacheCatchup.poke();
+        }
 
         if (this.getActiveMap().showFactionOverlay) {
           const folder = normalizeFolder(this.plugin.settings.factionsFolder);
@@ -2758,6 +2777,7 @@ export class HexMapView extends ItemView {
    */
   async onClose(): Promise<void> {
     if (this.settleTimer !== null) window.clearTimeout(this.settleTimer);
+    this.cacheCatchup.cancel();
     if (this.bgCalibrating) {
       await this.exitBgCalibration(true);
     }
@@ -3228,14 +3248,17 @@ export class HexMapView extends ItemView {
     // via O(1) Set.has(path) instead of the per-hex
     // `vault.getAbstractFileByPath` round-trip. Output identical.
     const existingHexPaths = new Set<string>();
+    let uncachedHexes = false;
     const hexFolderObj = folder ? this.app.vault.getAbstractFileByPath(folder) : null;
     if (hexFolderObj instanceof TFolder) {
       for (const child of hexFolderObj.children) {
         if (child instanceof TFile && child.extension === "md") {
           existingHexPaths.add(child.path);
+          if (!uncachedHexes && !this.app.metadataCache.getFileCache(child)) uncachedHexes = true;
         }
       }
     }
+    this.cacheCatchup.setIncomplete(uncachedHexes);
 
     const addHex = (parent: HTMLElement, x: number, y: number) => {
       const path = folder ? `${folder}/${x}_${y}.md` : `${x}_${y}.md`;
