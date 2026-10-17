@@ -434,11 +434,9 @@ export class HexMapView extends ItemView {
       modeAllows: (action: ModeAction) => this.modeAllows(action),
       exitCurrentMode: () => this.exitCurrentMode(),
       centerOnHex: (x: number, y: number, keepHexWidth?: number) => this.centerOnHex(x, y, keepHexWidth),
-      renderGrid: (
-        terrainOverrides?: Map<string, string | null>,
-        iconOverrides?: Map<string, string | null>,
-        gmIconsOverrides?: Map<string, string[]>,
-      ) => this.renderGrid(terrainOverrides, iconOverrides, gmIconsOverrides),
+      renderGrid: (...a: Parameters<HexMapView["renderGrid"]>) => this.renderGrid(...a),
+      // The grid changed size from code (a map that grows, its undo): keep the view still.
+      keepViewStill: (...a: Parameters<GridEdgeButtons["keepViewStill"]>) => this.edges.keepViewStill(...a),
     };
   }
 
