@@ -274,20 +274,6 @@ export const CORE_PLACEMENT: Readonly<Record<string, Placement>> = {
   "MapExport.manualPartIndex": "main",
   // Export › Hex export
   "HexExport.exportMarkdown": "main",
-  // Content packs (SF1, 2026-10-14): export notes to a .zip, import one.
-  "Plugin.cmd.exportContentPack": "main",
-  "Plugin.cmd.importContentPack": "main",
-  "MapExport.contentPack": "main",
-  "Wizard.importPack": "main",
-  "PackExport.name": "main",
-  "PackExport.description": "main",
-  "PackExport.selectAll": "main",
-  "PackExport.export": "main",
-  "PackImport.pickZip": "main",
-  "PackImport.pickFolder": "main",
-  "PackImport.vaultZips": "main",
-  "PackImport.conflictAll": "main",
-  "PackImport.import": "main",
 };
 
 /**

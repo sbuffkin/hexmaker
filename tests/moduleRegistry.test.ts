@@ -19,7 +19,7 @@ import { ICON_PACK_LABELS } from "../src/utils";
 import { contextKindsIn, kindForIn, sectionWordsIn, type MapKindHost } from "../src/maps/mapKindQueries";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
-import { describeWith, itWith, moduleOn } from "./helpers/slices";
+import { describeWith, itWith, moduleOn, sliceOn } from "./helpers/slices";
 
 /** Every slice with a flag: tests of the modules' combined lists need them all (npm run test:slices builds fewer). */
 const EVERY = ["worldmaps", "space", "hexflower"];
@@ -37,8 +37,8 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps, space and hex-flower (those built), in that order", () => {
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "hex-flower"].filter(moduleOn));
+  it("registers world, world-maps, space, hex-flower and packs (those built), in that order", () => {
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "hex-flower", "packs"].filter(moduleOn));
     expect(registry.kindIds()).toEqual(["world", "space"].filter(moduleOn));
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();
@@ -233,6 +233,8 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
       ["new-overworld", null], // World maps (P7): works with any map type
       ["edit-world-types", "space"], // only while Space is on
       ["convert-world-types", null], // whenever there's something to convert
+      // Content packs, when built: any vault.
+      ...(sliceOn("packs") ? [["export-content-pack", null], ["import-content-pack", null]] : []),
     ]);
     expect(moduleFolderSettings().map((d) => [d.id, d.key])).toEqual([
       ["Settings.biomesFolder", "biomesFolder"],

@@ -2,15 +2,16 @@
  * Owner K2 (2026-10-16): importing a palette whose name this vault has.
  * The same palette (formatting and row order aside) isn't duplicated;
  * a changed one comes in as "Name 2" (then 3…), and the pack's notes that
- * name it follow (src/packs/packPalettes.ts, planImport).
+ * name it follow (src/modules/packs/packPalettes.ts, planImport).
  */
-import { describe, it } from "node:test";
+import { it } from "node:test";
+import { describeWith } from "./helpers/slices";
 import expect from "expect";
-import { coreKinds, type PackKind } from "../src/packs/packKinds";
-import { loadPack, planImport, resolveSteps, type PackFile } from "../src/packs/packPlan";
-import { paletteKey, planPalettes, renamePaletteRefs, type VaultPalette } from "../src/packs/packPalettes";
-import { runImport, type PackWriteHost } from "../src/packs/packIO";
-import { formatManifest } from "../src/packs/packManifest";
+import { coreKinds, type PackKind } from "../src/modules/packs/packKinds";
+import { loadPack, planImport, resolveSteps, type PackFile } from "../src/modules/packs/packPlan";
+import { paletteKey, planPalettes, renamePaletteRefs, type VaultPalette } from "../src/modules/packs/packPalettes";
+import { runImport, type PackWriteHost } from "../src/modules/packs/packIO";
+import { formatManifest } from "../src/modules/packs/packManifest";
 import { buildPaletteNote, parsePaletteNote } from "../src/palettes/paletteNote";
 import { setPathTypes } from "../src/palettes/pathTypeTable";
 import type { TerrainColor } from "../src/types";
@@ -39,7 +40,7 @@ function vaultWith(palettes: Record<string, string>, notes: Record<string, strin
 const packOf = (files: Record<string, string>) =>
 	loadPack(Object.entries(files).map(([path, t]): PackFile => ({ path, data: enc(t) })), kinds, "Pack");
 
-describe("K2: is it the same palette?", () => {
+describeWith("packs", "K2: is it the same palette?", () => {
 	it("row order, colour case and table formatting don't count", () => {
 		const reordered = buildPaletteNote([COAST[2], { ...COAST[0], color: "#29507F" }, COAST[1]]);
 		const spaced = coastNote().replace(/\| /g, "|  ").replace("Hexmap World Creator terrain palette.", "My notes about this palette.");
@@ -60,7 +61,7 @@ describe("K2: is it the same palette?", () => {
 	});
 });
 
-describe("K2: planning the pack's palettes", () => {
+describeWith("packs", "K2: planning the pack's palettes", () => {
 	it("new, the same (already have), or different → Name 2, then 3 when 2 is taken", async () => {
 		const { find } = vaultWith({ Coast: coastNote(), Hills: coastNote(), "Hills 2": coastNote() });
 		const changed = coastNote([...COAST, { name: "reef", color: "#3fa7a0" }]);
@@ -88,7 +89,7 @@ describe("K2: planning the pack's palettes", () => {
 	});
 });
 
-describe("K2: references inside the pack follow the new name", () => {
+describeWith("packs", "K2: references inside the pack follow the new name", () => {
 	const renames = new Map([["coast", "Coast 2"]]);
 
 	it("a generator's palette: (link or plain), a child-palette:, a link into the palettes folder", () => {
@@ -109,7 +110,7 @@ describe("K2: references inside the pack follow the new name", () => {
 	});
 });
 
-describe("K2: importing a pack", () => {
+describeWith("packs", "K2: importing a pack", () => {
 	const changed = coastNote([...COAST, { name: "reef", color: "#3fa7a0" }]);
 	const generator = '---\npalette: "[[lore/palettes/Coast]]"\n---\n# Valley\n';
 	const manifest = formatManifest({

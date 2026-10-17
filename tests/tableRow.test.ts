@@ -215,7 +215,7 @@ describe("one separator row and one regex escaper", () => {
 
 	it("the regex escape is written once (textUtils.escapeRegex)", () => {
 		const inline = ".replace(/[.*+?^${}()|[\\]\\\\]/g";
-		for (const f of ["src/provenance.ts", "src/sections.ts", "src/notes/frontmatterText.ts", "src/packs/packKinds.ts", "src/packs/packPalettes.ts", "src/textUtils.ts"]) {
+		for (const f of ["src/provenance.ts", "src/sections.ts", "src/notes/frontmatterText.ts", "src/modules/packs/packKinds.ts", "src/modules/packs/packPalettes.ts", "src/textUtils.ts"]) {
 			const n = readSource(f).split(inline).length - 1;
 			expect({ f, n }).toEqual({ f, n: f === "src/textUtils.ts" ? 1 : 0 });
 		}

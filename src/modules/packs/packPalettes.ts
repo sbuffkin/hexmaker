@@ -16,10 +16,10 @@
  * note under the new name. Pure: no Obsidian imports.
  */
 
-import { parsePaletteNote, readChildPalette, readPaletteKind, readSubmapDefaults, submapDefaultsKey } from "../palettes/paletteNote";
-import { parsePathTypes } from "../palettes/pathTypeTable";
-import { refBasename } from "../noteFormats";
-import { escapeRegex } from "../textUtils";
+import { parsePaletteNote, readChildPalette, readPaletteKind, readSubmapDefaults, submapDefaultsKey } from "../../palettes/paletteNote";
+import { parsePathTypes } from "../../palettes/pathTypeTable";
+import { refBasename } from "../../noteFormats";
+import { escapeRegex } from "../../textUtils";
 
 /** A palette this vault has: its note's path and text. */
 export interface VaultPalette {

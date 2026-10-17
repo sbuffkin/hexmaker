@@ -22,7 +22,6 @@ import { RestoreBackupModal, openBackupsFolder } from "../BackupsModal";
 import { ensureLogNote } from "../play/playLogWriter";
 import { logFolderFor } from "../play/playLog";
 import { openNoteFocused } from "../openNote";
-import { packCommands } from "../packs/packCommands";
 import { mapLinkUri } from "../hexLink";
 import { normalizeFolder } from "../utils";
 
@@ -108,10 +107,6 @@ export function registerCommands(plugin: HexmakerPlugin): void {
     name: "Open random tables",
     callback: () => void plugin.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
   });
-  // Content packs (SF1): export notes to a .zip, import one into this vault.
-  const packs = packCommands(plugin);
-  addPlaced("Plugin.cmd.exportContentPack", { id: "export-content-pack", name: "Export content pack…", callback: packs.exportPack });
-  addPlaced("Plugin.cmd.importContentPack", { id: "import-content-pack", name: "Import content pack…", callback: packs.importPack });
   addPlaced("Plugin.cmd.addRollRanges", {
     id: "add-roll-ranges",
     name: "Add roll ranges to tables",

@@ -1,8 +1,9 @@
-import { describe, it } from "node:test";
+import { it } from "node:test";
+import { describeWith } from "./helpers/slices";
 import expect from "expect";
 import { deflateRawSync } from "node:zlib";
-import { PACK_LIMITS, crc32, packSizeProblem, readZip, writeZip } from "../src/packs/zip";
-import { readFolderPack, type FolderFile } from "../src/packs/packPlan";
+import { PACK_LIMITS, crc32, packSizeProblem, readZip, writeZip } from "../src/modules/packs/zip";
+import { readFolderPack, type FolderFile } from "../src/modules/packs/packPlan";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 
@@ -49,7 +50,7 @@ function zipOf(path: string, body: Uint8Array, opts: { method?: number; declared
 /** Offset of the (only) central directory record in a zip from writeZip/zipOf. */
 const centralAt = (zip: Uint8Array) => new DataView(zip.buffer, zip.byteOffset).getUint32(zip.length - 22 + 16, true);
 
-describe("content packs: zip limits (zip bombs)", () => {
+describeWith("packs", "content packs: zip limits (zip bombs)", () => {
   it("has limits far above a real pack", () => {
     expect(PACK_LIMITS.fileBytes).toBeGreaterThanOrEqual(5 * 1024 * 1024);
     expect(PACK_LIMITS.totalBytes).toBeGreaterThanOrEqual(10 * PACK_LIMITS.fileBytes);
@@ -118,7 +119,7 @@ describe("content packs: zip limits (zip bombs)", () => {
   });
 });
 
-describe("content packs: folder import limits", () => {
+describeWith("packs", "content packs: folder import limits", () => {
   const file = (path: string, size: number, reads: string[]): FolderFile => ({
     path,
     size,

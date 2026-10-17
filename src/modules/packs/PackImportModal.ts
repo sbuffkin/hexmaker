@@ -1,8 +1,8 @@
 import { Notice, type App } from "obsidian";
-import { HexmakerModal } from "../HexmakerModal";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import { Fold } from "../ui/disclosure";
-import { addPickerFilter, emptyState, filterText } from "../ui/pickers";
+import { HexmakerModal } from "../../HexmakerModal";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import { Fold } from "../../ui/disclosure";
+import { addPickerFilter, emptyState, filterText } from "../../ui/pickers";
 import type { PackKind } from "./packKinds";
 import { readZip } from "./zip";
 import {
