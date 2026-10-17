@@ -423,7 +423,8 @@ export class GridRenderer {
         hexEl.addClass("is-selected");
       if (visitedHexes.has(hexKey(x, y))) hexEl.addClass("duckmage-hex-visited");
       const ring = revealed.get(hexKey(x, y));
-      if (ring !== undefined) {
+      // Only a hex that has terrain bounces in (one undone since stays still).
+      if (ring !== undefined && ownTerrain) {
         hexEl.addClass("duckmage-hex-reveal");
         hexEl.dataset.revealRing = String(Math.min(ring, 3));
       }
