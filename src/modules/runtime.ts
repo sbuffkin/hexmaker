@@ -50,12 +50,14 @@ import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
 import { hexFlowerRuntime } from "./hex-flower/runtime";
+import { manualRuntime } from "./manual/runtime";
 
 /** The runtime halves, by the same slice flags as ./index.ts. */
 const compiled: ModuleRuntime[] = [worldRuntime];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
 if (__SLICE_SPACE__) compiled.push(spaceRuntime);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
+if (__SLICE_MANUAL__) compiled.push(manualRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 
 /** Every module's built-in generators, in list order. */

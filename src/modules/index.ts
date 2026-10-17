@@ -17,6 +17,7 @@ import { worldModule } from "./world";
 import { worldMapsModule } from "./world-maps";
 import { spaceModule } from "./space";
 import { hexFlowerModule } from "./hex-flower";
+import { manualModule } from "./manual";
 
 // Plain `if`s on the flags: esbuild drops a false branch (and so the
 // module) without minifying; a ternary inside an array isn't folded.
@@ -24,6 +25,7 @@ const compiled: HexmakerModule[] = [worldModule];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsModule);
 if (__SLICE_SPACE__) compiled.push(spaceModule);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerModule);
+if (__SLICE_MANUAL__) compiled.push(manualModule);
 
 export const MODULES: readonly HexmakerModule[] = compiled;
 

@@ -265,13 +265,6 @@ export const CORE_PLACEMENT: Readonly<Record<string, Placement>> = {
   "MapExport.pdfColumnsFold": "main",
   "MapExport.exportPng": "main",
   "MapExport.exportPdf": "main",
-  "MapExport.exportManual": "main",
-  // Export › Map export: Hexcrawl manual
-  "MapExport.playerEdition": "main",
-  "MapExport.manualPartLegend": "main",
-  "MapExport.manualPartTables": "main",
-  "MapExport.manualPartFactions": "main",
-  "MapExport.manualPartIndex": "main",
   // Export › Hex export
   "HexExport.exportMarkdown": "main",
   // Content packs (SF1, 2026-10-14): export notes to a .zip, import one.

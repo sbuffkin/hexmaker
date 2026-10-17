@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { mapExportFileNames, mapExportStem, sanitiseFilename } from "../src/export/exportNames";
+import { mapExportBase, mapExportFileNames, mapExportStem, sanitiseFilename } from "../src/export/exportNames";
+import { manualFileName } from "../src/modules/manual/manualModel";
+import { describeWith } from "./helpers/slices";
 
 /**
  * Fresh-eyes round 3: the export form said "Output: kerrigan.png" but wrote
@@ -8,11 +10,11 @@ import { mapExportFileNames, mapExportStem, sanitiseFilename } from "../src/expo
  * preview). The preview and the exporters now share these names.
  */
 describe("map export file names", () => {
-	it("defaults to the map name", () => {
+	it("defaults to the map name; no module parts, no other files", () => {
 		expect(mapExportFileNames({ base: "", mapName: "kerrigan" })).toEqual({
 			png: "kerrigan.png",
 			pdf: "kerrigan.pdf",
-			manual: "kerrigan manual.pdf",
+			parts: {},
 		});
 	});
 
@@ -20,14 +22,20 @@ describe("map export file names", () => {
 		const n = mapExportFileNames({ base: "kerrigan", mapName: "kerrigan", showRegionOverlay: true, showFactionOverlay: true });
 		expect(n.png).toBe("kerrigan-faction-area.png");
 		expect(n.pdf).toBe("kerrigan-faction-area.pdf");
-		// The manual keeps the plain name.
-		expect(n.manual).toBe("kerrigan manual.pdf");
 	});
 
-	it("uses the typed name, trimmed, and names the player manual", () => {
-		const n = mapExportFileNames({ base: "  barony-players ", mapName: "barony", player: true });
-		expect(n.png).toBe("barony-players.png");
-		expect(n.manual).toBe("barony-players player.pdf");
+	it("uses the typed name, trimmed", () => {
+		expect(mapExportFileNames({ base: "  barony-players ", mapName: "barony" }).png).toBe("barony-players.png");
+	});
+
+	it("names each module part's file by its id, from the base name (typed, else the map name)", () => {
+		const parts = [
+			{ id: "a", fileName: (base: string) => `${base} a.pdf` },
+			{ id: "b" },
+		];
+		expect(mapExportFileNames({ base: "", mapName: "kerrigan", showRegionOverlay: true }, parts).parts).toEqual({ a: "kerrigan a.pdf" });
+		expect(mapExportFileNames({ base: " barony ", mapName: "kerrigan" }, parts).parts).toEqual({ a: "barony a.pdf" });
+		expect(mapExportBase({ base: "  ", mapName: "m" })).toBe("m");
 	});
 
 	it("the stem the exporters get matches the previewed PNG name", () => {
@@ -37,6 +45,14 @@ describe("map export file names", () => {
 
 	it("strips characters a vault file name can't hold", () => {
 		expect(mapExportFileNames({ base: 'a/b:c?"d', mapName: "m" }).png).toBe("a_b_c__d.png");
+	});
+});
+
+describeWith("manual", "hexcrawl manual file name", () => {
+	it("keeps the plain name (no overlay suffix) and names the player version", () => {
+		expect(manualFileName("kerrigan", false)).toBe("kerrigan manual.pdf");
+		expect(manualFileName("barony-players", true)).toBe("barony-players player.pdf");
+		expect(manualFileName('a/b', false)).toBe("a_b manual.pdf");
 	});
 });
 

@@ -1,11 +1,12 @@
-import { describe, it } from "node:test";
+import { it } from "node:test";
+import { describeWith } from "./helpers/slices";
 import expect from "expect";
-import { hexNumbering } from "../src/export/manual/hexNumber";
-import { PlaceholderFilter, templateHintLines } from "../src/export/manual/placeholders";
-import { buildManualHtml, entryTitle, isKeyed, tableResultText } from "../src/export/manual/manualHtml";
-import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
+import { hexNumbering } from "../src/modules/manual/hexNumber";
+import { PlaceholderFilter, templateHintLines } from "../src/modules/manual/placeholders";
+import { buildManualHtml, entryTitle, isKeyed, tableResultText } from "../src/modules/manual/manualHtml";
+import type { ManualData, ManualHex } from "../src/modules/manual/manualModel";
 
-/** Pure parts of the hexcrawl manual export (src/export/manual). */
+/** Pure parts of the hexcrawl manual export (src/modules/manual). */
 
 const noLinks = { towns: [], dungeons: [], features: [], quests: [], factions: [] };
 const hex = (over: Partial<ManualHex> = {}): ManualHex => ({
@@ -14,7 +15,7 @@ const hex = (over: Partial<ManualHex> = {}): ManualHex => ({
   links: { ...noLinks }, ...over,
 });
 
-describe("hex numbers", () => {
+describeWith("manual", "hex numbers", () => {
   it("count from the map's top-left hex as 0101, whatever its coordinates", () => {
     const n = hexNumbering({ x: -7, y: -9 }, { cols: 38, rows: 27 });
     expect(n.number(-7, -9)).toBe("0101");
@@ -29,7 +30,7 @@ describe("hex numbers", () => {
   });
 });
 
-describe("placeholder text", () => {
+describeWith("manual", "placeholder text", () => {
   const filter = new PlaceholderFilter(["### description\nWhat the party sees and feels.\n### hooks\n(Write hooks here)"]);
 
   it("drops unedited template hints and fill-in prompts", () => {
@@ -54,7 +55,7 @@ describe("placeholder text", () => {
   });
 });
 
-describe("what gets keyed", () => {
+describeWith("manual", "what gets keyed", () => {
   it("needs text or a location link; factions alone don't count", () => {
     expect(isKeyed(hex({ links: { ...noLinks, factions: ["King Guzzard"] } }), false)).toBe(false);
     expect(isKeyed(hex({ description: "<p>Fog.</p>" }), false)).toBe(true);
@@ -67,7 +68,7 @@ describe("what gets keyed", () => {
   });
 });
 
-describe("entry titles", () => {
+describeWith("manual", "entry titles", () => {
   it("prefer a named location, then a short landmark, then the terrain", () => {
     expect(entryTitle(hex({ links: { ...noLinks, towns: ["Farwharf"] }, landmark: "<p>A lighthouse</p>" }))).toBe("Farwharf");
     expect(entryTitle(hex({ landmark: "<p>Death Point</p>" }))).toBe("Death Point");
@@ -75,7 +76,7 @@ describe("entry titles", () => {
   });
 });
 
-describe("table results", () => {
+describeWith("manual", "table results", () => {
   it("print note links and paths as the note's name", () => {
     expect(tableResultText("[[RPG/world/creatures/Golem]]")).toBe("Golem");
     expect(tableResultText("[[RPG/world/creatures/Golem|the golem]]")).toBe("the golem");
@@ -85,7 +86,7 @@ describe("table results", () => {
   });
 });
 
-describe("manual document", () => {
+describeWith("manual", "manual document", () => {
   const data = (player: boolean): ManualData => ({
     title: "the-coast", version: "1.5.6", date: "2026-10-08", hexCount: 3, keyedCount: 2, player, numberDigits: 2,
     overviewMapUri: "data:image/png;base64,AA", legend: [{ name: "grass", color: "#6a6", hexCount: 3 }], paths: [],

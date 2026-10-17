@@ -4,6 +4,8 @@
  * note's markdown (links, emphasis, lists), never raw user markdown.
  */
 
+import { sanitiseFilename } from "../../export/exportNames";
+
 export interface ManualLegendEntry {
   name: string;
   color: string;
@@ -114,3 +116,12 @@ export const MANUAL_PARTS: { key: ManualPart; label: string }[] = [
   { key: "factions", label: "Factions and areas" },
   { key: "index", label: "Index" },
 ];
+
+/**
+ * The manual's file name from the export form's base name (the typed name,
+ * or the map name): "<base> manual.pdf", or "<base> player.pdf" for the
+ * player version. No overlay suffix: one manual per map and edition.
+ */
+export function manualFileName(base: string, player: boolean): string {
+  return `${sanitiseFilename(`${base} ${player ? "player" : "manual"}`)}.pdf`;
+}

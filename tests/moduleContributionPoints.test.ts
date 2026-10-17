@@ -25,6 +25,7 @@ import { TableSections } from "../src/hex-map/editor/TableSections";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
+import { sliceOn } from "./helpers/slices";
 
 /**
  * The runtime contribution points later slices plug into (S0.5 of the
@@ -52,7 +53,8 @@ describe("contribution points: nothing contributed, nothing changes", () => {
   it("every collector is empty or neutral without a module that uses it", () => {
     const plugin = {} as never;
     expect(moduleViews()).toEqual([]);
-    expect(moduleExportForm()).toEqual([]);
+    // The manual slice is the one module with a part of the Map export form (tests/slice-manual.test.ts).
+    expect(moduleExportForm().map((c) => c.id)).toEqual(sliceOn("manual") ? ["manual"] : []);
     expect(moduleWizardOffers("done")).toEqual([]);
     expect(genPage()).toBeUndefined();
     expect(modulePartyClick(plugin, { map: "m", token: "t.md", from: "0_0", to: "1_0", orientation: "flat", stagger: "odd" })).toBe("none");
@@ -207,9 +209,9 @@ describe("exportForm[]: a module's part of the Map export form", () => {
     expect(all.find((t) => t.startsWith("Writes:"))).toMatch(/· Coast fake\.pdf \(fake\)$/);
     expect(all).toContain("Fake: a fake file.");
     expect(all).toContain("Fake box");
-    // The core's buttons first, then the module's.
-    const buttons = root.buttons().map((b) => b.text);
-    expect(buttons.slice(0, 3)).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)"]);
+    // The core's buttons first, then the modules', in module order (the fake one last).
+    const buttons = root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export") && !t.includes("pack"));
+    expect(buttons).toEqual(["Export PNG", "Export PDF with reference table", ...(sliceOn("manual") ? ["Export hexcrawl manual (PDF)"] : []), "Export fake"]);
     const fake = root.buttons().find((b) => b.text === "Export fake")!;
     fake.fire("click");
     expect(ran).toEqual([["Coast", "Coast fake.pdf"]]);
@@ -218,11 +220,12 @@ describe("exportForm[]: a module's part of the Map export form", () => {
     expect(() => changed()).not.toThrow();
   });
 
-  it("without a module part the form is what it was", () => {
+  it("the core's own form: PNG and PDF, then whatever the built modules add", () => {
     const { root, el } = fakeRoot();
     renderMapExportForm(el, plugin() as never, "Coast");
-    expect(root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export"))).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)", "Export content pack…"]);
-    expect(texts(root).find((t) => t.startsWith("Writes:"))).toMatch(/\(manual\)$/);
+    const manual = sliceOn("manual");
+    expect(root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export") && !t.includes("pack"))).toEqual(["Export PNG", "Export PDF with reference table", ...(manual ? ["Export hexcrawl manual (PDF)"] : [])]);
+    expect(texts(root).find((t) => t.startsWith("Writes:"))).toBe(`Writes: Coast.png (PNG) · Coast.pdf (PDF)${manual ? " · Coast manual.pdf (manual)" : ""}`);
   });
 });
 

@@ -50,7 +50,7 @@ Each coding session:
 
 ## Feature switches (release slices)
 
-Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space` and `hexflower` today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
+Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space`, `hexflower` and `manual` today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
 
 | Variable | Meaning |
 |---|---|

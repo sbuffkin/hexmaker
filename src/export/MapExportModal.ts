@@ -3,8 +3,6 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { exportMapAsPng } from "./mapPngRenderer";
 import { exportMapAsPdf, HANDOUT_COLUMNS, handoutColumnLabel } from "./exporters/mapWithTable";
-import { MANUAL_PARTS } from "./manual/manualModel";
-import { exportMapAsManual } from "./exporters/hexcrawlManual";
 import {
   EXPORT_LAYER_KEYS,
   exportLayerDefaults,
@@ -18,34 +16,16 @@ import { Disclosure, Fold } from "../ui/disclosure";
 import { uniqueMapsByName } from "../maps/mapTree";
 import { openPackExport } from "../packs/packOpeners";
 import { moduleExportForm } from "../modules/runtime";
+import { inlineCheck } from "./exportFormControls";
 
 /**
- * The map export form: PNG, PDF with reference table, hexcrawl manual.
+ * The map export form: PNG, PDF with reference table, and the modules'
+ * parts (moduleExportForm).
  * Shared by Maps → Export and the "Export current map…" command
  * (MapExportModal), so both look and behave the same.
  */
 
 let nextFieldId = 0;
-
-/** A checkbox whose label is a real <label for>: clicking the text toggles it and fires "change". */
-function checkbox(parent: HTMLElement, labelText: string, initial: boolean, hint?: string): HTMLInputElement {
-  const row = parent.createDiv({ cls: "duckmage-export-tab-row" });
-  const id = `duckmage-export-field-${nextFieldId++}`;
-  const cb = row.createEl("input", { type: "checkbox", cls: "duckmage-export-tab-checkbox", attr: { id } });
-  cb.checked = initial;
-  row.createEl("label", { text: labelText, cls: "duckmage-export-tab-label", attr: { for: id } });
-  if (hint) row.createDiv({ cls: "duckmage-export-tab-row-hint", text: hint });
-  return cb;
-}
-
-/** A small checkbox for a row of options; the label wraps it, so its text toggles it. */
-function inlineCheck(parent: HTMLElement, labelText: string, initial: boolean, title?: string): HTMLInputElement {
-  const label = parent.createEl("label", { attr: title ? { title } : {} });
-  const cb = label.createEl("input", { type: "checkbox", cls: "duckmage-export-tab-checkbox" });
-  cb.checked = initial;
-  label.appendText(labelText);
-  return cb;
-}
 
 function clampInt(v: number, lo: number, hi: number, fallback: number): number {
   if (Number.isNaN(v)) return fallback;
@@ -146,16 +126,9 @@ export function renderMapExportForm(
   const columnChecks = HANDOUT_COLUMNS.map((c) => ({ key: c.key, cb: inlineCheck(columnsRow, handoutColumnLabel(c, plugin.sectionWordsFor(mapName)), true) }));
   for (const { cb } of columnChecks) columnsBox.track(() => !cb.checked);
 
-  // The hexcrawl manual's edition and optional parts.
-  const manualBox = new Fold(optsForm, { title: "Hexcrawl manual", open: false, store: plugin.app, surface: "MapExport", cls: "duckmage-export-group" });
-  const playerEdition = checkbox(manualBox.body, "Player version (leave out the hidden and secret sections)", false);
-  const partsRow = manualBox.body.createDiv({ cls: "duckmage-export-inline" });
-  const partChecks = MANUAL_PARTS.map((p) => ({ key: p.key, cb: inlineCheck(partsRow, p.label, true) }));
-  manualBox.track(() => playerEdition.checked);
-  for (const { cb } of partChecks) manualBox.track(() => !cb.checked);
   // The modules' parts of the form (ModuleRuntime.exportForm): their options here, then their file, button and notes below.
   let partsChanged = (): void => {};
-  const parts = moduleExportForm().map((c) => c.render({ plugin, mapName, options: optsForm, changed: () => partsChanged() }));
+  const parts = moduleExportForm().map((c) => ({ id: c.id, ...c.render({ plugin, mapName, options: optsForm, changed: () => partsChanged() }) }));
 
   // Output size: presets of hex radius (the image size also depends on the grid).
   const sizeRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
@@ -200,18 +173,17 @@ export function renderMapExportForm(
     mapName,
     showFactionOverlay: showFactionOverlay.checked,
     showRegionOverlay: showRegionOverlay.checked,
-    player: playerEdition.checked,
-  });
+  }, parts);
   const updatePreview = () => {
     const n = names();
     const suffix = mapExportSuffix({ showFactionOverlay: showFactionOverlay.checked, showRegionOverlay: showRegionOverlay.checked });
     suffixEl.setText(suffix);
     suffixEl.toggle(!!suffix);
     suffixEl.setAttr("title", suffix ? "Added for the overlays you ticked, so each variant gets its own file" : null);
-    const more = parts.flatMap((p) => (p.fileName ? [` · ${p.fileName(nameInput.value)} (${p.fileLabel ?? "file"})`] : []));
-    preview.setText(`Writes: ${n.png} (PNG) · ${n.pdf} (PDF) · ${n.manual} (manual)${more.join("")}`);
+    const more = parts.flatMap((p) => (n.parts[p.id] ? [` · ${n.parts[p.id]} (${p.fileLabel ?? "file"})`] : []));
+    preview.setText(`Writes: ${n.png} (PNG) · ${n.pdf} (PDF)${more.join("")}`);
   };
-  for (const input of [nameInput, showFactionOverlay, showRegionOverlay, playerEdition]) {
+  for (const input of [nameInput, showFactionOverlay, showRegionOverlay]) {
     input.addEventListener("input", updatePreview);
     input.addEventListener("change", updatePreview);
   }
@@ -250,32 +222,12 @@ export function renderMapExportForm(
     void exportMapAsPdf(plugin, mapName, collectOpts());
     form.onExport?.();
   });
-  // A printable gazetteer: legend, encounter tables, keyed hexes by
-  // section, index. Uses its own print styling and hex numbering.
-  actions.createEl("button", { text: "Export hexcrawl manual (PDF)" }).addEventListener("click", () => {
-    const o = collectOpts();
-    remember();
-    void exportMapAsManual(plugin, mapName, {
-      outputName: names().manual.replace(/\.pdf$/, ""),
-      player: playerEdition.checked,
-      showIcons: o.showIcons,
-      showPaths: o.showPaths,
-      boldPaths: o.boldPaths,
-      showFactionOverlay: o.showFactionOverlay,
-      showRegionOverlay: o.showRegionOverlay,
-      showHexNames: o.showHexNames,
-      showTokens: o.showTokens,
-      omit: partChecks.filter((p) => !p.cb.checked).map((p) => p.key),
-    });
-    form.onExport?.();
-  });
-
   for (const p of parts) {
     const button = p.button;
     if (!button) continue;
     actions.createEl("button", { text: button.label }).addEventListener("click", () => {
       remember();
-      void button.run(collectOpts(), p.fileName?.(nameInput.value));
+      void button.run(collectOpts(), names().parts[p.id]);
       form.onExport?.();
     });
   }
@@ -290,9 +242,6 @@ export function renderMapExportForm(
   });
   list.createEl("li", {
     text: "PDF with reference table: that map, then a table per section with the columns you tick (name, linked notes, the start of the description…); no hidden or secret sections.",
-  });
-  list.createEl("li", {
-    text: "Hexcrawl manual: the full game master gazetteer with the parts you tick, hidden and secret sections included, unless you tick the player version.",
   });
   // Content pack (SF1): not the map but your notes (tables, templates, towns…) in one .zip.
   const packBox = el.createDiv({ cls: "duckmage-export-group duckmage-export-pack" });
