@@ -199,6 +199,7 @@
 	"src/ui/shares.ts",
 	"src/undoBook.ts",
 	"src/vault/ensureFolder.ts",
+	"src/vault/safePaths.ts",
 	"src/wheelChain.ts",
 	"src/workMode.ts",
 	"src/workspace/views.ts",

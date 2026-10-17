@@ -17,7 +17,7 @@ import {
   unfilledTokens,
   type WorkflowStep,
 } from "./workflow";
-import { newTemplatePath, resolveWorkflowTemplate, stepDieLabels } from "./workflowFiles";
+import { isWritableTemplate, newTemplatePath, resolveWorkflowTemplate, saveWorkflowTemplate, stepDieLabels, templateRoots } from "./workflowFiles";
 import { noteLink } from "../noteFormats";
 import { groupTableFiles } from "./tablePickerGroups";
 import { MAP_MADE_GROUP_LABEL } from "./resolve";
@@ -37,7 +37,8 @@ export class WorkflowEditorModal extends HexmakerModal {
     private plugin: HexmakerPlugin,
     private file: TFile,
     private onSaved?: () => void,
-    private preloaded?: { content: string; templateContent: string },
+    /** The workflow note's text when the caller already read it (the template is always read here). */
+    private preloaded?: { content: string },
   ) {
     super(app);
   }
@@ -57,21 +58,30 @@ export class WorkflowEditorModal extends HexmakerModal {
     let description = workflow.description ?? "";
     let templateContent = "";
 
-    // Load template file if it exists (however its path was typed)
-    if (this.preloaded !== undefined) {
-      templateContent = this.preloaded.templateContent;
-    } else if (workflow.templateFile) {
-      const tmplFile = resolveWorkflowTemplate(this.app, workflow.templateFile, this.file.path);
-      if (tmplFile) templateContent = await this.app.vault.read(tmplFile);
-    }
+    // The template note (however its path was typed). It's written on
+    // close only when it's a note under the workflows or world folder:
+    // `template-file` is note text, and may come from someone else's pack.
+    const roots = templateRoots(this.plugin.settings);
+    const handSet = workflow.templateFile;
+    const tmplFile = handSet ? resolveWorkflowTemplate(this.app, handSet, this.file.path) : null;
+    const wfFolder = normalizeFolder(this.plugin.settings.workflowsFolder);
+    const templatePath = tmplFile?.path
+      ?? newTemplatePath(handSet)
+      ?? `${wfFolder}/templates/${this.file.basename}.md`;
+    const templateWritable = isWritableTemplate(templatePath, roots);
+    /** The template's text as read now (null: no note yet), to tell a later edit elsewhere from ours. */
+    const templateAtOpen = tmplFile ? await this.app.vault.read(tmplFile) : null;
+    templateContent = templateAtOpen ?? "";
     if (!templateContent) {
       templateContent = generateDefaultTemplate(steps);
     }
     // Steps whose placeholders the template lacks get them (saved on close).
-    const reconciled = reconcileTemplate(templateContent, steps);
-    templateContent = reconciled.template;
-    if (reconciled.added.length) {
-      new Notice(`Added ${reconciled.added.join(", ")} to the template: no part of it showed those steps' results.`);
+    if (templateWritable) {
+      const reconciled = reconcileTemplate(templateContent, steps);
+      templateContent = reconciled.template;
+      if (reconciled.added.length) {
+        new Notice(`Added ${reconciled.added.join(", ")} to the template: no part of it showed those steps' results.`);
+      }
     }
 
     // All table files in the tables folder for the picker
@@ -167,6 +177,13 @@ export class WorkflowEditorModal extends HexmakerModal {
       cls: "duckmage-wf-template-area",
     });
     templateArea.value = templateContent;
+    if (!templateWritable) {
+      templateArea.readOnly = true;
+      templateSectionWrap.createEl("p", {
+        text: `The template (${templatePath}) is outside the world and workflows folders, so it isn't changed here.`,
+        cls: "duckmage-table-editor-warning",
+      });
+    }
     templateArea.addEventListener("input", () => {
       templateContent = templateArea.value;
       updateValidation();
@@ -639,20 +656,12 @@ export class WorkflowEditorModal extends HexmakerModal {
 
 
     this.flushAndSave = async () => {
-      const wfFolder = normalizeFolder(this.plugin.settings.workflowsFolder);
-      // A template-file set by hand is kept; only a workflow without one
-      // gets the default beside its workflows.
-      const handSet = workflow.templateFile;
-      const existingTemplate = resolveWorkflowTemplate(this.app, handSet, this.file.path);
-      const templatePath = existingTemplate?.path
-        ?? newTemplatePath(handSet)
-        ?? `${wfFolder}/templates/${this.file.basename}.md`;
-
       const updatedWorkflow = {
         name: this.file.basename,
         description: description || undefined,
         resultsFolder: resultsFolder || undefined,
-        // Written as a link, so renaming the template keeps it (NF3).
+        // A template-file set by hand is kept; one without gets the default
+        // beside its workflows, written as a link so renaming it keeps it (NF3).
         templateFile: handSet || JSON.stringify(noteLink(templatePath)),
         steps,
       };
@@ -665,22 +674,7 @@ export class WorkflowEditorModal extends HexmakerModal {
             dieFor: (step) => dies.get(step.tablePath),
           }),
         );
-
-        const templateDir = templatePath.includes("/") ? templatePath.slice(0, templatePath.lastIndexOf("/")) : "";
-        if (templateDir && !this.app.vault.getAbstractFileByPath(templateDir)) {
-          try {
-            await this.app.vault.createFolder(templateDir);
-          } catch {
-            /* may exist */
-          }
-        }
-        const tmplFile = this.app.vault.getAbstractFileByPath(templatePath);
-        if (tmplFile instanceof TFile) {
-          await this.app.vault.process(tmplFile, () => templateContent);
-        } else {
-          await this.app.vault.create(templatePath, templateContent);
-        }
-
+        if (templateWritable) await this.saveTemplate(tmplFile ?? templatePath, templateAtOpen, templateContent);
         this.onSaved?.();
       } catch (err) {
         new Notice(`Could not save workflow: ${String(err)}`);
@@ -694,6 +688,15 @@ export class WorkflowEditorModal extends HexmakerModal {
     foot.el.prepend(renderSaveStatusLine(foot.el, { title: "Saves when you close this (×). There is no Save button." }).el);
 
     this.makeDraggable();
+  }
+
+  /** Write the template on close (workflowFiles.saveWorkflowTemplate); say so when it was changed elsewhere. */
+  private async saveTemplate(target: TFile | string, atOpen: string | null, text: string): Promise<void> {
+    const verdict = await saveWorkflowTemplate(this.app, target, atOpen, text);
+    if (verdict === "stale") {
+      const path = target instanceof TFile ? target.path : target;
+      new Notice(`${path} was changed elsewhere while this workflow was open, so your template changes weren't saved.`);
+    }
   }
 
   onClose(): void {

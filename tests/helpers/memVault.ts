@@ -61,6 +61,8 @@ export class MemVault {
 			f.path = path;
 			f.name = path.slice(path.lastIndexOf("/") + 1);
 			f.basename = f.name.replace(/\.md$/, "");
+			const dot = f.name.lastIndexOf(".");
+			f.extension = dot > 0 ? f.name.slice(dot + 1) : "";
 			return f;
 		}
 		if (this.folders.has(path)) {
