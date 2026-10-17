@@ -112,11 +112,9 @@ export const CORE_PLACEMENT: Readonly<Record<string, Placement>> = {
   "MapView.dblRightClickExit": "hidden",
   "MapView.dblClickOffGridExit": "hidden",
 
-  // ── Solo play (owner calls SF3–SF5, 2026-10-13): the party switch, the
-  // play log folder setting and "Show on map" are main; a party's own log
-  // folder and marking one hex visited by hand are Advanced. ──
+  // ── Owner calls SF3–SF5, 2026-10-13: the party switch and "Show on map"
+  // are main; a party's own log folder is Advanced. ──
   "Token.logFolder": "advanced",
-  "MapView.hexVisited": "advanced",
 
   // (Hex editor: a section's table choice and "change…" are main since
   // owner SF2, 2026-10-14; the per-source Advanced items are gone.)

@@ -40,7 +40,8 @@ export interface TokenFieldPatch {
   tokenLink?: string;
   description?: string;
   party?: boolean;
-  logFolder?: string;
+  /** `token-log`: the party's own log folder. */
+  partyLog?: string;
 }
 
 /** How a token note names its map: a link to the map note (NF3); "" stays "". */
@@ -93,7 +94,7 @@ export function tokenEntryFromFm(
     description: typeof fm["token-description"] === "string" ? fm["token-description"] : undefined,
     // The party token (SF5): `token-party: true` (yes/x/on read too).
     party: tokenFlag(fm["token-party"]),
-    logFolder: typeof fm["token-log"] === "string" && fm["token-log"].trim() ? fm["token-log"].trim() : undefined,
+    partyLog: typeof fm["token-log"] === "string" && fm["token-log"].trim() ? fm["token-log"].trim() : undefined,
   };
 }
 
@@ -124,7 +125,7 @@ export function writeTokenFields(fm: Record<string, unknown>, data: TokenFieldPa
   if (data.party !== undefined) {
     if (data.party) fm["token-party"] = true; else delete fm["token-party"];
   }
-  if (data.logFolder !== undefined) {
-    if (data.logFolder.trim()) fm["token-log"] = data.logFolder.trim(); else delete fm["token-log"];
+  if (data.partyLog !== undefined) {
+    if (data.partyLog.trim()) fm["token-log"] = data.partyLog.trim(); else delete fm["token-log"];
   }
 }

@@ -1,13 +1,13 @@
 /**
- * Writes the play log (src/play/playLog.ts has the format): one dated note
+ * Writes the play log (src/modules/play/playLog.ts has the format): one dated note
  * per day, entries appended, and a link back from the hex's note.
  */
 import { TFile, type App } from "obsidian";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import { getTokenDataFromCache } from "../frontmatter";
-import { addLinkToSection } from "../sections";
-import { ensureFolder } from "../vault/ensureFolder";
-import type { TokenEntry } from "../types";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import { getTokenDataFromCache } from "../../frontmatter";
+import { addLinkToSection } from "../../sections";
+import { ensureFolder } from "../../vault/ensureFolder";
+import type { TokenEntry } from "../../types";
 import { partyFor } from "./partyTravel";
 import {
   appendLogEntry,
@@ -20,7 +20,7 @@ import {
   logTime,
   newLogNote,
 } from "./playLog";
-import { hexKey } from "../hexKey";
+import { hexKey } from "../../hexKey";
 
 /** Every token on map `mapName` (from the metadata cache). */
 export function tokensOnMap(app: App, mapName: string): TokenEntry[] {

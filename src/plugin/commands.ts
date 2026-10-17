@@ -19,9 +19,6 @@ import { enabledKinds } from "../mapKinds";
 import { isDebugMode } from "../ui/debugMode";
 import { addPlacedMenuItems, placeCommand } from "../ui/commandPlacement";
 import { RestoreBackupModal, openBackupsFolder } from "../BackupsModal";
-import { ensureLogNote } from "../play/playLogWriter";
-import { logFolderFor } from "../play/playLog";
-import { openNoteFocused } from "../openNote";
 import { packCommands } from "../packs/packCommands";
 import { mapLinkUri } from "../hexLink";
 import { normalizeFolder } from "../utils";
@@ -213,16 +210,6 @@ export function registerCommands(plugin: HexmakerPlugin): void {
       if (!mapName) return false;
       if (!checking) new MapExportModal(plugin.app, plugin, mapName).open();
       return true;
-    },
-  });
-  // Solo play (SF3): today's play log note, made if missing.
-  addPlaced("Plugin.cmd.openPlayLog", {
-    id: "open-play-log",
-    name: "Open today's play log",
-    callback: () => {
-      void ensureLogNote(plugin.app, logFolderFor(plugin.settings))
-        .then((file) => openNoteFocused(plugin.app, file))
-        .catch((err) => new Notice(`Could not open the play log: ${String(err)}`));
     },
   });
   // File-menu items: right-click any markdown file → Export to PDF /

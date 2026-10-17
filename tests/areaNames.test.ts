@@ -136,7 +136,7 @@ describe("MG5: the areas folder", () => {
     expect(CONTENT_FOLDER_DEFAULTS.regionsFolder).toBe("areas");
     expect(pickerFolders({ worldFolder: "World" }, "token")).toEqual(expect.arrayContaining(["World/areas", "World/regions"]));
     expect(pickerFolders({ worldFolder: "World", regionsFolder: "World/regions" }, "token")).not.toContain("World/areas");
-    const wizard = readSource("src/SetupWizardView.ts");
+    const wizard = readSource("src/wizardFolders.ts");
     expect(wizard).toMatch(/key: "regionsFolder",\s+label: "Areas",\s+suffix: "areas"/);
     const tab = readSource("src/HexmakerSettingTab.ts");
     expect(tab).toContain('["regionsFolder", `${world}/areas`]');

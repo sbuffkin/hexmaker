@@ -8,7 +8,6 @@ import { PathTool } from "./pathTool";
 import { lockedHint, TOOL_ACTIONS, type ModeAction, type WorkMode } from "../workMode";
 import { canDo } from "../modeGate";
 import { lockedNotice } from "./godOffer";
-import { partyClick } from "../play/partyTravel";
 import { nearestHex } from "./hitTest";
 import type { MapData, MapPath, TokenEntry } from "../types";
 import { modulePartyClick, worldMaps } from "../modules/runtime";
@@ -304,8 +303,6 @@ export class HexMapView extends ItemView {
       openNewSubmapSetup: (x, y) => this.openNewSubmapSetup(x, y),
       arriveAt: (x, y) => this.arriveAt(x, y),
       createTokenAtHex: (x, y) => this.tokens.createTokenAtHex(x, y),
-      openPlayLog: (x, y) => this.openPlayLog(x, y),
-      setVisited: (keys, on) => this.tokens.setVisited(keys, on),
       linkTableToHex: (x, y, file) => this.painter.linkTableToHex(x, y, file),
       openRandomTableAtFile: (file) => this.openRandomTableAtFile(file),
       onHexSwapClick: (x, y) => this.swap.onHexSwapClick(x, y),
@@ -330,6 +327,7 @@ export class HexMapView extends ItemView {
         addOverworldMenuItems: (menu, evt, x, y) => this.hexMenu.addOverworldMenuItems(menu, evt, x, y),
       },
       onHexClick: (x, y, e) => this.onHexClick(x, y, e),
+      redecorate: () => this.grid.refreshDecorations(),
     });
     this.edges = new GridEdgeButtons(this.plugin, {
       ...view,
@@ -705,11 +703,6 @@ export class HexMapView extends ItemView {
     return this.tokens.activeParty();
   }
 
-  /** "Add to play log…" for hex (x, y) (SF3). */
-  private openPlayLog(x: number, y: number): void {
-    this.tokens.openPlayLog(x, y);
-  }
-
   /** Enter calibration mode for the active map's bg image. No-op if no image. */
   enterBgCalibration(): void {
     this.calibration.enter();
@@ -891,8 +884,8 @@ export class HexMapView extends ItemView {
     if (!this.drawingMode && this.tokens.selectedParty && !e?.ctrlKey && !e?.metaKey && this.owView(this.getActiveMap()) !== "regions") {
       const party = this.activeParty();
       const click = party && { map: party.map, token: party.filePath, from: party.hex, to: hexKey(x, y), orientation: this.plugin.settings.hexOrientation, stagger: this.getActiveStagger() };
-      // A step by the core's rule, or by a module's (ModuleRuntime.play.partyClick).
-      if (party && click && (partyClick(party, click.to, click.orientation, click.stagger) === "move" || modulePartyClick(this.plugin, click) === "move")) return this.tokens.moveParty(party, click.to);
+      // A step by a module's rule (ModuleRuntime.play.partyClick).
+      if (party && click && modulePartyClick(this.plugin, click) === "move") return this.tokens.moveParty(party, click.to);
     }
 
     // Overworlds: the full view jumps into the region at the clicked hex;

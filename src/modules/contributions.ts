@@ -50,6 +50,12 @@ export interface SettingContribution {
     | { type: "custom"; render(setting: Setting, plugin: HexmakerPlugin): void };
   /** After its value is saved. */
   changed?(plugin: HexmakerPlugin): void;
+  /**
+   * A folder setting the setup wizard asks for with the core's folders
+   * (its folders step): the row's label, and the subfolder of the world
+   * folder it starts as. Also what "Generate folders" fills in.
+   */
+  wizard?: { label: string; suffix: string };
 }
 
 /** A workspace view a module registers (its page: the generator page, the play log…). */

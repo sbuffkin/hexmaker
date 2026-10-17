@@ -1,22 +1,20 @@
 /**
  * Tokens on the map (L2 tokens, split out of HexMapView): the token layer
  * (grouped per hex, names, the party marked), dragging a token to another
- * hex, the party's steps in Play (visited hexes, the play log), making,
- * editing and removing tokens, and the token right-click menu (the hex's
- * own items follow it). Token data lives in the token notes' frontmatter.
+ * hex, the party's steps in Play (what a step marks and fills comes from
+ * the modules' Play hooks), making, editing and removing tokens, and the
+ * token right-click menu (the hex's own items follow it). Token data lives
+ * in the token notes' frontmatter. In a build without party tokens
+ * (partyTokensOn), a token marked as the party is a plain token.
  */
 import { TFile, type App } from "obsidian";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { applyTokenFrontmatter, getTokenDataFromCache, readTokenPlace, removeTokenFrontmatter, setTokenHex } from "../../frontmatter";
 import { guardWrite } from "../../modeGate";
-import { moduleTokenMenu, runPartyEntered } from "../../modules/runtime";
+import { moduleTokenMenu, partyTokensOn, runPartyEntered, runPartyStep } from "../../modules/runtime";
 import type { MenuActionId } from "../../workMode";
 import { openNoteFocused } from "../../openNote";
-import { markVisited, parseVisited, unmarkVisited } from "../../play/partyTravel";
-import { addToPlayLog } from "../../play/playLogWriter";
-import { onPartyMoved } from "../../play/partyLog";
 import { drawPartyControls } from "./partyControls";
-import { PlayLogModal } from "../../play/PlayLogModal";
 import type { MapData, TokenEntry } from "../../types";
 import { getIconUrl } from "../../utils";
 import { hexNeighbors } from "../hexGeometry";
@@ -55,7 +53,12 @@ export interface TokenLayerHost {
   renderGrid(): void;
   /** After the grid went from `before` to `after` and was redrawn: keep the view still (gridResize). */
   keepViewStill(before: GridBox, after: GridBox): void;
+  /** The modules' marks on the hexes, again from the map (GridRenderer.refreshDecorations): no redraw. */
+  redecorate(): void;
 }
+
+/** Is `token` the party in this build (its note says so, and a module moves parties)? */
+export const isParty = (token: Pick<TokenEntry, "party">): boolean => !!token.party && partyTokensOn();
 
 export class TokenLayer {
   tokenEntries: TokenEntry[] = [];
@@ -192,9 +195,10 @@ export class TokenLayer {
         });
         tokenEl.style.left = `${center.cx + odx * spread}px`;
         tokenEl.style.top  = `${center.cy + ody * spread}px`;
-        tokenEl.title      = token.party ? `${token.title} (party)` : token.title;
-        if (token.party) tokenEl.addClass("is-party");
-        if (token.party && inPlay && this.selectedParty === token.filePath) tokenEl.addClass("is-selected");
+        const party = isParty(token);
+        tokenEl.title      = party ? `${token.title} (party)` : token.title;
+        if (party) tokenEl.addClass("is-party");
+        if (party && inPlay && this.selectedParty === token.filePath) tokenEl.addClass("is-selected");
         if (token.color)  tokenEl.style.setProperty("--token-color",  token.color);
         if (token.border) tokenEl.style.setProperty("--token-border", token.border);
 
@@ -245,7 +249,7 @@ export class TokenLayer {
           e.stopPropagation();
           this.startTokenDrag(snapToken, tokenEl, e, centerMap, () => {
             // Play: clicking the party picks it up (or puts it down) (SF5).
-            if (snapToken.party && this.host.undos.currentWorkMode() === "play") {
+            if (isParty(snapToken) && this.host.undos.currentWorkMode() === "play") {
               this.selectParty(this.selectedParty === snapToken.filePath ? null : snapToken.filePath);
               return;
             }
@@ -266,7 +270,7 @@ export class TokenLayer {
   /** The selected party token on this map, in Play. */
   activeParty(): TokenEntry | undefined {
     if (!this.selectedParty || this.host.undos.currentWorkMode() !== "play") return undefined;
-    return this.tokenEntries.find((t) => t.filePath === this.selectedParty && t.party && t.visible);
+    return this.tokenEntries.find((t) => t.filePath === this.selectedParty && isParty(t) && t.visible);
   }
 
   /** Light the hexes the selected party can step to (and nothing else). */
@@ -282,18 +286,16 @@ export class TokenLayer {
   }
 
   /**
-   * Move the party one step to `hex` (clicked or dragged) and mark both
-   * hexes visited; one undo with the visited marks and what modules filled
-   * (P2: undo means it didn't happen). In Play, the step goes in the play
-   * log (P1); moving the party by hand in Build or God isn't a step of the game.
+   * Move the party one step to `hex` (clicked or dragged): what the modules
+   * mark at once (Solo play: both hexes visited) and fill, one undo with the
+   * move (P2: undo means it didn't happen).
    */
   async moveParty(party: TokenEntry, hex: string, dragged = false): Promise<void> {
     if (!guardWrite(party.map, "token")) return;
     const step = { map: party.map, from: party.hex, to: hex, token: party.filePath };
     this.partyMoves.set(party.filePath, hex);
-    const visitedBefore = this.host.getActiveMap().visited;
-    this.setVisited([step.from, hex], true);
-    const visitedAfter = this.host.getActiveMap().visited;
+    const marked = runPartyStep(this.plugin, step);
+    if (marked.length) this.host.redecorate();
     if (!dragged) this.updateTokenLayer();
     const moved = setTokenHex(this.app, party.filePath, hex, party.map);
     // The map may grow as the party nears its edge (HF4).
@@ -301,41 +303,11 @@ export class TokenLayer {
     const filled = await runPartyEntered(this.plugin, step);
     const gridAfter = gridBoxOf(this.host.getActiveMap());
     const token: UndoItem = { kind: "token", path: party.filePath, before: { hex: step.from, map: party.map }, after: { hex, map: party.map } };
-    const visited: UndoItem[] = visitedAfter === visitedBefore ? [] : [{ kind: "map-field", mapName: party.map, field: "visited", before: visitedBefore, after: visitedAfter }];
-    const items = [token, ...visited, ...filled];
+    const items = [token, ...marked, ...filled];
     this.host.undos.pushUndo(items.length > 1 ? { kind: "group", items } : token, party.map);
-    if (this.host.undos.currentWorkMode() === "play") void onPartyMoved(this.plugin, step);
     await moved;
     if (filled.length) this.host.renderGrid();
     if (!sameGrid(gridBefore, gridAfter)) this.host.keepViewStill(gridBefore, gridAfter);
-  }
-
-  /** Mark hexes of the open map visited (or not), saved in its map note. */
-  setVisited(keys: string[], on: boolean): void {
-    const map = this.host.getActiveMap();
-    const before = parseVisited(map.visited);
-    const after = on ? markVisited(before, ...keys) : keys.reduce((l, k) => unmarkVisited(l, k), before);
-    if (after.length === before.length && after.every((k, i) => k === before[i])) return;
-    map.visited = after;
-    void this.plugin.saveSettings();
-    this.applyVisitedMarks();
-  }
-
-  /** Visited marks ← the map's list, without a re-render. */
-  private applyVisitedMarks(): void {
-    const grid = this.host.viewportEl()?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-    if (!grid) return;
-    const set = new Set(parseVisited(this.host.getActiveMap().visited));
-    grid.querySelectorAll<HTMLElement>(".duckmage-hex").forEach((el) => {
-      el.toggleClass("duckmage-hex-visited", set.has(`${el.dataset.x}_${el.dataset.y}`));
-    });
-  }
-
-  /** "Add to play log…" for hex (x, y) (SF3). */
-  openPlayLog(x: number, y: number): void {
-    new PlayLogModal(this.app, `${this.plugin.mapLabel(this.activeMapName)} ${x}, ${y}`, (text) =>
-      addToPlayLog(this.plugin, this.activeMapName, x, y, text),
-    ).open();
   }
 
   updateTokenLayer(): void {
@@ -404,8 +376,8 @@ export class TokenLayer {
           tokenEl.style.top  = `${newCenter.cy}px`;
         }
         if (guardWrite(token.map, "token")) {
-          // Dragging the party still travels: both hexes count as visited (SF5), and the step explores.
-          if (token.party && token.map === this.activeMapName) void this.moveParty(token, closestHex, true);
+          // Dragging the party still travels: the step is marked (SF5: visited) and explores.
+          if (isParty(token) && token.map === this.activeMapName) void this.moveParty(token, closestHex, true);
           else {
             this.host.undos.pushTokenUndo(token.filePath, token.map, { hex: token.hex, map: token.map }, { hex: closestHex, map: token.map });
             void setTokenHex(this.app, token.filePath, closestHex, token.map);
@@ -430,7 +402,7 @@ export class TokenLayer {
       this.plugin,
       token.filePath,
       token.title,
-      { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, description: token.description, party: token.party, logFolder: token.logFolder },
+      { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, description: token.description, party: token.party, partyLog: token.partyLog },
       (_notePath, data) => {
         void applyTokenFrontmatter(this.app, token.filePath, data)
           .then(() => this.updateTokenLayer());
@@ -445,7 +417,7 @@ export class TokenLayer {
       hex: token.hex,
       map: token.map,
       visible: token.visible,
-      look: { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, tokenLink: token.tokenLink, description: token.description, party: token.party, logFolder: token.logFolder ?? "" },
+      look: { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, tokenLink: token.tokenLink, description: token.description, party: token.party, partyLog: token.partyLog ?? "" },
     };
   }
 
@@ -471,11 +443,6 @@ export class TokenLayer {
     const menu = new ModeMenu(this.host.undos.currentWorkMode(), this.host.hexMenu.modeMenuOptions());
     menu.add("token.edit", "Edit token", "pencil", () => this.openTokenEditor(token));
     menu.add("token.info", "Token info", "info", () => this.openTokenInfo(token));
-    // SF5: any token can be the party (moves by clicking a neighbour in Play).
-    menu.add("token.party", "Party token", "users", () => {
-      if (token.party && this.selectedParty === token.filePath) this.selectedParty = null;
-      void applyTokenFrontmatter(this.app, token.filePath, { party: !token.party }).then(() => this.updateTokenLayer());
-    }, { checked: !!token.party });
     menu.add("token.open-note", "Open note", "file-text", () => {
       const file = this.app.vault.getAbstractFileByPath(token.filePath);
       if (file instanceof TFile) void openNoteFocused(this.app, file);

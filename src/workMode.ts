@@ -247,7 +247,6 @@ export const CORE_COMMAND_ACTIONS: Readonly<Record<string, ModeAction>> = {
   "export-content-pack": "export",
   // Adds notes to content folders (no map data); never locked, like settings and palettes.
   "import-content-pack": "settings",
-  "open-play-log": "edit-note",
 };
 
 /** Every command id this build registers: the core's and the modules'. */
@@ -273,9 +272,6 @@ export const CORE_MENU_ACTIONS = {
   "hex.link-table": "link-note",
   "hex.swap": "swap-hexes",
   "hex.create-token": "token",
-  // Solo play: a line in the play log; a hex visited (or not) by hand.
-  "hex.log": "edit-note",
-  "hex.visited": "token",
   "hex.clear-terrain": "paint-terrain",
   "hex.remove-icon": "paint-icon",
   // overworld hex menu (the items the core adds; World maps classifies the rest)
@@ -287,7 +283,6 @@ export const CORE_MENU_ACTIONS = {
   "token.edit": "token",
   "token.open-note": "open-note",
   "token.remove": "token",
-  "token.party": "token",
   // the mode switch
   "mode.switch": "switch-mode",
   // hex editor: the maps strip "+"

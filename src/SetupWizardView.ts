@@ -29,6 +29,7 @@ import { keepScroll } from "./ui/keepScroll";
 import { scalePalette, scalesFor, type MapScaleDef } from "./mapScales";
 import { wizardKinds, wizardScale } from "./wizardKinds";
 import { moduleScaleChoices, moduleWizardOffers, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "./modules/runtime";
+import { folderKeys, type FolderKey } from "./wizardFolders";
 import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, wizardOptionId } from "./wizardText";
 import { newMapOptionId } from "./worldgen/newMapOptionIds";
 import { Disclosure } from "./ui/disclosure";
@@ -37,20 +38,6 @@ import { renderResetButton } from "./ui/sliders";
 import { renderPackImportOffer } from "./packs/packOffer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type FolderKey =
-	| "hexFolder"
-	| "townsFolder"
-	| "dungeonsFolder"
-	| "questsFolder"
-	| "featuresFolder"
-	| "factionsFolder"
-	| "regionsFolder"
-	| "tablesFolder"
-	| "workflowsFolder"
-	| "templatesFolder"
-	| "logFolder"
-	| "iconsFolder";
 
 interface WizardContext {
 	worldFolder: string;
@@ -97,24 +84,6 @@ interface WizardStep {
 		onProgress: (msg: string) => void,
 	): Promise<void>;
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const FOLDER_KEYS: Array<{ key: FolderKey; label: string; suffix: string }> = [
-	{ key: "hexFolder",       label: "Hex notes",  suffix: "hexes" },
-	{ key: "townsFolder",     label: "Towns",      suffix: "towns" },
-	{ key: "dungeonsFolder",  label: "Dungeons",   suffix: "dungeons" },
-	{ key: "questsFolder",    label: "Quests",     suffix: "quests" },
-	{ key: "featuresFolder",  label: "Features",   suffix: "features" },
-	{ key: "factionsFolder",  label: "Factions",   suffix: "factions" },
-	{ key: "regionsFolder",   label: "Areas",      suffix: "areas" },
-	{ key: "tablesFolder",    label: "Tables",     suffix: "tables" },
-	{ key: "workflowsFolder", label: "Workflows",  suffix: "workflows" },
-	{ key: "templatesFolder", label: "Templates",  suffix: "templates" },
-	// The play log (SF3): one note per day of play.
-	{ key: "logFolder",       label: "Play log",   suffix: "log" },
-	{ key: "iconsFolder",     label: "Icons",      suffix: "icons" },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -307,7 +276,7 @@ function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 			if (!ctx.useAdvanced) advSection.hide();
 
 			const advInputs: Partial<Record<FolderKey, HTMLInputElement>> = {};
-			for (const { key, label } of FOLDER_KEYS) {
+			for (const { key, label } of folderKeys()) {
 				const row = advSection.createDiv({ cls: "duckmage-wizard-field" });
 				const rowLabel = row.createEl("label", { text: label, cls: "duckmage-wizard-label" });
 				const inp = row.createEl("input", {
@@ -325,7 +294,7 @@ function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 
 			function syncAdvancedInputs() {
 				const world = normalizeFolder(ctx.worldFolder) || "world";
-				for (const { key, suffix } of FOLDER_KEYS) {
+				for (const { key, suffix } of folderKeys()) {
 					const inp = advInputs[key];
 					if (!inp) continue;
 					const current = ctx.advancedFolders[key];
@@ -339,7 +308,7 @@ function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 			function refreshPreview() {
 				const world = normalizeFolder(ctx.worldFolder) || "world";
 				previewList.empty();
-				for (const { key, suffix } of FOLDER_KEYS) {
+				for (const { key, suffix } of folderKeys()) {
 					const path = ctx.useAdvanced
 						? (ctx.advancedFolders[key] || `${world}/${suffix}`)
 						: `${world}/${suffix}`;
@@ -366,7 +335,7 @@ function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 		canProceed(ctx) {
 			if (!ctx.worldFolder.trim()) return false;
 			if (ctx.useAdvanced) {
-				return FOLDER_KEYS.every(({ key }) => !!ctx.advancedFolders[key]?.trim());
+				return folderKeys().every(({ key }) => !!ctx.advancedFolders[key]?.trim());
 			}
 			return true;
 		},
@@ -374,7 +343,7 @@ function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 			const world = normalizeFolder(ctx.worldFolder) || "world";
 			plugin.settings.worldFolder = world;
 			await ensureFolder(plugin.app.vault, world);
-			for (const { key, suffix } of FOLDER_KEYS) {
+			for (const { key, suffix } of folderKeys()) {
 				const path = ctx.useAdvanced
 					? normalizeFolder(ctx.advancedFolders[key] ?? "") || `${world}/${suffix}`
 					: `${world}/${suffix}`;

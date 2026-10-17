@@ -18,8 +18,8 @@ export interface TokenEntry {
 	description: string | undefined;  // token-description frontmatter
 	/** The party token (`token-party: true`): click a neighbouring hex to move it in Play; marks hexes visited. */
 	party?: boolean;
-	/** This party's own play log folder (`token-log:`), else the campaign's (src/play/playLog.ts). */
-	logFolder?: string;
+	/** This party's own log folder (`token-log:`), else the campaign's. */
+	partyLog?: string;
 }
 
 export type PathLineStyle = "solid" | "dashed" | "dotted";
@@ -381,7 +381,7 @@ export interface HexmakerPluginSettings {
 	tablesFolder: string;
 	factionsFolder: string;
 	regionsFolder: string;
-	/** Play log folder (one dated note per day). Blank = `<world>/log` (src/play/playLog.ts). */
+	/** Play log folder (one dated note per day). Blank = `<world>/log` (src/modules/play/playLog.ts). */
 	logFolder?: string;
 	/** Icon a link section's "Show on map" offers, by section (blank = none). Unset = src/ui/linkIcons.ts defaults. */
 	linkSectionIcons?: Partial<Record<string, string>>;

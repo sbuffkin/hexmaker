@@ -71,7 +71,7 @@ export interface TokenSnap {
     tokenLink?: string;
     description?: string;
     party?: boolean;
-    logFolder?: string;
+    partyLog?: string;
   };
 }
 

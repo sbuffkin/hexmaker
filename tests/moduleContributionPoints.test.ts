@@ -42,14 +42,24 @@ function withFake(fake: Partial<ModuleRuntime>): ModuleRuntime {
   runtimes.push(m);
   return m;
 }
+/** Real module runtimes set aside for one test (hideReal), put back after it. */
+let hidden: ModuleRuntime[] = [];
+/** Set the built modules `ids` aside for one test (all of them when none given), so only fakes answer. */
+function hideReal(ids?: readonly string[]): void {
+  for (let i = runtimes.length - 1; i >= 0; i--) if (!runtimes[i].id.startsWith("fake") && (!ids || ids.includes(runtimes[i].id))) hidden.unshift(...runtimes.splice(i, 1));
+}
 afterEach(() => {
   for (let i = runtimes.length - 1; i >= 0; i--) if (runtimes[i].id.startsWith("fake")) runtimes.splice(i, 1);
+  runtimes.unshift(...hidden);
+  hidden = [];
 });
 
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
 describe("contribution points: nothing contributed, nothing changes", () => {
   it("every collector is empty or neutral without a module that uses it", () => {
+    // Solo play uses the Play hooks (tests/slice-play.test.ts): without it, none of them answer.
+    hideReal(["play"]);
     const plugin = {} as never;
     expect(moduleViews()).toEqual([]);
     expect(moduleExportForm()).toEqual([]);
@@ -237,15 +247,17 @@ describe("wizardOffers[]: offers on a setup wizard step", () => {
 
 describe("play hooks: party click, grid marks, token menu, roll targets, log writers", () => {
   it("partyClick: any module saying move makes it a step; the map view asks after the core's rule", () => {
+    hideReal();
     withFake({ play: { partyClick: (_p, c) => (c.to === "5_5" ? "move" : "none") } });
     const click = { map: "m", token: "t.md", from: "0_0", to: "5_5", orientation: "flat" as const, stagger: "odd" as const };
     expect(modulePartyClick({} as never, click)).toBe("move");
     expect(modulePartyClick({} as never, { ...click, to: "9_9" })).toBe("none");
-    expect(readSource("src", "hex-map", "HexMapView.ts")).toMatch(/partyClick\(party, click\.to, click\.orientation, click\.stagger\) === "move" \|\| modulePartyClick\(this\.plugin, click\) === "move"/);
+    expect(readSource("src", "hex-map", "HexMapView.ts")).toMatch(/if \(party && click && modulePartyClick\(this\.plugin, click\) === "move"\) return this\.tokens\.moveParty\(party, click\.to\);/);
   });
 
   it("gridDecorations: asked once per render, then per hex; classes from every module", () => {
     let asked = 0;
+    hideReal();
     withFake({ id: "fake-a", play: { gridDecorations: () => { asked++; return (hex) => (hex === "1_1" ? ["fake-a"] : []); } } });
     withFake({ id: "fake-b", play: { gridDecorations: () => undefined } });
     withFake({ id: "fake-c", play: { gridDecorations: () => () => ["fake-c"] } });
@@ -255,10 +267,11 @@ describe("play hooks: party click, grid marks, token menu, roll targets, log wri
     expect(asked).toBe(1);
     const grid = readSource("src", "hex-map", "view", "gridRenderer.ts");
     expect(grid).toMatch(/const decorate = moduleGridDecorations\(this\.plugin, region\);/);
-    expect(grid).toMatch(/for \(const cls of decorate\(hexKey\(x, y\)\)\) hexEl\.addClass\(cls\);/);
+    expect(grid).toMatch(/markDecorations\(hexEl, decorate\(hexKey\(x, y\)\)\);/);
   });
 
   it("tokenMenu: the modules' items, added to the token's menu after the core's", () => {
+    hideReal();
     withFake({ play: { tokenMenu: (_p, t) => [{ id: "token.fake", label: `Fake ${t.hex}`, icon: "dot", run: () => {} }] } });
     expect(moduleTokenMenu({} as never, { map: "m", hex: "2_3", token: "t.md", party: false }).map((i) => [i.id, i.label])).toEqual([["token.fake", "Fake 2_3"]]);
     expect(readSource("src", "hex-map", "view", "tokenLayer.ts")).toMatch(/for \(const it of moduleTokenMenu\(this\.plugin, \{ map: token\.map, hex: token\.hex, token: token\.filePath, party: !!token\.party \}\)\)/);
@@ -266,6 +279,7 @@ describe("play hooks: party click, grid marks, token menu, roll targets, log wri
 
   it("rollTargets: listed first, picked first in their modes, and a roll added to one goes to it", async () => {
     const added: string[] = [];
+    hideReal();
     withFake({ play: { rollTargets: (_p, at) => [{ key: "fake-log", label: `Fake log ${at.x},${at.y}`, defaultIn: ["play"], add: async (t) => { added.push(t); } }] } });
     let mode = "play";
     const host = {
@@ -285,6 +299,7 @@ describe("play hooks: party click, grid marks, token menu, roll targets, log wri
   });
 
   it("logWriters: one link each in the hex editor, opening the module's own writer for the hex", () => {
+    hideReal();
     withFake({ play: { logWriters: [{ id: "fake", label: "Add to fake log", title: "Write it down", open: () => {} }] } });
     expect(moduleLogWriters().map((w) => w.label)).toEqual(["Add to fake log"]);
     expect(readSource("src", "hex-map", "HexEditorModal.ts")).toMatch(/for \(const w of moduleLogWriters\(\)\) titleLeft\.createEl\("a", \{ text: w\.label[^\n]*w\.open\(this\.plugin, \{ map: this\.mapName, x: this\.x, y: this\.y \}\)\);/);

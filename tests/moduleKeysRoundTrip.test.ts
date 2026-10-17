@@ -105,7 +105,7 @@ describe("the party keys of a token note survive a build that doesn't use them",
   it("removing it and undoing that puts them back as they were", async () => {
     const s = await setup();
     const fm = s.vault.frontmatter(PATH)!;
-    const look = { party: fm["token-party"] === true, logFolder: String(fm["token-log"] ?? "") };
+    const look = { party: fm["token-party"] === true, partyLog: String(fm["token-log"] ?? "") };
     await removeTokenFrontmatter(s.app, PATH);
     expect(partyLines(s.vault.files.get(PATH)!)).toEqual([]);
     await applyTokenFrontmatter(s.app, PATH, { ...look, hex: "2_2", map: "m", visible: true });

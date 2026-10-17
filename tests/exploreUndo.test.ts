@@ -217,14 +217,12 @@ describe("undo groups and map fields", () => {
 	it("the map view groups the token's move with what the step filled", () => {
 		const view = readSurface("map-view");
 		expect(view).toMatch(/const filled = await runPartyEntered\(this\.plugin, step\);/);
-		// One undo: the move, the visited marks (P2) and what the step filled.
-		expect(view).toMatch(/const items = \[token, \.\.\.visited, \.\.\.filled\];/);
+		// One undo: the move, what the step marked at once (Solo play's visited hexes, P2) and what it filled.
+		expect(view).toMatch(/const marked = runPartyStep\(this\.plugin, step\);/);
+		expect(view).toMatch(/const items = \[token, \.\.\.marked, \.\.\.filled\];/);
 		expect(view).toMatch(/this\.(?:host\.)?(?:undos\.)?pushUndo\(items\.length > 1 \? \{ kind: "group", items \} : token, party\.map\);/);
-		expect(view).toMatch(/\{ kind: "map-field", mapName: party\.map, field: "visited", before: visitedBefore, after: visitedAfter \}/);
-		// The step's log line (P1).
-		expect(view).toMatch(/void onPartyMoved\(this\.plugin, step\);/);
 		// Dragging the party travels the same way.
-		expect(view).toMatch(/if \(token\.party && token\.map === this\.activeMapName\) void this\.moveParty\(token, closestHex, true\);/);
+		expect(view).toMatch(/if \(isParty\(token\) && token\.map === this\.activeMapName\) void this\.moveParty\(token, closestHex, true\);/);
 		expect(view).toMatch(/case "group": return prepareGroup\(/);
 	});
 });

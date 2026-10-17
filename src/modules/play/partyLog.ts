@@ -6,10 +6,10 @@
  * hooks in here later. The line is a journal entry: undoing the step
  * leaves it (as with the rest of the play log).
  */
-import type HexmakerPlugin from "../HexmakerPlugin";
-import type { PartyStep } from "../modules/types";
-import { hexPair } from "../hexKey";
-import { logError } from "../log";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import type { PartyStep } from "../types";
+import { hexPair } from "../../hexKey";
+import { logError } from "../../log";
 import { addToPlayLog } from "./playLogWriter";
 
 /** The log line for a step: "Moved from 4, 4 to 5, 4." */

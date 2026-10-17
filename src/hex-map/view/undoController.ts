@@ -290,8 +290,8 @@ export class UndoController {
     } else if (item.kind === "group") await applyGroup(item, dir, (it, d) => this.applyUndo(it, d));
     else if (item.kind === "map-field") {
       applyMapField(this.host.plugin, item, dir);
-      // A map setting the grid shows (the visited marks): redraw it.
-      if (item.field === "visited") this.host.renderGrid();
+      // A map setting the grid may show (a module's marks on the hexes): redraw it.
+      this.host.renderGrid();
     } else if (item.kind === "note-section") {
       await applyNoteSection(this.host.plugin.app, item, dir);
     } else if (item.kind === "grid") {

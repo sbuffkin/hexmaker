@@ -10,8 +10,8 @@
 
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hashSeed } from "../arrival/arrival";
-import { tokensOnMap } from "../play/playLogWriter";
-import { markVisited } from "../play/partyTravel";
+import { tokensOnMap } from "../modules/play/playLogWriter";
+import { markVisited } from "../modules/play/partyTravel";
 import { flowerStoreOf, exploreOf } from "./context";
 import { formatRule } from "./explore";
 import type { ExploreMap } from "./exploreFields";
