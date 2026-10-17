@@ -22,9 +22,9 @@ import { serializeMarkdown } from "../mdSerializer";
 import { getAllSectionData } from "../../sections";
 import { getTerrainFromFile } from "../../frontmatter";
 import type HexmakerPlugin from "../../HexmakerPlugin";
-import { exportedMessage, withExportProvenance } from "../exportFolder";
+import { withExportProvenance } from "../exportFolder";
 import { sanitiseFilename } from "../exportNames";
-import { openInVault, reportExportFailure, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
 import { strictHexXY } from "../../hexKey";
 
 /**
@@ -93,9 +93,7 @@ export async function exportHexAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    const replaced = await writeBinaryToVault(plugin.app, outPath, pdfBytes);
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, pdfBytes));
   } catch (err) {
     reportExportFailure(err);
   } finally {
@@ -116,13 +114,7 @@ export async function exportHexAsMarkdown(
     const md = await buildHexMarkdown(plugin, hexFile, opts);
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
     // Where it came from, in its frontmatter (X1).
-    const replaced = await writeTextToVault(
-      plugin.app,
-      outPath,
-      withExportProvenance(finalMd, hexFile.path, "hex"),
-    );
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, withExportProvenance(finalMd, hexFile.path, "hex")));
   } catch (err) {
     reportExportFailure(err);
   }

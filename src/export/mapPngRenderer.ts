@@ -15,8 +15,8 @@
 import { getIcon, Notice, TFile, type App } from "obsidian";
 import { hexCenter, hexPolygonPoints, smoothPath, sharpPath } from "../hex-map/hexGeometry";
 import { applyAffine } from "../paths/pathGeometry";
-import { ensureExportFolder, exportedMessage, openExported } from "./exportFolder";
-import { reportExportFailure, writeBinaryToVault } from "./vaultWrite";
+import { ensureExportFolder } from "./exportFolder";
+import { announceExport, reportExportFailure, saveExport } from "./vaultWrite";
 import { sanitiseFilename } from "./exportNames";
 import { logWarn } from "../log";
 import {
@@ -1229,10 +1229,7 @@ export async function exportMapAsPng(
   try {
     const blob = await renderMapToPngBlob(plugin, mapName, opts);
     const buf = new Uint8Array(await blob.arrayBuffer());
-    const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
-    await writeBinaryToVault(plugin.app, outPath, buf);
-    new Notice(exportedMessage(outPath, replaced));
-    void openExported(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, buf));
   } catch (err) {
     reportExportFailure(err, "Map export");
   } finally {

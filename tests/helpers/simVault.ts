@@ -4,7 +4,7 @@
  * actual exporter orchestrators end-to-end without spinning up Obsidian.
  *
  * The mocks implement only the surface area our orchestrators touch:
- *   vault.read / getAbstractFileByPath / getMarkdownFiles / createBinary /
+ *   vault.read / readBinary / getAbstractFileByPath / getMarkdownFiles / createBinary /
  *   modifyBinary / create / modify
  *   metadataCache.getFileCache / getFirstLinkpathDest
  *   workspace.getLeaf().openFile()  ← no-op
@@ -115,6 +115,11 @@ export class MockVault {
   async read(file: MockTFile): Promise<string> {
     const abs = this.resolvePath(file.path, false);
     return await fsp.readFile(abs, "utf8");
+  }
+
+  async readBinary(file: MockTFile): Promise<ArrayBuffer> {
+    const buf = await fsp.readFile(this.resolvePath(file.path, false));
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   }
 
   async cachedRead(file: MockTFile): Promise<string> {

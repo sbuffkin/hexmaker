@@ -28,8 +28,8 @@ import {
 import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
-import { exportedMessage, withExportProvenance } from "../exportFolder";
-import { openInVault, reportExportFailure, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { withExportProvenance } from "../exportFolder";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
 import { logWarn } from "../../log";
 
 /** A linked note resolved to its display name + content (frontmatter stripped). */
@@ -59,9 +59,7 @@ export async function exportRandomTableAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    const replaced = await writeBinaryToVault(plugin.app, outPath, bytes);
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, bytes));
   } catch (err) {
     reportExportFailure(err);
   } finally {
@@ -80,13 +78,7 @@ export async function exportRandomTableAsMarkdown(
   try {
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
     // Where it came from, in its frontmatter (X1).
-    const replaced = await writeTextToVault(
-      plugin.app,
-      outPath,
-      withExportProvenance(finalMd, file.path, "table"),
-    );
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, withExportProvenance(finalMd, file.path, "table")));
   } catch (err) {
     reportExportFailure(err);
   }

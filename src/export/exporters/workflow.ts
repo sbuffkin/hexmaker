@@ -34,9 +34,9 @@ import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { resolveWorkflowTemplate } from "../../random-tables/workflowFiles";
 import { fillPlaceholders, escapeTableCell } from "../../textUtils";
-import { exportedMessage, withExportProvenance } from "../exportFolder";
+import { withExportProvenance } from "../exportFolder";
 import { sanitiseFilename } from "../exportNames";
-import { openInVault, reportExportFailure, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
 
 export interface WorkflowExportOptions {
   /** Filename stem (no extension). Defaults to workflow basename. */
@@ -73,9 +73,7 @@ export async function exportWorkflowAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    const replaced = await writeBinaryToVault(plugin.app, outPath, pdfBytes);
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, pdfBytes));
   } catch (err) {
     reportExportFailure(err);
   } finally {
@@ -96,13 +94,7 @@ export async function exportWorkflowAsMarkdown(
     const md = await buildWorkflowMarkdown(plugin, workflowFile, opts);
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
     // Where it came from, in its frontmatter (X1).
-    const replaced = await writeTextToVault(
-      plugin.app,
-      outPath,
-      withExportProvenance(finalMd, workflowFile.path, "workflow"),
-    );
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, withExportProvenance(finalMd, workflowFile.path, "workflow")));
   } catch (err) {
     reportExportFailure(err);
   }

@@ -30,8 +30,7 @@ import { getTerrainFromFile, getHexNameFromFile } from "../../frontmatter";
 import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { mapLabel } from "../../maps/mapTree";
-import { exportedMessage } from "../exportFolder";
-import { openInVault, reportExportFailure, writeBinaryToVault } from "../vaultWrite";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
 import { sanitiseFilename } from "../exportNames";
 
 export interface MapPdfExportOptions extends MapPngRenderOptions {
@@ -151,10 +150,7 @@ export async function exportMapAsPdf(
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
 
-    const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
-    await writeBinaryToVault(plugin.app, outPath, pdfBytes);
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, pdfBytes));
   } catch (err) {
     reportExportFailure(err);
   } finally {
