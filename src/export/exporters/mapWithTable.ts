@@ -31,7 +31,8 @@ import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { mapLabel } from "../../maps/mapTree";
 import { exportedMessage } from "../exportFolder";
-import { openInVault, writeBinaryToVault } from "../vaultWrite";
+import { openInVault, reportExportFailure, writeBinaryToVault } from "../vaultWrite";
+import { sanitiseFilename } from "../exportNames";
 
 export interface MapPdfExportOptions extends MapPngRenderOptions {
   /** Filename stem (no extension). Defaults to mapName. */
@@ -155,8 +156,7 @@ export async function exportMapAsPdf(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -453,9 +453,6 @@ function escapeHtmlAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
-export function sanitiseFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, "_");
-}
 
 export async function blobToDataUri(blob: Blob, type: string): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());

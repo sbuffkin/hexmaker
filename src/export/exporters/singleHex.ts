@@ -23,7 +23,8 @@ import { getAllSectionData } from "../../sections";
 import { getTerrainFromFile } from "../../frontmatter";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { exportedMessage, withExportProvenance } from "../exportFolder";
-import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { sanitiseFilename } from "../exportNames";
+import { openInVault, reportExportFailure, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
 import { strictHexXY } from "../../hexKey";
 
 /**
@@ -96,8 +97,7 @@ export async function exportHexAsPdf(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -124,8 +124,7 @@ export async function exportHexAsMarkdown(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   }
 }
 
@@ -232,6 +231,3 @@ export function parseHexCoord(
 
 // ── File-IO helpers ──────────────────────────────────────────────────────
 
-function sanitiseFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, "_");
-}

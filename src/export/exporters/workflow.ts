@@ -35,7 +35,8 @@ import type HexmakerPlugin from "../../HexmakerPlugin";
 import { resolveWorkflowTemplate } from "../../random-tables/workflowFiles";
 import { fillPlaceholders, escapeTableCell } from "../../textUtils";
 import { exportedMessage, withExportProvenance } from "../exportFolder";
-import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { sanitiseFilename } from "../exportNames";
+import { openInVault, reportExportFailure, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
 
 export interface WorkflowExportOptions {
   /** Filename stem (no extension). Defaults to workflow basename. */
@@ -76,8 +77,7 @@ export async function exportWorkflowAsPdf(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -104,8 +104,7 @@ export async function exportWorkflowAsMarkdown(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   }
 }
 
@@ -305,9 +304,6 @@ export function formatRollsBreakdown(
 }
 
 
-function sanitiseFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, "_");
-}
 
 // `normalizeFolder` is imported even though we don't use it yet — keeping the
 // import keeps the file aligned with other exporters and ready to expand.

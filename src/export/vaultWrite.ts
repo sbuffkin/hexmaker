@@ -3,8 +3,9 @@
  * the file when it's there, create it when not, then open it.
  */
 
-import { TFile, type App } from "obsidian";
+import { Notice, TFile, type App } from "obsidian";
 import { openExported } from "./exportFolder";
+import { logError } from "../log";
 
 /** Write binary export bytes; true when it replaced an earlier file. */
 export async function writeBinaryToVault(
@@ -42,4 +43,10 @@ export async function writeTextToVault(
 /** Open an export (exportFolder.openExported). */
 export async function openInVault(app: App, path: string): Promise<void> {
   await openExported(app, path);
+}
+
+/** An export that failed: logged for developers, and a notice for the user. */
+export function reportExportFailure(err: unknown, what = "Export"): void {
+  logError(`${what.toLowerCase()} failed`, err);
+  new Notice(`${what} failed: ${err instanceof Error ? err.message : String(err)}`);
 }

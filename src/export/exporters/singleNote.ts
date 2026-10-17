@@ -20,7 +20,7 @@ import { ensureExportFolder } from "../exportFolder";
 import { serializeMarkdown, stripFrontmatter } from "../mdSerializer";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { exportedMessage, withExportProvenance } from "../exportFolder";
-import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { openInVault, reportExportFailure, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
 
 export async function exportSingleNoteAsPdf(
   plugin: HexmakerPlugin,
@@ -47,8 +47,7 @@ export async function exportSingleNoteAsPdf(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -73,8 +72,7 @@ export async function exportSingleNoteAsMarkdown(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   }
 }
 

@@ -23,9 +23,9 @@ import {
   blobToDataUri,
   computeSubdivisions,
   enumerateSections,
-  sanitiseFilename,
 } from "./mapWithTable";
-import { openInVault, writeBinaryToVault } from "../vaultWrite";
+import { sanitiseFilename } from "../exportNames";
+import { openInVault, reportExportFailure, writeBinaryToVault } from "../vaultWrite";
 import { hexNumbering } from "../manual/hexNumber";
 import { pluginVersion } from "../../compat";
 import { mapLabel } from "../../maps/mapTree";
@@ -85,8 +85,7 @@ export async function exportMapAsManual(plugin: HexmakerPlugin, mapName: string,
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }

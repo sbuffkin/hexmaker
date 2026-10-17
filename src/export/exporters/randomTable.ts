@@ -29,7 +29,8 @@ import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { exportedMessage, withExportProvenance } from "../exportFolder";
-import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { openInVault, reportExportFailure, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { logWarn } from "../../log";
 
 /** A linked note resolved to its display name + content (frontmatter stripped). */
 export interface LinkedNote {
@@ -62,8 +63,7 @@ export async function exportRandomTableAsPdf(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -88,8 +88,7 @@ export async function exportRandomTableAsMarkdown(
     new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   }
 }
 
@@ -121,7 +120,7 @@ async function loadLinkedNotesForTable(
       const raw = await app.vault.read(file);
       out.push({ name: file.basename, content: stripFrontmatter(raw) });
     } catch (err) {
-      console.warn(`Failed to read linked note ${file.path}:`, err);
+      logWarn("table export: couldn't read linked note", file.path, err);
     }
   }
   return out;
