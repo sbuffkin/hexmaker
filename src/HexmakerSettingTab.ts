@@ -3,7 +3,7 @@ import { DEFAULT_NAME_FONT, NAME_FAMILIES, NAME_SIZES, NAME_STYLES, nameStyleId,
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { getIconUrl, iconLabel, normalizeFolder } from "./utils";
 import { IconPickerModal } from "./hex-map/IconPickerModal";
-import { linkSectionIcon } from "./play/linkIcons";
+import { linkSectionIcon } from "./ui/linkIcons";
 import { LINK_SECTIONS } from "./types";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { repointPaletteName } from "./palettes/paletteOptions";

@@ -383,7 +383,7 @@ export interface HexmakerPluginSettings {
 	regionsFolder: string;
 	/** Play log folder (one dated note per day). Blank = `<world>/log` (src/play/playLog.ts). */
 	logFolder?: string;
-	/** Icon a link section's "Show on map" offers, by section (blank = none). Unset = src/play/linkIcons.ts defaults. */
+	/** Icon a link section's "Show on map" offers, by section (blank = none). Unset = src/ui/linkIcons.ts defaults. */
 	linkSectionIcons?: Partial<Record<string, string>>;
 	defaultTableDice: number;
 	hexEditorTerrainCollapsed: boolean;

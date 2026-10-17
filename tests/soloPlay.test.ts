@@ -13,7 +13,7 @@ import {
   PLAY_LOG_TARGET,
   rollDefaultSection,
 } from "../src/play/playLog";
-import { DEFAULT_LINK_SECTION_ICONS, linkSectionIcon, showOnMapOffer } from "../src/play/linkIcons";
+import { DEFAULT_LINK_SECTION_ICONS, linkSectionIcon, showOnMapOffer } from "../src/ui/linkIcons";
 import { TOKEN_SIZE_EM, tokenCoordShift } from "../src/hex-map/tokenDefaults";
 import { tokenFlag } from "../src/frontmatter";
 import { buildMapNote, parseMapNote, type MapNoteData } from "../src/maps/mapNote";
