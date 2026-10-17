@@ -15,6 +15,8 @@ import { hexNoteProperties, withHexProps } from "../src/migrations/unreleased-he
 import { runRewrite, type NoteFormatHost } from "../src/migrations/noteRewrites";
 import { setModeMapLookup } from "../src/modeGate";
 import { MemVault } from "./helpers/memVault";
+import { HEX_PROPS_SETTING_DESC, setHexNoteProperties } from "../src/settings/hexPropsSetting";
+import { resyncKeep } from "../src/maps/hexProps";
 import type { MapData } from "../src/types";
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
@@ -335,6 +337,88 @@ describe("hex-note properties sync: notes → map", () => {
 		const r = await rig(vault);
 		expect(r.store.get("coast", "1_2")?.name).toBe("Saltmarsh");
 		expect(fm(r, P12)).toEqual({ map: "[[_coast]]", name: "Saltmarsh" });
+	});
+});
+
+// ── turning the setting off and on again (owner HP3) ────────────────────────
+
+describe("hex-note properties: off stops updating them; on again resyncs from the map (HP3)", () => {
+	beforeEach(() => { Notice.shown = []; setModeMapLookup(null); });
+	afterEach(() => setModeMapLookup(null));
+
+	/** The plugin as the setting sees it: the rig's sync, store and settings. */
+	const pluginOf = (r: Rig) => ({
+		app: r.vault.app(), manifest: { dir: ".obsidian/plugins/hexmaker" }, settings: r.settings, mapStore: r.store,
+		hexProps: r.sync, hexMapDataView: (map: string, x: number, y: number) => ({ map, mapLabel: map, x, y }),
+		saveSettings: async () => {},
+	}) as never;
+
+	it("which fields a note keeps: its own values the map lacks, never a stale copy", () => {
+		const note = (props: HexProps) => ({ props, unreadable: [], oldAreaKey: false });
+		// Typed while off, the map has none: kept (the sync takes it onto the map).
+		expect(resyncKeep(note({ name: "Mine" }), {}, undefined)).toEqual(["name"]);
+		expect(resyncKeep(note({ name: "Mine" }), {}, { name: "Old" })).toEqual(["name"]);
+		// Still the copy last written, cleared on the map while off: not kept (cleared).
+		expect(resyncKeep(note({ icon: "castle.png" }), {}, { icon: "castle.png" })).toEqual([]);
+		// The map has a value: the map's.
+		expect(resyncKeep(note({ terrain: "swamp" }), { terrain: "hills" }, { terrain: "ocean" })).toEqual([]);
+	});
+
+	it("the setting says plainly that off removes nothing", () => {
+		expect(HEX_PROPS_SETTING_DESC).toMatch(/leaves them in your notes/);
+		expect(HEX_PROPS_SETTING_DESC).not.toMatch(/removes/);
+	});
+
+	it("off: nothing is removed and nothing is written, however the map changes", async () => {
+		const r = await rig(oldVault());
+		const before = new Map(r.vault.files);
+		const writes = r.vault.writes.length;
+		await setHexNoteProperties(pluginOf(r), false);
+		expect(r.settings.hexNoteProperties).toBe(false);
+		r.store.set("coast", "1_2", { terrain: "hills" }, "paint-terrain");
+		edit(r, P34, (t) => t.replace("terrain: forest", "terrain: swamp"));
+		await r.sync.flush();
+		expect(r.vault.writes.length).toBe(writes + 0);
+		expect(r.vault.files.get(P12)).toBe(before.get(P12));
+		expect(fm(r, P34)?.terrain).toBe("swamp"); // left as typed
+		expect(r.store.get("coast", "3_4")?.terrain).toBe("forest"); // and not taken
+		expect(Notice.shown.map((n) => n.msg).join(" ")).toMatch(/no longer updated/);
+	});
+
+	it("on again: only the notes that differ are rewritten (backed up), from the map; other keys and the body kept", async () => {
+		const r = await rig(oldVault());
+		await setHexNoteProperties(pluginOf(r), false);
+		// While off: the map changes 1_2; 3_4 isn't touched; 0_0 has no properties to show.
+		r.store.set("coast", "1_2", { terrain: "hills" }, "paint-terrain");
+		const p12 = r.vault.files.get(P12)!, p34 = r.vault.files.get(P34);
+		const writes = r.vault.writes.length;
+		await setHexNoteProperties(pluginOf(r), true);
+		expect(r.settings.hexNoteProperties).toBeUndefined();
+		expect(r.vault.writes.slice(writes).filter((p) => p.endsWith(".md"))).toEqual([P12]);
+		expect(r.vault.files.get(P12)).toBe(p12.replace("terrain: ocean", "terrain: hills"));
+		expect(fm(r, P12)).toEqual({ terrain: "hills", tags: ["sea"], map: "[[_coast]]" });
+		expect(r.vault.files.get(P34)).toBe(p34);
+		expect(Notice.shown.map((n) => n.msg).join(" ")).toMatch(/updated from the map in 1 hex note\. Backup: /);
+		// Following changes again.
+		r.store.set("coast", "3_4", { terrain: "hills" }, "paint-terrain");
+		await r.sync.flush();
+		expect(fm(r, P34)?.terrain).toBe("hills");
+	});
+
+	it("on again: a copy the map cleared goes; a value typed while off where the map has none is kept and taken onto the map", async () => {
+		const r = await rig(oldVault());
+		await setHexNoteProperties(pluginOf(r), false);
+		r.store.set("coast", "3_4", { icon: null }, "paint-icon");
+		edit(r, P34, (t) => t.replace('map: "[[_coast]]"', 'map: "[[_coast]]"\nname: Glass Wastes'));
+		// A hand edit where the map has a value: the map's comes back.
+		edit(r, P12, (t) => t.replace("terrain: ocean", "terrain: swamp"));
+		await setHexNoteProperties(pluginOf(r), true);
+		await r.sync.flush();
+		expect(fm(r, P34)).toEqual({ terrain: "forest", area: "Basin", map: "[[_coast]]", name: "Glass Wastes" });
+		expect(r.store.get("coast", "3_4")).toMatchObject({ terrain: "forest", region: "Basin", name: "Glass Wastes" });
+		expect(r.store.get("coast", "3_4")?.icon).toBeFalsy();
+		expect(fm(r, P12)).toEqual({ terrain: "ocean", tags: ["sea"], map: "[[_coast]]" });
+		expect(r.store.get("coast", "1_2")?.terrain).toBe("ocean");
 	});
 });
 

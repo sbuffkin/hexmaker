@@ -49,7 +49,7 @@ export interface NoteFormatHost {
   hexMapDataView(map: string, x: number, y: number): HexMapDataView;
   calloutMemory?: { set(path: string, values: MapDataShown): void };
   /** Remembers the hex-note properties a rewrite wrote (src/maps/hexPropsSync.ts). */
-  hexProps?: { remember(path: string, props: HexProps): void };
+  hexProps?: { remember(path: string, props: HexProps): void; shown?(path: string): HexProps | undefined };
   saveSettings(): Promise<void>;
 }
 
