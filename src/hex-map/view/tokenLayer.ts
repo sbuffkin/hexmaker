@@ -283,7 +283,8 @@ export class TokenLayer {
   /**
    * Move the party one step to `hex` (clicked or dragged) and mark both
    * hexes visited; one undo with the visited marks and what modules filled
-   * (P2: undo means it didn't happen). The step goes in the play log (P1).
+   * (P2: undo means it didn't happen). In Play, the step goes in the play
+   * log (P1); moving the party by hand in Build or God isn't a step of the game.
    */
   async moveParty(party: TokenEntry, hex: string, dragged = false): Promise<void> {
     if (!guardWrite(party.map, "token")) return;
@@ -302,7 +303,7 @@ export class TokenLayer {
     const visited: UndoItem[] = visitedAfter === visitedBefore ? [] : [{ kind: "map-field", mapName: party.map, field: "visited", before: visitedBefore, after: visitedAfter }];
     const items = [token, ...visited, ...filled];
     this.host.undos.pushUndo(items.length > 1 ? { kind: "group", items } : token, party.map);
-    void onPartyMoved(this.plugin, step);
+    if (this.host.undos.currentWorkMode() === "play") void onPartyMoved(this.plugin, step);
     await moved;
     if (filled.length) this.host.renderGrid();
     if (!sameGrid(gridBefore, gridAfter)) this.host.keepViewStill(gridBefore, gridAfter);
