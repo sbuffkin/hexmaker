@@ -230,28 +230,49 @@ class Resolver {
     return out;
   }
 
+  /** Each (link, tables above it) → its outcomes' odds, for odds(). */
+  private oddsMemo = new Map<string, ResolvedOdds[]>();
+
+  /**
+   * Add the outcomes of rolling `link` (reached with probability `p`) to
+   * `out`. A linked table's own outcome odds are worked out once per link
+   * and set of tables above it (they only depend on those), then scaled:
+   * many rows linking the same table cost one walk of it, not one each
+   * (rows^depth on hostile fan-out tables, security review #7).
+   */
   odds(link: string, visited: string[], p: number, out: Map<string, ResolvedOdds>): void {
+    for (const o of this.oddsOf(link, visited)) addOdds(out, o.kind, o.value, p * o.odds);
+  }
+
+  /** The outcomes of rolling `link` (as if reached for sure), in first-found order. */
+  private oddsOf(link: string, visited: string[]): ResolvedOdds[] {
+    // Everything below depends on the link, the set of tables above and how many.
+    const memoKey = `${link}\u0000${[...visited].sort().join("\u0000")}`;
+    const known = this.oddsMemo.get(memoKey);
+    if (known) return known;
+    const out = new Map<string, ResolvedOdds>();
     const t = this.lookup.table(link);
-    const add = (kind: ResolvedOdds["kind"], value: string, q: number) => {
-      const k = `${kind}:${lc(value)}`;
-      const o = out.get(k);
-      if (o) o.odds += q;
-      else out.set(k, { kind, value, odds: q });
-    };
-    if (!t) { add("empty", link, p); return; }
-    if (visited.includes(t.key) || visited.length >= this.maxDepth) { add("loop", `${LOOP_MARK} ${link}`, p); return; }
-    const { weights } = this.fit(t.key, t.table, visited);
-    const total = weights.reduce((a, b) => a + b, 0);
-    if (total <= 0) { add("empty", link, p); return; }
-    t.table.entries.forEach((e, i) => {
-      if (weights[i] <= 0) return;
-      const q = (p * weights[i]) / total;
-      const info = rowInfoOf(t.table, i);
-      const { kind, value } = cellKind(t.table, e, this.lookup, this.ctx);
-      if (this.ctx.deferArrival && info.roll === "on arrival") add("deferred", kind === "table" ? value : t.key, q);
-      else if (kind === "table") this.odds(value, [...visited, t.key], q, out);
-      else add(kind, value, q);
-    });
+    if (!t) addOdds(out, "empty", link, 1);
+    else if (visited.includes(t.key) || visited.length >= this.maxDepth) addOdds(out, "loop", `${LOOP_MARK} ${link}`, 1);
+    else {
+      const { weights } = this.fit(t.key, t.table, visited);
+      const total = weights.reduce((a, b) => a + b, 0);
+      if (total <= 0) addOdds(out, "empty", link, 1);
+      else {
+        t.table.entries.forEach((e, i) => {
+          if (weights[i] <= 0) return;
+          const q = weights[i] / total;
+          const info = rowInfoOf(t.table, i);
+          const { kind, value } = cellKind(t.table, e, this.lookup, this.ctx);
+          if (this.ctx.deferArrival && info.roll === "on arrival") addOdds(out, "deferred", kind === "table" ? value : t.key, q);
+          else if (kind === "table") this.odds(value, [...visited, t.key], q, out);
+          else addOdds(out, kind, value, q);
+        });
+      }
+    }
+    const list = [...out.values()];
+    this.oddsMemo.set(memoKey, list);
+    return list;
   }
 
   /** A `pick: each` table: every fitting row on its own Chance, in table order. */
@@ -303,6 +324,14 @@ class Resolver {
     });
     return [...own, ...nested];
   }
+}
+
+/** Add `q` to an outcome's odds (one entry per kind and value, case-insensitive). */
+function addOdds(out: Map<string, ResolvedOdds>, kind: ResolvedOdds["kind"], value: string, q: number): void {
+  const k = `${kind}:${lc(value)}`;
+  const o = out.get(k);
+  if (o) o.odds += q;
+  else out.set(k, { kind, value, odds: q });
 }
 
 /** Weighted pick of an index (one draw); -1 when nothing weighs anything. */
