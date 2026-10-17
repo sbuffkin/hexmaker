@@ -106,10 +106,46 @@ export function packPathOf(kind: PackKind, vaultPath: string): string {
   return `${kind.id}/${vaultPath.slice(trim(kind.folder).length + 1)}`;
 }
 
-/** A pack path that's safe to write: relative, no `..`, no empty or hidden parts. */
+/** Names Windows keeps for devices, with or without an extension ("CON", "nul.md", "COM1"). */
+const RESERVED_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i;
+// eslint-disable-next-line no-control-regex -- control characters are what it looks for
+const BAD_NAME_CHAR = /[<>:"|?*\u0000-\u001f\u007f]/;
+
+/**
+ * Why a pack path can't be written, or null when it can. Unsafe: absolute,
+ * `..`, empty or hidden parts. A name any system can't take: characters
+ * Windows forbids (`<>:"|?*`), control characters, a part ending in a dot
+ * or space, or a device name like CON or NUL (on NTFS `a:b.md` would even
+ * write a hidden stream of `a`).
+ */
+export function packPathProblem(p: string): string | null {
+  if (!p || p.startsWith("/") || /^[a-zA-Z]:/.test(p) || p.includes("\\")) return "unsafe path";
+  const parts = p.split("/");
+  if (!parts.every((part) => part !== "" && part !== "." && part !== ".." && !part.startsWith("."))) return "unsafe path";
+  for (const part of parts) {
+    if (BAD_NAME_CHAR.test(part)) return "its name has characters some systems can't use";
+    if (/[. ]$/.test(part)) return "its name ends in a dot or a space";
+    if (RESERVED_NAME.test(part)) return `"${part}" is a name Windows keeps for itself`;
+  }
+  return null;
+}
+
+/** A pack path that's safe to write (packPathProblem has none). */
 export function isSafePackPath(p: string): boolean {
-  if (!p || p.startsWith("/") || /^[a-zA-Z]:/.test(p) || p.includes("\\")) return false;
-  return p.split("/").every((part) => part !== "" && part !== "." && part !== ".." && !part.startsWith("."));
+  return packPathProblem(p) === null;
+}
+
+/**
+ * The code in a note that another plugin runs when the note is shown or
+ * made: Dataview JS blocks and inline `$=` queries, Templater `<% %>` tags.
+ * Empty when there is none. An imported note from a stranger can carry it.
+ */
+export function codeInNote(text: string): string[] {
+  const out: string[] = [];
+  if (/^[ \t]*(```+|~~~+)[ \t]*dataviewjs\b/im.test(text) || /`\$=[^`]/.test(text)) out.push("Dataview JS");
+  const tag = text.indexOf("<%");
+  if (tag >= 0 && text.indexOf("%>", tag + 2) >= 0) out.push("Templater");
+  return out;
 }
 
 /** Where a pack note goes in this vault, or null when it isn't under a known kind. */

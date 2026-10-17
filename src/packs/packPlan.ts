@@ -7,7 +7,7 @@
  */
 
 import { MANIFEST_FILE, inferManifest, parseManifest, type PackManifest } from "./packManifest";
-import { isSafePackPath, keepBothPath, rewriteFolderLinks, vaultPathOf, type PackKind } from "./packKinds";
+import { codeInNote, keepBothPath, packPathProblem, rewriteFolderLinks, vaultPathOf, type PackKind } from "./packKinds";
 import { paletteKey, planPalettes, renamePaletteRefs, type FindPalette } from "./packPalettes";
 import { PACK_LIMITS, packSizeProblem, type PackLimits } from "./zip";
 
@@ -103,6 +103,8 @@ export interface PlanItem {
   alreadyHave?: string;
   /** A palette whose name this vault has, different (K2): imported under `target`'s name instead of this one. */
   renamedFrom?: string;
+  /** Code other plugins run in this note ("Dataview JS", "Templater"): the preview warns. */
+  code?: string[];
 }
 
 export interface ImportPlan {
@@ -127,8 +129,9 @@ export async function planImport(
   const skipped: SkippedFile[] = [];
   const fromOf = new Map(pack.manifest.kinds.map((k) => [k.id, k.from]));
   for (const f of pack.files) {
-    if (!isSafePackPath(f.path)) {
-      skipped.push({ path: f.path, reason: "unsafe path" });
+    const pathProblem = packPathProblem(f.path);
+    if (pathProblem) {
+      skipped.push({ path: f.path, reason: pathProblem });
       continue;
     }
     if (!f.path.toLowerCase().endsWith(".md")) {
@@ -154,7 +157,8 @@ export async function planImport(
     if (where.kind.fixText) text = where.kind.fixText(text);
     const existing = await read(where.path);
     const status: PlanStatus = existing === null ? "new" : existing === text ? "same" : "conflict";
-    items.push({ packPath: f.path, kindId: where.kind.id, target: where.path, text, status });
+    const code = codeInNote(text);
+    items.push({ packPath: f.path, kindId: where.kind.id, target: where.path, text, status, ...(code.length ? { code } : {}) });
   }
   if (findPalette) await settlePalettes(items, kinds, read, findPalette);
   const present = new Set(pack.files.map((f) => f.path));
