@@ -1,7 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { STAR_SCATTER_TUNING, starScatter } from "../src/space/starScatter";
@@ -13,12 +11,12 @@ import { wfcTuning, withWfcTuning } from "../src/worldgen/registry";
 import { parseBuiltin } from "../src/worldgen/builtinGenerators";
 
 // The .md imports are stubbed in tests: read the shipped model from disk.
-const GRASSLAND = parseBuiltin(readFileSync(path.join(process.cwd(), "src", "worldgen", "builtin", "biome-grassland.md"), "utf8"), "biome-grassland")!;
+const GRASSLAND = parseBuiltin(readSource("src", "worldgen", "builtin", "biome-grassland.md"), "biome-grassland")!;
 import { DEFAULT_SETTINGS, solve } from "../packages/hex-wfc/src";
 import { layerOf } from "../src/ui/placement";
 import { WIZARD_TUNING_ID, tuningText, wizardOptionId } from "../src/wizardText";
 import { countSet, setLabel } from "../src/ui/disclosure";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 /** Owner 2026-10-12: generator options above the fold; Advanced = 5–10 layout sliders. */
 
@@ -45,9 +43,8 @@ describe("the wizard's generator options are above the fold; Advanced is the tun
 	});
 
 	it("the wizard places each slider in Advanced with an isSet, so the header counts the moved ones", () => {
-		const read = (...p: string[]) => readFileSync(path.join(process.cwd(), "src", ...p), "utf8");
 		// One slider renderer, shared by the wizard and New map (src/ui/mapScaleForm.ts).
-		const shared = read("ui", "mapScaleForm.ts");
+		const shared = readSource("src", "ui", "mapScaleForm.ts");
 		expect(shared).toContain("disclosure.place(placementId, row, isSet)");
 		expect(shared).toContain("disclosure.refreshSet()");
 		expect(shared).toMatch(/if \(v === t\.default\) delete options\[key\];/);

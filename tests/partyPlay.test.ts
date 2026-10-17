@@ -14,6 +14,7 @@ import { REVEAL_CONTROL_ID } from "../src/hexflower/exploreHooks";
 import { ringOrder } from "../src/hexflower/exploreOrder";
 import { neighbourKeys } from "../src/hexKey";
 import type { UndoItem } from "../src/hex-map/undoItems";
+import { readSource } from "./helpers/source";
 
 /** Play: the party's moves in the log (P1), its controls and Reveal (HF3), the bounce. */
 
@@ -69,10 +70,10 @@ describe("a party move writes a log line (P1)", () => {
 	});
 
 	it("the map view logs every step and records the visited marks in the step's undo (P2)", () => {
-		const layer = readFileSync("src/hex-map/view/tokenLayer.ts", "utf8");
+		const layer = readSource("src/hex-map/view/tokenLayer.ts");
 		// Only in Play: dragging the party around in Build or God isn't logged.
 		expect(layer).toMatch(/if \(this\.host\.undos\.currentWorkMode\(\) === "play"\) void onPartyMoved\(this\.plugin, step\);/);
-		const undo = readFileSync("src/hex-map/view/undoController.ts", "utf8");
+		const undo = readSource("src/hex-map/view/undoController.ts");
 		expect(undo).toMatch(/if \(item\.field === "visited"\) this\.host\.renderGrid\(\);/);
 	});
 });
@@ -92,7 +93,7 @@ describe("revealed hexes bounce in (HF3)", () => {
 	});
 
 	it("the grid tags them; the CSS bounce stops under reduced motion", () => {
-		const grid = readFileSync("src/hex-map/view/gridRenderer.ts", "utf8");
+		const grid = readSource("src/hex-map/view/gridRenderer.ts");
 		expect(grid).toMatch(/const revealed = revealedNow\(region\.name\);/);
 		expect(grid).toMatch(/hexEl\.addClass\("duckmage-hex-reveal"\);/);
 		// Only hexes with terrain bounce.
@@ -169,7 +170,7 @@ describe("the party controls (HF3)", () => {
 	});
 
 	it("a party step that grew the map keeps the view still too", () => {
-		const layer = readFileSync("src/hex-map/view/tokenLayer.ts", "utf8");
+		const layer = readSource("src/hex-map/view/tokenLayer.ts");
 		expect(layer).toMatch(/const gridBefore = gridBoxOf\(this\.host\.getActiveMap\(\)\);\s*const filled = await runPartyEntered/);
 		expect(layer).toMatch(/if \(!sameGrid\(gridBefore, gridAfter\)\) this\.host\.keepViewStill\(gridBefore, gridAfter\);/);
 	});

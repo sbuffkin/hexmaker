@@ -1,14 +1,12 @@
 import { describe, it, afterEach } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
 import { bindPorts, resetPorts, type PortsHost } from "../src/ports";
 import { canDo, noteHandEdit } from "../src/modeGate";
 import { canEditPaths } from "../src/paths/editGate";
 import { numberBoxShown } from "../src/ui/numberBoxes";
 import { getTerrainFromFile } from "../src/frontmatter";
 import { DEBUG_MODE_KEY } from "../src/ui/debugMode";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 const SETTERS = [
 	"setHexDataSource",
@@ -21,7 +19,6 @@ const SETTERS = [
 ];
 // setBiomeSource is the World maps module's own port (BiomeStore feeds it), outside src/ports.ts.
 
-const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 /** Setter names called in a block of source text, in call order. */
 const calls = (text: string) => [...text.matchAll(/\b(set[A-Z]\w+)\(/g)].map((m) => m[1]).filter((n) => SETTERS.includes(n));
 const body = (text: string, start: string) => {
@@ -79,7 +76,7 @@ describe("ports (src/ports.ts)", () => {
 	});
 
 	it("resetPorts covers the seven plugin-fed setters; bindPorts covers every one onload sets, in the same order", () => {
-		const ports = read("src", "ports.ts");
+		const ports = readSource("src", "ports.ts");
 		expect([...new Set(calls(body(ports, "export function resetPorts")))].sort()).toEqual([...SETTERS].sort());
 		// Until the plugin lane switches onload to bindPorts(this): the same setters, same order.
 		const onload = calls(readSurface("plugin"));

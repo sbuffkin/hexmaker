@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { percentsToWeights, rebalanceShares, shareText, toPercents, toShares, ShareState } from "../src/ui/shares";
 import { renderShareSliders } from "../src/ui/shareSliders";
 import { rebalance } from "../src/worldgen/regionWeights";
@@ -108,13 +107,12 @@ describe("generator page parity", () => {
   });
 
   it("the generator page, Edit region's Mix biomes and Blend into all use the shared control", () => {
-    const src = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8");
     for (const p of ["worldgen/GeneratorPanel.ts", "overworld/EditRegionModal.ts", "overworld/BlendIntoBiomeModal.ts"]) {
       expect({ p, uses: readSource("src", p).includes("renderShareSliders(") }).toEqual({ p, uses: true });
     }
     // No one-off influence / weight sliders left behind.
     expect(readSurface("generator-page")).not.toContain("influence-row");
-    expect(src("overworld/EditRegionModal.ts")).not.toContain("mix-weight");
+    expect(readSource("src", "overworld/EditRegionModal.ts")).not.toContain("mix-weight");
   });
 });
 

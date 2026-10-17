@@ -73,7 +73,7 @@ describe("F6: the Icon tool", () => {
 	});
 
 	it("the picker shows whole tiles: a grid of whole rows that snaps, names wrapped", () => {
-		expect(read("src/hex-map/IconPickerModal.ts")).toContain("duckmage-icon-picker duckmage-icon-picker-full");
+		expect(readSource("src/hex-map/IconPickerModal.ts")).toContain("duckmage-icon-picker duckmage-icon-picker-full");
 		const css = read("styles.css");
 		const grid = css.slice(css.indexOf(".duckmage-icon-picker.duckmage-icon-picker-full {"));
 		expect(grid).toMatch(/height: calc\(5 \* var\(--duckmage-icon-tile-h\) \+ 4 \* var\(--duckmage-icon-tile-gap\)\)/);
@@ -216,7 +216,7 @@ describe("F12: the Tables / Workflows toggle shows which is selected", () => {
 describe("F14 → SF8: the Overland card says it draws the palette's path types", () => {
 	it("in its palette-aware description and the static one", () => {
 		expect(overlandDescription(DEFAULT_TERRAIN_PALETTE)).toMatch(/It draws your path types too \(roads, rivers…\): set how many of each\.$/);
-		expect(read("src/modules/world/runtime.ts")).toContain("${OVERLAND_TAIL}");
+		expect(readSource("src/modules/world/runtime.ts")).toContain("${OVERLAND_TAIL}");
 	});
 });
 
@@ -310,7 +310,7 @@ describe("F21: a table is titled as its links say", () => {
 	});
 
 	it("the roll dialog, table editor and roller view all use it", () => {
-		expect(read("src/random-tables/RandomTableModal.ts")).toContain('headerRow.createEl("strong", { text: tableTitle(file.path) })');
+		expect(readSource("src/random-tables/RandomTableModal.ts")).toContain('headerRow.createEl("strong", { text: tableTitle(file.path) })');
 		expect(readSurface("table-editor")).toContain("this.titleEl.setText(`Edit: ${tableTitle(this.file.path)}`)");
 		expect(readSurface("table-view")).toContain("text: tableTitle(file.path),");
 	});

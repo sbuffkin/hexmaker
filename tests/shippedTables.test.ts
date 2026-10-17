@@ -9,14 +9,13 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { registry } from "../src/modules";
 import { parseRandomTableWithReport, rowOdds, resolveTable } from "../src/random-tables/randomTable";
 import { shippedTablesToInstall } from "../src/random-tables/shippedTables";
 import { makeTableTemplate } from "../src/utils";
 import { ENGINE_ROLES } from "../src/worldgen/tableRoles";
 import { tableIsEmpty } from "../src/random-tables/emptyTable";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 const lf = (s: string) => s.replace(/\r\n/g, "\n");
 const shipped = (path: string) => registry.shippedTables().find((t) => t.path === path)!;
@@ -50,7 +49,7 @@ describe("starter weather and rumours: data in the World module", () => {
 	});
 
 	it("no row constants are left in the code", () => {
-		const code = readFileSync("src/regionTables.ts", "utf8") + readSurface("plugin");
+		const code = readSource("src/regionTables.ts") + readSurface("plugin");
 		expect(code).not.toMatch(/STARTER_WEATHER|STARTER_RUMORS|Clear and calm|went missing on the road/);
 	});
 

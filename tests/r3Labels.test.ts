@@ -34,7 +34,7 @@ import { buildManualHtml } from "../src/export/manual/manualHtml";
 import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 const read = (...p: string[]) => readFileSync(p.join("/"), "utf8").replace(/\r\n/g, "\n");
 
@@ -129,7 +129,7 @@ describe("NM3: hex names keep a readable size on screen", () => {
 	});
 
 	it("a bigger name size raises the readable floor (L / XL still read bigger zoomed out)", () => {
-		const layer = read("src", "hex-map", "hexNameLayer.ts");
+		const layer = readSource("src", "hex-map", "hexNameLayer.ts");
 		expect(layer).toMatch(/readableFloorEm\(gridFont, zoom\) \* Math\.max\(1, font\.scale\)/);
 	});
 
@@ -284,8 +284,8 @@ describe("G4b: link section words follow the map type", () => {
 		expect(readSurface("hex-table")).toMatch(/this\.colLabel\(col\)/);
 		expect(readSurface("map-view")).toMatch(/label: words\(s\)\.label/);
 		expect(readSurface("png-renderer")).toMatch(/name: sectionWords\(s\)\.label/);
-		expect(read("src", "export", "exporters", "singleHex.ts")).toMatch(/sectionWordsFor\(/);
-		expect(read("src", "export", "exporters", "hexcrawlManual.ts")).toMatch(/linkLabels:/);
+		expect(readSource("src", "export", "exporters", "singleHex.ts")).toMatch(/sectionWordsFor\(/);
+		expect(readSource("src", "export", "exporters", "hexcrawlManual.ts")).toMatch(/linkLabels:/);
 	});
 });
 
@@ -312,13 +312,13 @@ describe("HG5: new terrains get their tables", () => {
 		const src = readSurface("plugin");
 		const save = /async saveSettings\(\)[\s\S]*?\n {2}\}/.exec(src)![0];
 		expect(save).toMatch(/void this\.(plugin\.)?ensureTablesForNewTerrains\(\)/);
-		expect(read("src", "palettes", "PaletteStore.ts")).toMatch(/ensureTablesForNewTerrains\(\)/);
+		expect(readSource("src", "palettes", "PaletteStore.ts")).toMatch(/ensureTablesForNewTerrains\(\)/);
 		const create = /private async createTerrainTableFiles[\s\S]*?\n {2}\}/.exec(src)![0];
 		// The usual template with no rows: makeTableTemplate(dice, fm, link) — no 4th (rows) argument.
 		expect(create).toMatch(/this\.buildRollerLink\(\),\n\s*\),/);
 		const rename = /private async renameTerrainTables[\s\S]*?\n {2}\}/.exec(src)![0];
 		expect(rename).toMatch(/fileManager\.renameFile\(oldFile, newPath\)/);
 		// A new terrain named in its editor moves its placeholder's tables.
-		expect(read("src", "hex-map", "TerrainEntryEditorModal.ts")).toMatch(/if \(nameChanged\) await this\.plugin\.renameTerrain\(this\.entry, this\.pendingName\)/);
+		expect(readSource("src", "hex-map", "TerrainEntryEditorModal.ts")).toMatch(/if \(nameChanged\) await this\.plugin\.renameTerrain\(this\.entry, this\.pendingName\)/);
 	});
 });

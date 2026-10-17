@@ -3,7 +3,7 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "../src/hex-map/hexHover";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 describe("hexHoverLabel", () => {
 	it("names the hex's terrain and coordinates", () => {
@@ -38,10 +38,9 @@ describe("coordinates read \"x, y\" everywhere people see them (fresh-eyes round
 	});
 
 	it("titles, cards and notices don't show x_y or x,y", () => {
-		const read = (...p: string[]) => readFileSync(path.join(process.cwd(), "src", ...p), "utf8");
 		const files = [
 			readSurface("map-view"),
-			read("hex-map", "TokenInfoModal.ts"),
+			readSource("src", "hex-map", "TokenInfoModal.ts"),
 			readSurface("hex-editor"),
 			readSurface("hex-table"),
 		];

@@ -17,7 +17,6 @@ import {
 } from "../src/sections";
 import { isGuidanceLine } from "../src/hexGuidance";
 import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../src/types";
-import { readFileSync } from "node:fs";
 
 /** Build a minimal mock App backed by an in-memory string. */
 function makeApp(filePath: string, initialContent: string) {
@@ -421,7 +420,7 @@ describe("guidance prompts under a section heading", () => {
 });
 
 describe("the built-in hex template (src/defaultHexTemplate.md)", () => {
-	const template = readFileSync("src/defaultHexTemplate.md", "utf8").replace(/\r\n/g, "\n");
+	const template = readSource("src/defaultHexTemplate.md").replace(/\r\n/g, "\n");
 	const lines = template.split("\n");
 
 	it("puts each prompt under its heading, never above one", () => {
@@ -468,7 +467,7 @@ describe("the built-in hex template (src/defaultHexTemplate.md)", () => {
 // ── `---` rules never turn a link into a setext heading (fresh-eyes r5) ───────
 
 describe("links above a --- rule stay links", () => {
-	const template = readFileSync("src/defaultHexTemplate.md", "utf8").replace(/\r\n/g, "\n");
+	const template = readSource("src/defaultHexTemplate.md").replace(/\r\n/g, "\n");
 
 	it("adding a link to an empty template section leaves a blank line before the rule", async () => {
 		const { app, getContent } = makeApp("hex.md", template);

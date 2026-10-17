@@ -1,14 +1,12 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { edgePulls, planetSurface } from "../src/worldgen/procedural/planetSurface";
 import { EDGE_ALPHA, edgeAlpha, edgeReach, neighbourShare, storeNeighbourWeight } from "../src/worldgen/neighbourWeight";
 import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import type { ContextTerrain, ProcGrid } from "../src/worldgen/procedural/common";
 import type { MapData } from "../src/types";
-import { readSurface } from "./helpers/source";
+import { readSurface, readSource } from "./helpers/source";
 
 /**
  * SF6 (owner 2026-10-14, B): New map → Next to gets the same Neighbour
@@ -18,7 +16,6 @@ import { readSurface } from "./helpers/source";
  * `neighbour-influence:` only when not 1.
  */
 
-const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 const grid: ProcGrid = { cols: 12, rows: 10, offset: { x: 12, y: 0 }, stagger: "odd", orientation: "flat" };
 const SEEDS = Array.from({ length: 16 }, (_, i) => i + 1);
 
@@ -100,13 +97,13 @@ describe("SF6: the weight on a plain map's neighbour pull", () => {
 
 describe("SF6: New map → Next to wiring (one control, one code path)", () => {
 	const modal = readSurface("new-map-setup");
-	const shared = read("src", "ui", "neighbourSlider.ts");
+	const shared = readSource("src", "ui", "neighbourSlider.ts");
 
 	it("the slider is the shared one Edit region uses", () => {
 		expect(shared).toMatch(/renderLabeledSlider\(parent, \{\s*label: "Neighbour influence"/);
 		expect(modal).toMatch(/renderNeighbourSlider\(weightRow, this\.neighbourWeight/);
-		expect(read("src", "overworld", "EditRegionModal.ts")).toMatch(/renderNeighbourSlider\(biomeSec, draft\.neighbourWeight/);
-		expect(read("src", "overworld", "EditRegionModal.ts")).not.toMatch(/label: "Neighbour influence"/);
+		expect(readSource("src", "overworld", "EditRegionModal.ts")).toMatch(/renderNeighbourSlider\(biomeSec, draft\.neighbourWeight/);
+		expect(readSource("src", "overworld", "EditRegionModal.ts")).not.toMatch(/label: "Neighbour influence"/);
 	});
 
 	it("the preview and the created map both run with the weight, and the map keeps it", () => {
@@ -117,8 +114,8 @@ describe("SF6: New map → Next to wiring (one control, one code path)", () => {
 	});
 
 	it("Overland and the learned generators read it", () => {
-		expect(read("src", "modules", "world", "runtime.ts")).toMatch(/neighbourWeight: req\.neighbourWeight/);
-		const registry = read("src", "worldgen", "registry.ts");
+		expect(readSource("src", "modules", "world", "runtime.ts")).toMatch(/neighbourWeight: req\.neighbourWeight/);
+		const registry = readSource("src", "worldgen", "registry.ts");
 		expect(registry.match(/leanToNeighbours\(plugin, /g)?.length).toBe(2);
 	});
 });

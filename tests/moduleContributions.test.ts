@@ -1,7 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { registry } from "../src/modules";
 import {
   MODULE_RUNTIMES,
@@ -24,7 +22,6 @@ import { readSurface, readSource } from "./helpers/source";
 
 /** P5–P7: the map UI pieces and World maps reach the core only as module contributions. */
 
-const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 const runtime = (id: string) => MODULE_RUNTIMES.find((r) => r.id === id)!;
 
 describe("P5: map UI pieces are module contributions", () => {
@@ -35,7 +32,7 @@ describe("P5: map UI pieces are module contributions", () => {
     const modal = readSurface("map-modal");
     expect(modal).toMatch(/renderRoleTables\(el, this\.plugin, currentMap, \(\) => this\.render\(\)\);\n\s+\/\/ Modules' sections[^\n]*\n\s+for \(const section of moduleMapProperties\(\)\) section\.render\(/);
     // The core's form names no module: a role's tables folder is module data.
-    const form = read("src", "hex-map", "mapTablesForm.ts");
+    const form = readSource("src", "hex-map", "mapTablesForm.ts");
     expect(form).not.toMatch(/SPACE_TABLES_FOLDER|World types|worldTypeStore/);
     expect(registry.module("space")!.tablesFolder).toBe("space");
   });
@@ -65,7 +62,7 @@ describe("P5: map UI pieces are module contributions", () => {
   it("each generator's New map option ids come from its module (no world-maps import in newMapOptionIds.ts)", () => {
     const ids = moduleNewMapOptionIds();
     expect(Object.keys(ids)).toEqual(expect.arrayContaining(["procedural:overland", "procedural:region-detail", "procedural:world-biomes", "procedural:star-scatter", "procedural:orbits", "procedural:planet-surface"]));
-    expect(read("src", "worldgen", "newMapOptionIds.ts")).not.toMatch(/overworld|space/);
+    expect(readSource("src", "worldgen", "newMapOptionIds.ts")).not.toMatch(/overworld|space/);
   });
 });
 

@@ -7,6 +7,7 @@ import { MODULE_RUNTIMES } from "../src/modules/runtime";
 import { DEFAULT_SETTINGS } from "../src/constants";
 // Plain ESM helper shared with esbuild.config.mjs (types inferred from its JS).
 import { readSlices, releaseReadme, releaseReadmePath, sliceBlockText, sliceFlags, sliceModules, stripSliceMarkers } from "../dev/release/slices.mjs";
+import { readSource } from "./helpers/source";
 
 /** P6: one module is one release slice (release-slices.json); a slice built off leaves no trace. */
 
@@ -27,9 +28,9 @@ describe("release-slices.json and the modules agree", () => {
 
 	it("the foundation slice is always built (no flag); the others have one each, read by the module lists", () => {
 		expect(slices.foundation.define).toBeNull();
-		const index = read("src", "modules", "index.ts");
-		const runtime = read("src", "modules", "runtime.ts");
-		const decl = read("src", "slices.d.ts");
+		const index = readSource("src", "modules", "index.ts");
+		const runtime = readSource("src", "modules", "runtime.ts");
+		const decl = readSource("src", "slices.d.ts");
 		for (const [id, s] of Object.entries(slices)) {
 			if (!s.define) continue;
 			expect({ id, decl: decl.includes(`declare const ${s.define}: boolean;`) }).toEqual({ id, decl: true });
@@ -76,7 +77,7 @@ describe("slice markers in bundled Markdown", () => {
 	});
 
 	it("help.md's markers are balanced and name real slices; stripped of Space it names none of Space's text", () => {
-		const help = read("src", "hex-map", "help.md");
+		const help = readSource("src", "hex-map", "help.md");
 		const opens = [...help.matchAll(/<!-- slice:([a-z-]+) -->/g)].map((m) => m[1]);
 		expect(opens.length).toBe((help.match(/<!-- \/slice -->/g) ?? []).length);
 		for (const id of opens) expect(Object.keys(slices)).toContain(id);

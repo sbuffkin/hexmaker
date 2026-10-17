@@ -1,10 +1,10 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { exportedMessage, withExportProvenance } from "../src/export/exportFolder";
 import { formatRandomTableMarkdown } from "../src/export/exporters/randomTable";
 import { parseRandomTable } from "../src/random-tables/randomTable";
 import { serializeMarkdown } from "../src/export/mdSerializer";
+import { readSource } from "./helpers/source";
 
 const WHEN = new Date(2026, 9, 10, 14, 3, 0);
 
@@ -23,7 +23,7 @@ describe("export provenance (X1)", () => {
 
 	it("each markdown exporter writes it and reports Replaced", () => {
 		for (const [file, kind] of [["singleNote", "note"], ["singleHex", "hex"], ["randomTable", "table"], ["workflow", "workflow"]]) {
-			const src = readFileSync(`src/export/exporters/${file}.ts`, "utf8");
+			const src = readSource(`src/export/exporters/${file}.ts`);
 			expect(src).toContain(`withExportProvenance(finalMd, `);
 			expect(src).toContain(`"${kind}")`);
 			expect(src).not.toContain("Exported to ${outPath}");

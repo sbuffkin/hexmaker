@@ -1,11 +1,8 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
 import { isLinkableNotePath, isTemplateNotePath, templateNoteRules } from "../src/templateNotes";
 import { readSurface, readSource } from "./helpers/source";
 
-const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
 describe("R12: template notes are never offered for linking", () => {
 	const rules = templateNoteRules(
@@ -100,7 +97,7 @@ describe("Note pickers say what they're for (template pickers list templates)", 
 
 	it("the plugin and the general file picker take the purpose explicitly, defaulting to 'link'", () => {
 		expect(readSurface("plugin")).toMatch(/isLinkableNote\(file: TFile, purpose: NotePickPurpose = "link"\)/);
-		const picker = read("src", "hex-map", "FileLinkSuggestModal.ts");
+		const picker = readSource("src", "hex-map", "FileLinkSuggestModal.ts");
 		expect(picker).toMatch(/private purpose: NotePickPurpose = "link"/);
 		expect(picker).toMatch(/this\.plugin\.isLinkableNote\(f, this\.purpose\)/);
 	});

@@ -16,7 +16,7 @@ import {
 import { DISCLOSURE_OPEN_KEY, FOLD_STATE_KEY, disclosureOpen, foldOpen, setDisclosureOpen, setFoldOpen, subSectionKey } from "../src/ui/disclosure";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
-import { readSurface, ownerFile } from "./helpers/source";
+import { readSurface, ownerFile, readSource } from "./helpers/source";
 
 /** Obsidian's per-vault local storage, in memory. */
 class FakeStore implements LocalStore {
@@ -106,7 +106,7 @@ describe("debug mode", () => {
   it("is never a data.json setting", () => {
     const keys = Object.keys(DEFAULT_SETTINGS).map((k) => k.toLowerCase());
     expect(keys.filter((k) => k.includes("debug"))).toEqual([]);
-    const types = readFileSync(join("src", "types.ts"), "utf8");
+    const types = readSource("src", "types.ts");
     expect(types).not.toMatch(/debug/i);
   });
 
