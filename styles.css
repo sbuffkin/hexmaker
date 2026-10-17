@@ -9944,3 +9944,60 @@ button.is-armed {
     font-family: var(--font-monospace);
     resize: vertical;
 }
+
+/* ── Play: party controls and revealed hexes (owner HF3, 2026-10-16) ─────────
+   The bar shown while a party token is selected in Play (Reveal 1 · 2 · 3 on
+   a hex flower map), and the small bounce a hex makes when exploring fills
+   it (src/hex-map/revealBounce.ts tags it, with its ring for a stagger). */
+.duckmage-party-controls {
+    position: absolute;
+    top: 48px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    max-width: calc(100% - 2em);
+    padding: 0.25em 0.4em 0.25em 0.8em;
+    border-radius: 999px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    box-shadow: var(--shadow-s);
+    font-size: var(--font-ui-small);
+}
+.duckmage-party-controls-name {
+    font-weight: var(--font-semibold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.duckmage-party-control {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+}
+.duckmage-party-control-label {
+    color: var(--text-muted);
+    margin-right: 0.2em;
+}
+.duckmage-party-control button {
+    min-width: 2em;
+    padding: 0.1em 0.5em;
+    border-radius: 999px;
+}
+
+@keyframes duckmage-hex-reveal-bounce {
+    0%   { scale: 0.55; opacity: 0.2; }
+    55%  { scale: 1.08; opacity: 1; }
+    75%  { scale: 0.96; }
+    100% { scale: 1; }
+}
+.duckmage-hex.duckmage-hex-reveal {
+    animation: duckmage-hex-reveal-bounce 420ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+.duckmage-hex.duckmage-hex-reveal[data-reveal-ring="1"] { animation-delay: 60ms; }
+.duckmage-hex.duckmage-hex-reveal[data-reveal-ring="2"] { animation-delay: 120ms; }
+.duckmage-hex.duckmage-hex-reveal[data-reveal-ring="3"] { animation-delay: 180ms; }
+@media (prefers-reduced-motion: reduce) {
+    .duckmage-hex.duckmage-hex-reveal { animation: none; }
+}

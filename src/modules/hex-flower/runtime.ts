@@ -10,7 +10,7 @@ import { FlowerStore } from "../../hexflower/FlowerStore";
 import { FLOWER_BLOCK } from "../../hexflower/flowerNote";
 import { flowerStoreOf, setExplore, setFlowerStore, terrainColors } from "../../hexflower/context";
 import { ExploreService } from "../../hexflower/ExploreService";
-import { exploreFrontier, exploreHexMenu, exploreStep } from "../../hexflower/exploreHooks";
+import { exploreFrontier, exploreHexMenu, explorePartyControls, exploreStep } from "../../hexflower/exploreHooks";
 import { drawFlowerList, renderFlowerPanel } from "../../hexflower/FlowerPanel";
 import { HEX_FLOWER_GENERATOR_ID, hexFlowerGenerator } from "../../hexflower/flowerGenerator";
 import { EXPLORE_PROPS } from "../../hexflower/exploreProps";
@@ -38,7 +38,7 @@ export const hexFlowerRuntime: ModuleRuntime = {
   generators: (plugin, helpers) => [hexFlowerGenerator(plugin, helpers)],
   newMapOptionIds: { [HEX_FLOWER_GENERATOR_ID]: { party: "NewMap.flowerParty", reveal: "NewMap.flowerReveal" } },
   mapProperties: [EXPLORE_PROPS],
-  play: { onEnter: exploreStep },
+  play: { onEnter: exploreStep, partyControls: explorePartyControls },
   hexMenu: exploreHexMenu,
   unchartedKeys: exploreFrontier,
   // The generator page's third library tab: the flowers and their editor.

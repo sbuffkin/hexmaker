@@ -15,6 +15,8 @@ import type {
   FolderSettingContribution,
   GeneratorPageTab,
   HexMenuContribution,
+  PartyAt,
+  PartyControl,
   PartyStep,
   GeneratorContribution,
   GeneratorHelpers,
@@ -197,6 +199,18 @@ export async function runPartyEntered(plugin: HexmakerPlugin, step: PartyStep): 
     }
   }
   return out;
+}
+
+/** Every module's controls for the party controls (the selected party in Play), in module order. */
+export function modulePartyControls(plugin: HexmakerPlugin, party: PartyAt): PartyControl[] {
+  return MODULE_RUNTIMES.flatMap((m) => {
+    try {
+      return m.play?.partyControls?.(plugin, party) ?? [];
+    } catch (e) {
+      logError(`${m.id} party controls`, e);
+      return [];
+    }
+  });
 }
 
 /** Every module's items for the right-click menu of hex `hex` on map `map`. */

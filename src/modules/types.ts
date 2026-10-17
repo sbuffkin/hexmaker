@@ -478,6 +478,33 @@ export interface PlayHooks {
    * the map view groups them with the token's move (one undo).
    */
   onEnter?(plugin: HexmakerPlugin, step: PartyStep): Promise<UndoItem[]>;
+  /**
+   * Controls for the party controls, the bar shown while a party token is
+   * selected in Play (Hex flower: Reveal 1 · 2 · 3). None: nothing shown.
+   */
+  partyControls?(plugin: HexmakerPlugin, party: PartyAt): PartyControl[];
+}
+
+/** Where the selected party stands. */
+export interface PartyAt {
+  map: string;
+  /** Its hex ("x_y"). */
+  hex: string;
+  /** The party token's note. */
+  token: string;
+}
+
+/** One control on the party controls: a label and its buttons. */
+export interface PartyControl {
+  id: string;
+  label: string;
+  title?: string;
+  buttons: readonly {
+    label: string;
+    title: string;
+    /** Does it, and returns the undo entries of what it wrote (recorded as one undo). */
+    run(): Promise<UndoItem[]>;
+  }[];
 }
 
 /** An item a module adds to a hex's right-click menu. */
