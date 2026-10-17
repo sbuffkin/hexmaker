@@ -34,9 +34,6 @@ export const DEFAULT_NOTE_TEMPLATE = `# {{title}}
 ## Notes
 `;
 
-/** The town starter (the same generic one). */
-export const DEFAULT_TOWN_TEMPLATE = DEFAULT_NOTE_TEMPLATE;
-
 /** What the templates helpers need from the settings. */
 export interface TemplateSettings {
   templatesFolder?: string;
@@ -58,11 +55,6 @@ export function hexTemplatePathFor(s: TemplateSettings): string {
   const set = trimSlashes(s.templatePath);
   if (set) return set.endsWith(".md") ? set : `${set}.md`;
   return `${templatesFolderFor(s)}/${HEX_TEMPLATE_FILE}`;
-}
-
-/** Where the town template is. */
-export function townTemplatePathFor(s: TemplateSettings): string {
-  return `${templatesFolderFor(s)}/${TOWN_TEMPLATE_FILE}`;
 }
 
 /** A link section's note template: its file in the templates folder and the built-in starter written there. */
@@ -131,11 +123,6 @@ export function withLocationLine(content: string, hexPath: string, label: string
   const after = lines[at] !== undefined && lines[at].trim() !== "" ? [""] : [];
   lines.splice(at, 0, ...before, line, ...after);
   return lines.join(eol);
-}
-
-/** Which note template a new note in this link section starts from (its file name without .md), if any. */
-export function noteTemplateFor(section: string): string | null {
-  return linkNoteTemplate(section)?.file.replace(/.md$/i, "") ?? null;
 }
 
 /** One of the plugin's note templates, for the "Note templates" list (SX1). */

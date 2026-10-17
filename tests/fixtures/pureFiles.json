@@ -17,7 +17,6 @@
 	"src/export/pdfExporter.ts",
 	"src/export/printScaffold.ts",
 	"src/frameThrottle.ts",
-	"src/hex-map/autoRoute.ts",
 	"src/hex-map/ghostPaths.ts",
 	"src/hex-map/hexGeometry.ts",
 	"src/hex-map/hexHover.ts",

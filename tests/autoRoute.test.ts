@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { findRoute, hexCenter, hexDistance, type RouteBounds } from "../src/hex-map/autoRoute";
+import { findRoute, hexCenter, hexDistance, type RouteBounds } from "../src/paths/router";
 import { hexNeighbors } from "../src/hex-map/hexGeometry";
 
 type Orientation = "flat" | "pointy";

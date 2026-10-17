@@ -5,13 +5,13 @@ import { join } from "path";
 import {
   ROUTER_VERSION,
   contextSignature,
+  findRoute,
   hexDistance,
   hexLine,
   routeSegment,
   type RouteBounds,
   type RouteContext,
 } from "../src/paths/router";
-import { findRoute as findRouteViaAutoRoute } from "../src/hex-map/autoRoute";
 import { hexNeighbors } from "../src/hex-map/hexGeometry";
 
 type O = "flat" | "pointy";
@@ -80,10 +80,10 @@ describe("ROUTER v1 golden cases (a failure here means the router changed: that 
     });
   }
 
-  it("autoRoute.ts re-exports the same router", () => {
+  it("findRoute (the path tool's auto-route) gives the golden routes", () => {
     for (const c of fixture.routes.filter((r) => !r.expected.fallback)) {
       const blocked = new Set(c.blocked);
-      const r = findRouteViaAutoRoute(c.from, c.to, {
+      const r = findRoute(c.from, c.to, {
         orientation: c.orientation, stagger: c.stagger, bounds: c.bounds, meander: c.winding,
         blocked: c.avoid ? (x, y) => blocked.has(`${x}_${y}`) : undefined,
       });
