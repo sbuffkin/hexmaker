@@ -109,6 +109,27 @@ export function grownGrid(grid: GridBox, room: GridRoom): GridBox {
   };
 }
 
+/**
+ * `room` cut so the grown grid is at most `max` hexes a side (the biggest
+ * map, MAX_GRID_SIDE). `cut`: some of the room asked for didn't fit.
+ */
+export function capGrowth(grid: GridBox, room: GridRoom, max: number): { room: GridRoom; cut: boolean } {
+  const out = { ...room };
+  let cut = false;
+  const fit = (a: "left" | "top", b: "right" | "bottom", have: number) => {
+    let extra = have + out[a] + out[b] - max;
+    while (extra > 0 && out[a] + out[b] > 0) {
+      // Take from the side growing more (each side keeps what it can).
+      if (out[a] >= out[b]) out[a]--; else out[b]--;
+      extra--;
+      cut = true;
+    }
+  };
+  fit("left", "right", grid.cols);
+  fit("top", "bottom", grid.rows);
+  return { room: out, cut };
+}
+
 /** The hexes in `bigger` that aren't in `smaller` (the band a shrink would drop). */
 export function bandKeys(bigger: GridBox, smaller: GridBox): string[] {
   const out: string[] = [];

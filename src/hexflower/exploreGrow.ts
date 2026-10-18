@@ -7,14 +7,16 @@
  *
  * Blank hexes only: growing writes no cells and no hex notes. Explored maps
  * only, unless the map's `explore-grow: off`; never on a map with
- * neighbouring regions (they all share one size). The growth is one undo
- * entry ("grid"), in the step's group.
+ * neighbouring regions (they all share one size), and never past the
+ * biggest map (MAX_GRID_SIDE a side, owner C2: it stops there, said once a
+ * session). The growth is one undo entry ("grid"), in the step's group.
  */
 import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { UndoItem } from "../hex-map/undoItems";
 import { applyGridChange } from "../hex-map/gridChange";
-import { describeGrowth, gridBoxOf, grownGrid, growthFor, hasRoom } from "../maps/gridGrowth";
+import { capGrowth, describeGrowth, gridBoxOf, grownGrid, growthFor, hasRoom } from "../maps/gridGrowth";
+import { MAX_GRID_SIDE } from "../sizeInput";
 import { canDo } from "../modeGate";
 import type { ExploreMap } from "./exploreFields";
 
@@ -30,6 +32,10 @@ export function growOff(map: ExploreMap): boolean {
 
 /** Maps told this session that they can't grow (once each). */
 const told = new Set<string>();
+/** Maps told this session that they're at the biggest size (once each). */
+const toldMax = new Set<string>();
+
+export const AT_MAX_SIZE = "This map is at the largest size; it won't grow further.";
 
 /**
  * Make room around `hex` for a party that sees `sight` rings. Returns the
@@ -54,7 +60,13 @@ export function makeRoom(
     }
     return undefined;
   }
-  const after = grownGrid(before, room);
+  const capped = capGrowth(before, room, MAX_GRID_SIDE);
+  if (capped.cut && !toldMax.has(map.name)) {
+    toldMax.add(map.name);
+    tell(AT_MAX_SIZE);
+  }
+  if (hasRoom(capped.room)) return undefined;
+  const after = grownGrid(before, capped.room);
   if (!applyGridChange(plugin, map.name, after)) return undefined;
-  return { undo: { kind: "grid", mapName: map.name, before, after }, line: describeGrowth(room) };
+  return { undo: { kind: "grid", mapName: map.name, before, after }, line: describeGrowth(capped.room) };
 }

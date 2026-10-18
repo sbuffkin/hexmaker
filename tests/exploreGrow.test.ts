@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { fakeRoot } from "./helpers/fakeDom";
 import { setup, undoRedo } from "./helpers/exploreFixture";
-import { gridBoxOf } from "../src/maps/gridGrowth";
+import { capGrowth, gridBoxOf } from "../src/maps/gridGrowth";
+import { AT_MAX_SIZE } from "../src/hexflower/exploreGrow";
 import { exploreStep } from "../src/hexflower/exploreHooks";
 import { EXPLORE_PROPS, GROW_LABEL } from "../src/hexflower/exploreProps";
 import { EXPLORE_FIELDS } from "../src/hexflower/exploreFields";
@@ -102,4 +103,27 @@ describe("the map grows as the party nears its edge (HF4)", () => {
 		expect(EXPLORE_FIELDS.find((f) => f.field === "exploreGrow")?.key).toBe("explore-grow");
 	});
 
+});
+
+describe("growth stops at the biggest map (HF8 step 5, owner C2)", () => {
+	it("cuts the room so no side passes 200 hexes, then stops; says so once a session", async () => {
+		const s = setup({ gridSize: { cols: 5, rows: 198 }, gridOffset: { x: 0, y: 0 } }, "tall");
+		await s.flowers.init();
+		await exploreStep(s.plugin as never, { map: "tall", from: "2_1", to: "2_0" });
+		// It wanted 3 rows north; only 2 fit.
+		expect(gridBoxOf(s.mapData)).toEqual({ x: 0, y: -2, cols: 5, rows: 200 });
+		await exploreStep(s.plugin as never, { map: "tall", from: "2_0", to: "2_-2" });
+		expect(gridBoxOf(s.mapData)).toEqual({ x: 0, y: -2, cols: 5, rows: 200 });
+		await exploreStep(s.plugin as never, { map: "tall", from: "2_-2", to: "2_-1" });
+		expect(s.notices.filter((n) => n.includes(AT_MAX_SIZE))).toHaveLength(1);
+		// Sideways it still grows.
+		await exploreStep(s.plugin as never, { map: "tall", from: "1_5", to: "0_5" });
+		expect(gridBoxOf(s.mapData)).toMatchObject({ x: -3, cols: 8, rows: 200 });
+	});
+
+	it("capGrowth takes from the side growing more, and says when it cut", () => {
+		expect(capGrowth({ x: 0, y: 0, cols: 198, rows: 10 }, { top: 0, bottom: 0, left: 3, right: 1 }, 200)).toEqual({ room: { top: 0, bottom: 0, left: 1, right: 1 }, cut: true });
+		expect(capGrowth({ x: 0, y: 0, cols: 200, rows: 10 }, { top: 2, bottom: 0, left: 3, right: 0 }, 200)).toEqual({ room: { top: 2, bottom: 0, left: 0, right: 0 }, cut: true });
+		expect(capGrowth({ x: 0, y: 0, cols: 10, rows: 10 }, { top: 2, bottom: 0, left: 3, right: 0 }, 200)).toEqual({ room: { top: 2, bottom: 0, left: 3, right: 0 }, cut: false });
+	});
 });
