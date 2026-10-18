@@ -126,6 +126,7 @@ export class ChangeAreaModal extends HexmakerModal {
       if (!this.dir || blocked.has(this.dir)) this.dir = open[0]?.word;
       whereRow.createSpan({ cls: "duckmage-explore-where-label", text: "Which way?" });
       const ring = whereRow.createDiv({ cls: `duckmage-explore-ring is-${g.orientation}`, attr: { role: "radiogroup", "aria-label": "Which way?" } });
+    ring.createSpan({ cls: "duckmage-explore-dir-here", text: "●", attr: { title: "The party" } });
       for (const d of directions(g.orientation)) {
         const by = blocked.get(d.word);
         const b = ring.createEl("button", {

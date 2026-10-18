@@ -2049,14 +2049,16 @@ input.duckmage-input-error {
 }
 
 .duckmage-explore-area-add::before {
-    content: "+ ";
+    content: "+\00a0";
 }
 
+/* Which way? and How far?: a label column and a control column. */
 .duckmage-explore-where {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: max-content max-content;
+    justify-content: start;
     align-items: center;
-    gap: 0.4em;
+    gap: 0.4em 0.8em;
 }
 
 .duckmage-explore-where-label {
@@ -2075,6 +2077,14 @@ input.duckmage-input-error {
 .duckmage-explore-dir {
     padding: 0;
     height: 100%;
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-explore-dir-here {
+    grid-area: 2 / 2;
+    align-self: center;
+    justify-self: center;
+    color: var(--text-faint);
     font-size: var(--font-ui-smaller);
 }
 
@@ -2116,31 +2126,33 @@ input.duckmage-input-error {
 
 .duckmage-explore-start.is-flat .duckmage-explore-start-line {
     flex-direction: column;
-    margin-right: -0.3em;
+    gap: 2px;
+    margin-right: -0.45em;
 }
 
 .duckmage-explore-start.is-flat .duckmage-explore-start-line.is-shifted {
-    margin-top: 0.55em;
+    margin-top: 0.88em;
 }
 
 .duckmage-explore-start.is-pointy .duckmage-explore-start-line {
     flex-direction: row;
-    margin-bottom: -0.3em;
+    gap: 2px;
+    margin-bottom: -0.45em;
 }
 
 .duckmage-explore-start.is-pointy .duckmage-explore-start-line.is-shifted {
-    margin-left: 0.6em;
+    margin-left: 0.88em;
 }
 
-.duckmage-explore-start-hex {
-    width: 1.3em;
-    height: 1.1em;
+.duckmage-explore-start .duckmage-explore-start-hex {
+    width: 2em;
+    height: 1.73em;
     min-height: 0;
     padding: 0;
     border: none;
     border-radius: 0;
     box-shadow: none;
-    background: var(--background-modifier-border);
+    background: color-mix(in srgb, var(--text-faint) 40%, transparent);
     cursor: pointer;
 }
 
@@ -2149,20 +2161,20 @@ input.duckmage-input-error {
 }
 
 .duckmage-explore-start.is-pointy .duckmage-explore-start-hex {
-    width: 1.2em;
-    height: 1.35em;
+    width: 1.73em;
+    height: 2em;
     clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
 }
 
-.duckmage-explore-start-hex:hover {
-    background: var(--background-modifier-hover);
+.duckmage-explore-start .duckmage-explore-start-hex:hover {
+    background: var(--interactive-accent-hover);
 }
 
-.duckmage-explore-start-hex.is-seam {
-    background: var(--color-base-40, var(--background-modifier-border-hover));
+.duckmage-explore-start .duckmage-explore-start-hex.is-seam {
+    background: color-mix(in srgb, var(--text-muted) 70%, transparent);
 }
 
-.duckmage-explore-start-hex.is-active {
+.duckmage-explore-start .duckmage-explore-start-hex.is-active {
     background: var(--interactive-accent);
 }
 

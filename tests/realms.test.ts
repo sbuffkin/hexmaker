@@ -205,3 +205,23 @@ describe("the explore setup's options", () => {
     expect(defaultHome([])).toBeUndefined();
   });
 });
+
+describe("realms: a party doesn't start out at sea", () => {
+  it("the biggest walkable terrain goes first (onto the flower's start cell)", async () => {
+    const { walkableFirst } = await import("../src/hexflower/realmFlowers");
+    const T = [{ name: "ocean", color: "#00f", type: "water" }, { name: "grass", color: "#0f0", type: "grassland" }, { name: "lava", color: "#f00", impassable: true }];
+    const shares = [{ terrain: "ocean", weight: 5 }, { terrain: "lava", weight: 3 }, { terrain: "grass", weight: 2 }];
+    expect(walkableFirst(shares, T).map((s) => s.terrain)).toEqual(["grass", "ocean", "lava"]);
+    expect(walkableFirst([{ terrain: "ocean", weight: 1 }], T).map((s) => s.terrain)).toEqual(["ocean"]);
+  });
+});
+
+describe("realms: a realm's own centre is that realm", () => {
+  it("whatever the seed, so the party always starts at home", () => {
+    const realms = [realm("Home", "0_0", "home"), realm("Near", "3_0", "near")];
+    for (let seed = 0; seed < 200; seed++) {
+      expect(realmAt("0_0", realms, G, { seed })!.name).toBe("Home");
+      expect(realmAt("3_0", realms, G, { seed })!.name).toBe("Near");
+    }
+  });
+});

@@ -377,6 +377,9 @@ async function freshExtra(ctx) {
   // C10: a hex flower map explored in Play (only in a build with the hexflower slice).
   const hf = await ctx.ev((id) => window.__smokePage.hexFlowerSolo(id), ctx.pluginId);
   out.push({ check: "C10-hex-flower", ok: hf.ok, detail: hf.skipped ? `skipped: ${hf.skipped}` : [...hf.steps, ...hf.problems].join("; ") });
+  // C10b: New map's Explore as you go, powered by generators (HF8).
+  const ex = await ctx.ev((id) => window.__smokePage.exploreAsYouGo(id), ctx.pluginId);
+  out.push({ check: "C10b-explore-as-you-go", ok: ex.ok, detail: ex.skipped ? `skipped: ${ex.skipped}` : [...ex.steps, ...ex.problems].join("; ") });
   return out;
 }
 

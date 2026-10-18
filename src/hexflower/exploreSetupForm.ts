@@ -162,6 +162,7 @@ export function renderExploreSetup(el: HTMLElement, ctx: NewMapModeContext): voi
     where.createSpan({ cls: "duckmage-explore-where-label", text: "Which way?" });
     const blocked = blocking(at, area.reach);
     const ring = where.createDiv({ cls: `duckmage-explore-ring is-${g.orientation}`, attr: { role: "radiogroup", "aria-label": "Which way?" } });
+    ring.createSpan({ cls: "duckmage-explore-dir-here", text: "●", attr: { title: "The party" } });
     for (const d of directions(g.orientation)) {
       const by = blocked.get(d.word);
       const b = ring.createEl("button", {

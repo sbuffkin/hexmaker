@@ -6,13 +6,16 @@
  * your learned ones) gives terrains this palette has, fitted the way a real
  * map of it would be. The six biggest shares become the flower's patches
  * (fillFromShares), seeded by the map and the realm, so the same map always
- * makes the same flowers. A blend is the weighted sum of its shares.
+ * makes the same flowers; the biggest one the party can walk on (not
+ * impassable: water by default) sits on the start cell, so a party doesn't
+ * start out at sea. A blend is the weighted sum of its shares.
  *
  * The flowers are cached (RealmFlowers): one sample run per generator,
  * palette and seed.
  */
 
 import type { TerrainColor } from "../types";
+import { isImpassable } from "../impassable";
 import { optionsWithTuning, runGenerator, type TerrainGeneratorKind } from "../worldgen/registry";
 import { hashSeed } from "../arrival/arrival";
 import { emptyFlower, type Flower } from "./flower";
@@ -55,6 +58,13 @@ export function topShares(counts: ReadonlyMap<string, number>, terrains: readonl
   return [...out].map(([terrain, weight]) => ({ terrain, weight }))
     .sort((a, b) => b.weight - a.weight || a.terrain.localeCompare(b.terrain))
     .slice(0, max);
+}
+
+/** `shares` with the biggest walkable terrain first (fillFromShares starts the first one on the start cell). */
+export function walkableFirst(shares: readonly CellShare[], terrains: readonly TerrainColor[]): CellShare[] {
+  const byName = new Map(terrains.map((t) => [t.name, t]));
+  const i = shares.findIndex((s) => { const t = byName.get(s.terrain); return !t || !isImpassable(t); });
+  return i <= 0 ? [...shares] : [shares[i], ...shares.slice(0, i), ...shares.slice(i + 1)];
 }
 
 /** A generator's terrain shares on this palette (a seeded sample run), or why there are none. */
@@ -123,7 +133,7 @@ export class RealmFlowers {
       if ("error" in s) { problems.push(s.error); continue; }
       for (const [t, w] of s) sum.set(t, (sum.get(t) ?? 0) + w * src.weight);
     }
-    const shares = topShares(sum, ctx.terrains.map((t) => t.name));
+    const shares = walkableFirst(topShares(sum, ctx.terrains.map((t) => t.name)), ctx.terrains);
     if (!shares.length) return undefined;
     const flower = emptyFlower(realm.name, ctx.palette);
     flower.cells = fillFromShares(shares, hashSeed(ctx.mapSeed >>> 0, "realm-flower", realm.name.toLowerCase()));

@@ -154,3 +154,133 @@ export async function hexFlowerSolo(id) {
   await sleep(500);
   return out;
 }
+
+/**
+ * C10b Explore as you go (HF8). Through the real New map form: Terrain →
+ * Explore as you go (the size row says the map starts 3 × 3, a start grid
+ * of 9 hexes), the generator list picks the home generator, Add another
+ * area puts a second one north and near, a click on a hex moves the start,
+ * Create. Then the map: 3 × 3, two areas in explore-realms, the realms rule,
+ * the start hex filled from the home area's terrains and the party there;
+ * in Play, five steps north fill each hex from the areas' terrains and grow
+ * the map. The map stays for the C5 restart (nothing rewritten).
+ */
+export async function exploreAsYouGo(id) {
+  const app = window.app;
+  const p = app.plugins.plugins[id];
+  const store = p.mapStore;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (fn, ms = 6000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { const v = fn(); if (v) return v; await sleep(100); } return fn(); };
+  const out = { ok: true, steps: [], problems: [] };
+  const fail = (m) => { out.ok = false; out.problems.push(m); };
+  const kinds = p.moduleGenerators({ toPaths: () => ({ paths: [], missing: [] }), procGrid: (g) => ({ ...g, orientation: p.settings.hexOrientation }) });
+  if (!kinds.some((k) => k.id === "procedural:hex-flower")) return { ok: true, skipped: "the hexflower slice isn't in this build", steps: [], problems: [] };
+  const first = p.settings.maps[0]?.name;
+  if (!first) return { ok: false, steps: [], problems: ["no map to open New map from"] };
+  await p.showMap(first);
+  await sleep(800);
+  const view = app.workspace.getLeavesOfType("duckmage-hex-map")[0]?.view;
+  if (!view) return { ok: false, steps: [], problems: ["no map view"] };
+  view.setWorkMode("build");
+  view.containerEl.querySelector(".duckmage-region-btn")?.click();
+  const newBtn = await waitFor(() => document.querySelector(".duckmage-map-new-btn"));
+  if (!newBtn) return { ok: false, steps: [], problems: ["the Maps modal has no New map… button"] };
+  newBtn.click();
+  const modal = await waitFor(() => document.querySelector(".duckmage-setup-modal .duckmage-setup-form")?.closest(".modal"));
+  if (!modal) return { ok: false, steps: [], problems: ["New map didn't open"] };
+  const q = (sel) => modal.querySelector(sel);
+  const qa = (sel) => [...modal.querySelectorAll(sel)];
+  const visible = (el) => !!el && el.isConnected && el.offsetParent !== null;
+  const name = modal.querySelector(".duckmage-setup-name");
+  name.value = "Smoke Explore";
+  name.dispatchEvent(new Event("input", { bubbles: true }));
+  // Terrain: Generate it now / Explore as you go / Blank.
+  const cards = () => qa(".duckmage-wizard-scale-btn");
+  const modes = cards().map((c) => c.querySelector(".duckmage-wizard-orient-label")?.textContent);
+  if (!["Generate it now", "Explore as you go", "Blank"].every((m) => modes.includes(m))) fail(`Terrain choices: ${modes.join(", ")}`);
+  cards().find((c) => c.querySelector(".duckmage-wizard-orient-label")?.textContent === "Explore as you go")?.click();
+  const startGrid = await waitFor(() => qa(".duckmage-explore-start-hex").length === 9);
+  if (!startGrid) fail(`start grid: ${qa(".duckmage-explore-start-hex").length} hexes`);
+  const sizeSet = q(".duckmage-setup-size-set");
+  if (!visible(sizeSet) || !/^Starts 3 × 3/.test(sizeSet.textContent)) fail(`size line: ${sizeSet?.textContent} (shown ${visible(sizeSet)})`);
+  if (visible(q(".duckmage-setup-size-custom input"))) fail("the size fields still show");
+  // The home generator: the first row of the list (the default), its mix said under it.
+  const mixOf = () => (q(".duckmage-explore-mix")?.textContent ?? "").replace(/^Rolls on: |\.$/g, "").split(", ").map((t) => t.replace(/ \d+%$/, "")).filter(Boolean);
+  const homeMix = mixOf();
+  const homeName = q(".duckmage-explore-area.is-active")?.textContent?.replace(/^Home: /, "");
+  if (!homeMix.length) fail(`no mix for home: ${q(".duckmage-explore-mix")?.textContent}`);
+  // Another area: north, near, a different generator.
+  q(".duckmage-explore-area-add")?.click();
+  await waitFor(() => qa(".duckmage-explore-area").length === 2);
+  qa(".duckmage-explore-dir").find((d) => d.getAttribute("aria-label") === "north")?.click();
+  await sleep(200);
+  const far = q(".duckmage-explore-where select");
+  if (far) { far.value = "near"; far.dispatchEvent(new Event("change", { bubbles: true })); }
+  await sleep(200);
+  // The Explore setup's own list (the Generate list is on the form too, hidden): open its first group.
+  const groups = qa(".duckmage-setup-mode .duckmage-gen-pick-group");
+  groups[0]?.click();
+  await sleep(200);
+  const rows = qa(".duckmage-setup-mode .duckmage-gen-pick-row");
+  const other = rows.find((r) => !r.classList.contains("is-active"));
+  const otherName = other?.querySelector(".duckmage-gen-pick-name")?.textContent ?? "";
+  other?.click();
+  await sleep(300);
+  const areaMix = mixOf();
+  const areaChip = (qa(".duckmage-explore-area")[1]?.textContent ?? "").replace(/✕$/, "");
+  if (areaChip !== `North, near: ${otherName}`) fail(`second area: ${areaChip} (picked ${otherName} of ${rows.length} rows, ${groups.length} groups)`);
+  // Start on the bottom-middle hex.
+  qa(".duckmage-explore-start-hex").find((h) => h.getAttribute("aria-label") === "1, 2")?.click();
+  await sleep(300);
+  if (q(".duckmage-explore-start-hex.is-active")?.getAttribute("aria-label") !== "1, 2") fail("the start hex didn't move");
+  if (out.ok) out.steps.push(`New map: Explore as you go, home ${homeName} (${homeMix.join(", ")}), ${areaChip} (${areaMix.join(", ")}), start 1, 2`);
+  q(".duckmage-setup-actions .mod-cta")?.click();
+  const made = await waitFor(() => p.settings.maps.find((m) => p.mapLabel(m.name) === "Smoke Explore"), 10000);
+  if (!made) { fail("the map wasn't made"); return out; }
+  await store.flush?.();
+  await sleep(1200);
+  const map = p.getMap(made.name);
+  if (map.gridSize.cols !== 3 || map.gridSize.rows !== 3) fail(`size ${map.gridSize.cols}×${map.gridSize.rows}`);
+  if ((map.exploreRealms ?? []).length !== 2) fail(`explore-realms: ${JSON.stringify(map.exploreRealms)}`);
+  if (JSON.stringify(map.exploreWith) !== JSON.stringify(["(realms) -> terrain"])) fail(`explore-with: ${JSON.stringify(map.exploreWith)}`);
+  const startTerrain = store.get(made.name, "1_2")?.terrain;
+  if (!startTerrain || !homeMix.includes(startTerrain)) fail(`start hex 1_2: ${startTerrain} (home rolls on ${homeMix.join(", ")})`);
+  // Not out at sea: the start is the biggest terrain the party can walk on.
+  const startColor = p.getPaletteOrPresetTerrains(map.paletteName).find((t) => t.name === startTerrain);
+  if (startColor && (startColor.impassable ?? /water/.test(startColor.type ?? ""))) fail(`the party starts on ${startTerrain} (impassable)`);
+  const note = await app.vault.adapter.read(store.notePath(made.name));
+  if (!/^explore-realms:/m.test(note)) fail("the map note has no explore-realms");
+  const both = new Set([...homeMix, ...areaMix]);
+  const bad = [...store.all(made.name)].filter(([, h]) => h.terrain && !both.has(h.terrain)).map(([k, h]) => `${k} ${h.terrain}`);
+  if (bad.length) fail(`terrain from outside the areas: ${bad.join(", ")}`);
+  if (out.ok) out.steps.push(`made ${made.name}: 3×3, 2 areas, 1_2 ${startTerrain}, ${[...store.all(made.name)].filter(([, h]) => h.terrain).length} hexes seen`);
+  // Play: five steps north.
+  await waitFor(() => view.activeMapName === made.name, 4000);
+  if (view.activeMapName !== made.name) { await p.showMap(made.name); await sleep(800); }
+  view.setWorkMode("play");
+  await sleep(400);
+  const partyNow = () => { view.tokens.loadTokensForMap(); return view.tokens.tokenEntries.find((t) => t.party); };
+  if (partyNow()?.hex !== "1_2") fail(`party on ${partyNow()?.hex}`);
+  const rows0 = map.gridSize.rows;
+  const walked = [];
+  for (let i = 0; i < 5; i++) {
+    const t = partyNow();
+    if (!t) { fail("no party"); break; }
+    const [x, y] = t.hex.split("_").map(Number);
+    await view.tokens.moveParty(t, `${x}_${y - 1}`);
+    await sleep(600);
+    walked.push(`${x}_${y - 1} ${store.get(made.name, `${x}_${y - 1}`)?.terrain ?? "?"}`);
+  }
+  const blank = walked.filter((w) => / \?$/.test(w));
+  if (blank.length) fail(`steps left blank: ${blank.join(", ")}`);
+  const outside = [...store.all(made.name)].filter(([, h]) => h.terrain && !both.has(h.terrain)).map(([k, h]) => `${k} ${h.terrain}`);
+  if (outside.length) fail(`after the walk, terrain from outside the areas: ${outside.join(", ")}`);
+  if (p.getMap(made.name).gridSize.rows <= rows0) fail(`the map didn't grow (rows ${p.getMap(made.name).gridSize.rows})`);
+  const areaBtn = view.containerEl.querySelector(".duckmage-party-controls")?.textContent ?? "";
+  if (out.ok) out.steps.push(`walked north: ${walked.join(", ")}; rows ${rows0} → ${p.getMap(made.name).gridSize.rows}${areaBtn ? `; party controls: ${areaBtn.trim().slice(0, 60)}` : ""}`);
+  view.setWorkMode("build");
+  await p.saveSettings();
+  await store.flush?.();
+  await sleep(500);
+  return out;
+}

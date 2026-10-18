@@ -605,7 +605,6 @@ export class NewMapSetupModal extends HexmakerModal {
     const actions = contentEl.createDiv({ cls: "duckmage-setup-actions" });
     const goBtn = actions.createEl("button", { cls: "mod-cta" });
     const genBtn = actions.createEl("button", { text: "Open in generator", attr: { title: "Create the map blank and open the generator view on it to tune generation by hand" } });
-    genBtn.toggle(!!genPage()); // only with the generator page in this build
     actions.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 
     let tuneTimer: number | undefined;
@@ -782,6 +781,7 @@ export class NewMapSetupModal extends HexmakerModal {
       ];
       disclosure.refreshSet();
       goBtn.setText(mode !== GENERATE_MODE ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
+      genBtn.toggle(!!genPage() && mode === GENERATE_MODE); // only with the generator page in this build
       syncWeight?.();
     };
 

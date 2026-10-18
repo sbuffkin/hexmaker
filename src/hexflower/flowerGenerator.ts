@@ -154,13 +154,12 @@ export function startFill(
   return { cells, at };
 }
 
-/** The flower of each hex for realms `realms` (undefined where a realm has none); the party starts at home. */
+/** The flower of each hex for realms `realms` (undefined where a realm has none). */
 function realmFlowerAt(plugin: HexmakerPlugin, realms: readonly Realm[], terrains: TerrainColor[], palette: string, seed: number, g: Geometry, kinds?: readonly TerrainGeneratorKind[]): (hex: string) => Flower | undefined {
   const ex = exploreOf(plugin);
   const flowers = new Map(realms.map((r) => [r.name, ex?.realmFlower(r, terrains, palette, seed, kinds)?.flower]));
-  const home = realms.find((r) => r.reach === "home");
   return (hex) => {
-    const r = home && hex === home.centre ? home : realmAt(hex, realms, g, { seed });
+    const r = realmAt(hex, realms, g, { seed });
     return r ? flowers.get(r.name) : undefined;
   };
 }

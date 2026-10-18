@@ -101,7 +101,7 @@ describe("genpage: New map and the setup wizard make maps from generators withou
 
 	it("New map, Maps and World maps open the page only through genPage(), never by name", () => {
 		const newMap = readSurface("new-map-setup");
-		expect(newMap).toContain("genBtn.toggle(!!genPage());");
+		expect(newMap).toContain("genBtn.toggle(!!genPage() && mode === GENERATE_MODE);");
 		expect(newMap).toContain("await genPage()?.open(this.plugin, {");
 		const maps = readSurface("map-modal");
 		expect(maps).toMatch(/if \(existing && page\) \{\n\s+layers\.add\("MapModal\.mapRowContextGenerator"/);

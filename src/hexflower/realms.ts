@@ -279,10 +279,13 @@ export function influence(hex: string, realms: readonly Realm[], g: Geometry, op
 /**
  * The realm hex `hex` is rolled on: a seeded pick weighted by influence
  * (borders mix, interiors are pure), or the strongest with sharp borders.
+ * A realm's own centre is always that realm (the party starts at home).
  * The same hex always gives the same realm, whatever the walk.
  */
 export function realmAt(hex: string, realms: readonly Realm[], g: Geometry, opts: { seed: number; borders?: Borders }): Realm | undefined {
   if (realms.length <= 1) return realms[0];
+  const centred = realms.find((r) => r.centre === hex);
+  if (centred) return centred;
   const w = influence(hex, realms, g, opts);
   if (opts.borders === "sharp") return realms[w.indexOf(Math.max(...w))];
   let roll = mulberry32(hashSeed(opts.seed >>> 0, hex, "realm"))();
