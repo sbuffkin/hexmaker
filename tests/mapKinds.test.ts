@@ -186,7 +186,8 @@ describe("generator registry visibility", () => {
 	it("space users see everything", async () => {
 		const plugin = pluginWith(learned, ["world", "space"]);
 		const all = await listGeneratorKinds(plugin);
-		expect(visibleKinds(all, plugin.settings, new Set())).toHaveLength(all.length);
+		// Every one but a New map mode's (Explore as you go: never listed, HF8).
+		expect(visibleKinds(all, plugin.settings, new Set())).toHaveLength(all.filter((k) => !k.unlisted).length);
 	});
 });
 

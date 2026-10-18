@@ -20,11 +20,11 @@ import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { addGeneratedPaths, pathColors } from "./generators";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
-import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder, selectAllOnFocus, slugify } from "../utils";
-import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
+import { getIconUrl, importBinaryFileToVault, mapBgImportFolder, selectAllOnFocus, slugify } from "../utils";
+import { renderBackgroundRow, type NewMapBackground } from "./newMapSetup/background";
 import { attrsForTerrain } from "./tableSources";
 import { rowSubmapDefault } from "../arrival/arrival";
-import { genPage, moduleArrivalTables, moduleNewMapSetup, moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "../modules/runtime";
+import { genPage, moduleArrivalTables, moduleNewMapModes, moduleNewMapSetup, moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "../modules/runtime";
 import { scaleGenerators, scalePalette, scalesFor, type MapScaleDef } from "../mapScales";
 import { scaleStarter } from "../wizardKinds";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "../ui/mapScaleForm";
@@ -38,10 +38,11 @@ import { Disclosure } from "../ui/disclosure";
 import { makeScrubbable } from "../ui/scrub";
 import { groupId } from "../ui/placeGroup";
 import { newMapOptionId } from "./newMapOptionIds";
+import { renderGeneratorCards } from "./newMapSetup/generatorPicker";
+import { BLANK_MODE, GENERATE_MODE, mapModeChoices, modeOfKind, type MapModeChoice } from "./newMapSetup/modes";
 import {
   BLANK_ID,
   defaultGeneratorFor,
-  describeKind,
   firstMapGenerator,
   kindsForPalette,
   listGeneratorKinds,
@@ -145,9 +146,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private originX = 0;
   private originY = 0;
   private stagger: "odd" | "even";
-  private bgPath: string | null = null;
-  /** An image dropped from the computer: imported into the new map's _bg folder on create. */
-  private bgFile: File | null = null;
+  /** A vault image, or one dropped from the computer (imported into the new map's _bg folder on create). */
+  private bg: NewMapBackground = { path: null, file: null };
   /** This form's Advanced dropdown (and Debug inside it); made by render(). */
   private advanced: Disclosure | undefined;
   /**
@@ -516,6 +516,26 @@ export class NewMapSetupModal extends HexmakerModal {
       }
     }
 
+    // ── Terrain (HF8 B1): generate it now, a module's mode (explore as you go) or blank ──
+    const modeChoices = mapModeChoices(this.asRegion ? [] : moduleNewMapModes());
+    const modeRow = this.row(form, "Terrain");
+    const modeLabelId = `duckmage-setup-field-${NewMapSetupModal.nextId++}`;
+    modeRow.parentElement?.addClass("duckmage-setup-scale");
+    modeRow.parentElement?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", modeLabelId);
+    const modeNow = () => modeOfKind(this.kindId, modeChoices);
+    /** The generators listed for the palette now (Blank aside), for picking "Generate it now". */
+    let listed: TerrainGeneratorKind[] = [];
+    const pickMode = (c: MapModeChoice) => {
+      if (modeNow() === c.id) return;
+      this.pickedKind = true; this.options = {};
+      const where = { parentHex: !!this.origin, neighbour: !!this.placement };
+      const generated = defaultGeneratorFor(listed, where);
+      this.kindId = c.id === BLANK_MODE ? BLANK_ID : c.generatorId ?? (generated !== BLANK_ID ? generated : listed[0]?.id ?? BLANK_ID);
+      renderGenerators();
+      refresh();
+    };
+    const modeCards = renderScaleCards(modeRow, modeChoices, { labelId: modeLabelId, selected: modeNow, pick: pickMode });
+
     // ── Generator ──
     const genRow = this.row(form, "Generator");
     // aria-labelledby (the row label), not aria-label: Obsidian shows aria-label as a tooltip.
@@ -523,6 +543,8 @@ export class NewMapSetupModal extends HexmakerModal {
     genRow.parentElement?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", genLabelId);
     const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-labelledby": genLabelId } });
     this.rememberBox(genRow, "generator", "NewMap.rememberGenerator", "generator and its options");
+    /** A module's mode draws its setup here, in place of the list. */
+    const modeBox = form.createDiv({ cls: "duckmage-setup-mode" });
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
     /** The chosen generator's options placed off the main form, one box per section (Advanced, Debug). */
     const optBoxes = new Map<HTMLElement, HTMLElement>();
@@ -582,7 +604,7 @@ export class NewMapSetupModal extends HexmakerModal {
         yIn = y;
       }
       const bgEl = disclosure.target(groupId(["NewMap.bgPick", "NewMap.bgClear", "NewMapSetup.backgroundImagePicker"]), form);
-      if (bgEl) this.renderBackgroundRow(bgEl);
+      if (bgEl) renderBackgroundRow(this.row(bgEl, "Background image"), this.app, this.plugin, this.bg);
       // Next to a map, its neighbour decides the numbering and stagger.
       // The locked fields show what the neighbour decided, as the summary
       // does (fresh-eyes F7: they kept saying 0, 0 beside "Hexes 18, 0 to …").
@@ -668,7 +690,9 @@ export class NewMapSetupModal extends HexmakerModal {
           picked: this.pickedKind,
         });
       }
-      const stillFits = fitting.some((k) => k.id === this.kindId);
+      // A module's mode is on its unlisted generator (while it fits the palette).
+      const onMode = modeChoices.some((c) => c.generatorId === this.kindId) && !!this.kind()?.fits(terrains);
+      const stillFits = onMode || fitting.some((k) => k.id === this.kindId);
       // Placed next to a map and no generator picked yet: start on one
       // that continues the neighbour's edge.
       if (!stillFits || (where.neighbour && !this.pickedKind && this.kindId === BLANK_ID)) {
@@ -688,27 +712,19 @@ export class NewMapSetupModal extends HexmakerModal {
           this.options = {};
         }
       }
-      genList.empty();
       const anchor = this.placement?.anchor;
-      for (const k of fitting) {
-        const on = k.id === this.kindId;
-        const card = genList.createEl("button", {
-          cls: `duckmage-setup-gen${on ? " is-active" : ""}`,
-          attr: { role: "radio", "aria-checked": on ? "true" : "false" },
-        });
-        card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
+      listed = fitting.filter((k) => k.id !== BLANK_ID);
+      const mode = modeNow();
+      modeCards.sync();
+      genRow.parentElement?.toggle(mode === GENERATE_MODE);
+      renderGeneratorCards(genList, {
+        kinds: listed,
+        terrains,
+        selected: this.kindId,
         // Region detail says what this hex's neighbours will do, not a generic example.
-        const desc = k.id === REGION_DETAIL_ID && this.origin ? regionDetailDescription(this.context) : describeKind(k, terrains);
-        card.createDiv({ cls: "duckmage-setup-gen-desc", text: desc });
-        if (where.neighbour && k.id !== BLANK_ID) {
-          card.createDiv({
-            cls: `duckmage-setup-gen-seam${k.continuesNeighbours ? " is-continues" : ""}`,
-            text: k.continuesNeighbours
-              ? `Continues ${anchor ? this.plugin.mapLabel(anchor) : "the neighbour"}'s edge`
-              : `Ignores ${anchor ? this.plugin.mapLabel(anchor) : "the neighbour"}'s edge`,
-          });
-        }
-        card.addEventListener("click", () => {
+        describe: (k) => (k.id === REGION_DETAIL_ID && this.origin ? regionDetailDescription(this.context) : undefined),
+        ...(where.neighbour ? { neighbour: anchor ? this.plugin.mapLabel(anchor) : "the neighbour" } : {}),
+        pick: (k) => {
           this.kindId = k.id;
           this.pickedKind = true;
           this.options = {};
@@ -722,8 +738,21 @@ export class NewMapSetupModal extends HexmakerModal {
             if (paletteSelect.value !== palette) renderBase();
             refresh();
           }, () => genList.querySelector<HTMLElement>(".duckmage-setup-gen.is-active"));
-        });
-      }
+        },
+      });
+      // A module's mode: its own setup where the list was.
+      modeBox.empty();
+      moduleNewMapModes().find((m) => m.id === mode)?.render?.(modeBox, {
+        plugin: this.plugin,
+        paletteName: paletteSelect.value,
+        terrains,
+        generators: listed,
+        options: this.options,
+        changed: (o) => { if (o?.options) renderGenerators(); refresh(); },
+        target: (id, fallback) => disclosure.target(id, fallback),
+        grid: () => this.grid(),
+        ...(this.placement ? { joins: this.placement.side } : {}),
+      });
       const hidden = pool.length - fitting.length;
       if (hidden > 0) {
         genList.createDiv({
@@ -800,7 +829,7 @@ export class NewMapSetupModal extends HexmakerModal {
         ...renderScaleChoices(optsBox, moduleScaleChoices(scale?.id, kind?.id), this.scaleChoices, disclosure, "NewMap"),
       ];
       disclosure.refreshSet();
-      goBtn.setText(this.kindId === BLANK_ID ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
+      goBtn.setText(mode !== GENERATE_MODE ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
       syncWeight?.();
     };
 
@@ -925,39 +954,6 @@ export class NewMapSetupModal extends HexmakerModal {
     cb.checked = this.remember[key];
     label.createSpan({ text: `Use this ${what} for new submaps of ${this.originTerrain} hexes` });
     cb.addEventListener("change", () => { this.remember[key] = cb.checked; });
-  }
-
-  /** Background image for a new top-level map: pick, drop or clear (imported on create). */
-  private renderBackgroundRow(parent: HTMLElement): void {
-    const bgRowEl = this.row(parent, "Background image");
-    bgRowEl.addClass("duckmage-bg-image-row");
-    const none = "(None) — drop an image here";
-    const bgLabel = bgRowEl.createSpan({ cls: "duckmage-bg-image-path", text: this.bgFile ? `${this.bgFile.name} (imported on create)` : (this.bgPath ?? none) });
-    const pick = bgRowEl.createEl("button", { text: "Pick image…" });
-    const clear = bgRowEl.createEl("button", { text: "Clear" });
-    clear.disabled = !this.bgPath && !this.bgFile;
-    pick.addEventListener("click", () => {
-      new FileLinkSuggestModal(this.app, this.plugin, (file) => {
-        this.bgPath = file.path;
-        this.bgFile = null;
-        bgLabel.setText(file.path);
-        clear.disabled = false;
-      }, "", IMAGE_EXTENSIONS).open();
-    });
-    clear.addEventListener("click", () => {
-      this.bgPath = null;
-      this.bgFile = null;
-      bgLabel.setText(none);
-      clear.disabled = true;
-    });
-    // An image dragged in from the computer, as in Properties: imported
-    // into the new map's _bg folder when the map is created.
-    attachImageDropZone(bgRowEl, async (file) => {
-      this.bgFile = file;
-      this.bgPath = null;
-      bgLabel.setText(`${file.name} (imported on create)`);
-      clear.disabled = false;
-    });
   }
 
   /** Store (or forget) the ticked choices as this terrain's submap defaults. */
@@ -1137,11 +1133,11 @@ export class NewMapSetupModal extends HexmakerModal {
     if (scale) await runScaleMapMade(this.plugin, scale.id, madeWith);
     if (!openGenerator) await effective?.afterCreate?.(this.plugin, madeWith);
     let backgroundImage: string | undefined;
-    let bgPath = this.origin ? null : this.bgPath;
-    if (!this.origin && this.bgFile) {
+    let bgPath = this.origin ? null : this.bg.path;
+    if (!this.origin && this.bg.file) {
       try {
         goBtn.setText("Importing background…");
-        bgPath = await importBinaryFileToVault(this.plugin, this.bgFile, mapBgImportFolder(this.plugin.settings.hexFolder, result.name));
+        bgPath = await importBinaryFileToVault(this.plugin, this.bg.file, mapBgImportFolder(this.plugin.settings.hexFolder, result.name));
       } catch (e) {
         new Notice(`Background import failed: ${e instanceof Error ? e.message : String(e)}`);
         bgPath = null;

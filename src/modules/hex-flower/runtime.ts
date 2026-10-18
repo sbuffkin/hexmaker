@@ -12,7 +12,7 @@ import { flowerStoreOf, setExplore, setFlowerStore, terrainColors } from "../../
 import { ExploreService } from "../../hexflower/ExploreService";
 import { exploreFrontier, exploreHexMenu, explorePartyControls, exploreStep } from "../../hexflower/exploreHooks";
 import { drawFlowerList, renderFlowerPanel } from "../../hexflower/FlowerPanel";
-import { HEX_FLOWER_GENERATOR_ID, hexFlowerGenerator } from "../../hexflower/flowerGenerator";
+import { EXPLORE_MODE, HEX_FLOWER_GENERATOR_ID, hexFlowerGenerator } from "../../hexflower/flowerGenerator";
 import { EXPLORE_PROPS } from "../../hexflower/exploreProps";
 import { drawFlower } from "../../hexflower/flowerView";
 
@@ -34,8 +34,9 @@ function stores(plugin: HexmakerPlugin): ModuleStore[] {
 export const hexFlowerRuntime: ModuleRuntime = {
   id: "hex-flower",
   stores,
-  // The Hex flower card, on every map scale right after Blank.
+  // The Hex flower generator: never listed, New map's "Explore as you go" makes maps with it (HF8).
   generators: (plugin, helpers) => [hexFlowerGenerator(plugin, helpers)],
+  newMapModes: [EXPLORE_MODE],
   newMapOptionIds: { [HEX_FLOWER_GENERATOR_ID]: { party: "NewMap.flowerParty", reveal: "NewMap.flowerReveal" } },
   mapProperties: [EXPLORE_PROPS],
   play: { onEnter: exploreStep, partyControls: explorePartyControls },

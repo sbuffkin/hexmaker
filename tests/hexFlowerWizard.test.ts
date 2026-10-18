@@ -40,14 +40,14 @@ function setup() {
 }
 
 describe("the Hex flower card", () => {
-	it("is offered on every scale right after Blank, and never the one a scale starts on", () => {
+	it("is never in a scale's generator list (HF8: New map's Explore as you go makes maps with it)", () => {
 		const { kind } = setup();
 		expect(kind.id).toBe(HEX_FLOWER_GENERATOR_ID);
+		expect(kind.unlisted).toBe(true);
+		expect(kind.everyScale).toBeUndefined();
 		for (const scale of registry.mapScales()) {
-			const all = [{ id: "blank", source: "blank" as const }, ...scale.generators.map((id) => ({ id, source: "built-in" as const })), kind];
-			const list = scaleGenerators(scale, all);
-			expect(list[1].id).toBe(HEX_FLOWER_GENERATOR_ID);
-			expect(scaleStarter(list)).not.toBe(HEX_FLOWER_GENERATOR_ID);
+			const all = [{ id: "blank", source: "blank" as const }, ...scale.generators.map((id) => ({ id, source: "built-in" as const }))];
+			expect(scaleStarter(scaleGenerators(scale, all))).not.toBe(HEX_FLOWER_GENERATOR_ID);
 		}
 	});
 

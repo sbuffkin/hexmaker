@@ -106,8 +106,8 @@ describe("Note pickers say what they're for (template pickers list templates)", 
 describe("New map form: a background image can be dropped from the computer", () => {
 	const src = readSurface("new-map-setup");
 	it("the More section's background row is a drop zone, imported into the map's _bg folder on create", () => {
-		expect(src).toMatch(/attachImageDropZone\(bgRowEl,/);
-		expect(src).toMatch(/importBinaryFileToVault\(this\.plugin, this\.bgFile, mapBgImportFolder\(this\.plugin\.settings\.hexFolder, result\.name\)\)/);
+		expect(src).toMatch(/attachImageDropZone\(row,/);
+		expect(src).toMatch(/importBinaryFileToVault\(this\.plugin, this\.bg\.file, mapBgImportFolder\(this\.plugin\.settings\.hexFolder, result\.name\)\)/);
 	});
 	it("Properties uses the same shared drop zone and folder", () => {
 		const modal = readSurface("map-modal");

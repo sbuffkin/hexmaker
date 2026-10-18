@@ -3,7 +3,7 @@
  * helpers in page.mjs (sent as source text, so it must be self-contained).
  *
  * In a build with the hexflower slice (skipped otherwise): the setup
- * wizard lists Hex flower right after Blank; a map made with it (as the
+ * wizard doesn't list Hex flower (HF8: a kind of map, not a generator); a map made with it (as the
  * wizard does: generate, createNewMap, afterCreate) has only its middle
  * hex filled, a Party token there, a hex flower note and explore-with; in
  * Play a party step into a blank neighbour fills it, and the view's undo
@@ -24,7 +24,7 @@ export async function hexFlowerSolo(id) {
   const kinds = p.moduleGenerators({ toPaths: () => ({ paths: [], missing: [] }), procGrid: (g) => ({ ...g, orientation: p.settings.hexOrientation }) });
   const kind = kinds.find((k) => k.id === "procedural:hex-flower");
   if (!kind) return { ok: true, skipped: "the hexflower slice isn't in this build", steps: [], problems: [] };
-  // The wizard's generator list: Blank, then Hex flower.
+  // HF8: exploring is a kind of map (New map's Explore as you go), never in a generator list.
   const leaf = app.workspace.getLeavesOfType("duckmage-setup-wizard")[0];
   if (leaf) {
     const wiz = leaf.view;
@@ -32,8 +32,8 @@ export async function hexFlowerSolo(id) {
     wiz.renderView();
     const gens = () => [...wiz.contentEl.querySelectorAll(".duckmage-setup-gen .duckmage-setup-gen-title")].map((e) => e.textContent);
     await waitFor(() => gens().length > 1);
-    if (gens()[1] !== "Hex flower") fail(`wizard generators: ${gens().join(", ")}`);
-    else out.steps.push("wizard: Blank, Hex flower, …");
+    if (gens().includes("Hex flower")) fail(`wizard lists Hex flower: ${gens().join(", ")}`);
+    else out.steps.push("wizard: no Hex flower in the list");
   }
   // Make the map as the wizard does.
   const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;

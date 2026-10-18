@@ -1,6 +1,8 @@
 /**
- * The "Hex flower" generator card (plan-hex-flower, phase 6): offered on
- * every map scale of the setup wizard and New map, right after Blank.
+ * The "Hex flower" generator (plan-hex-flower, phase 6): never in a
+ * generator list (HF8, owner 2026-10-18: exploring is a kind of map, not a
+ * generator); New map's "Explore as you go" makes maps with it
+ * (EXPLORE_MODE).
  *
  * Options: Flower (new from this palette, or one of the vault's flowers),
  * Start (blank, filled as the party explores; or the whole map now), Party
@@ -151,7 +153,15 @@ export async function addPartyToken(plugin: HexmakerPlugin, mapName: string, hex
   await applyTokenFrontmatter(plugin.app, file.path, { hex, map: mapName, visible: true, party: true });
 }
 
-/** The generator card. */
+/** New map's "Explore as you go" (HF8 B1): a map made with the Hex flower generator. */
+export const EXPLORE_MODE = {
+  id: "explore",
+  label: "Explore as you go",
+  desc: "Starts with only the party's hex: each hex they walk into is filled as they go.",
+  generatorId: HEX_FLOWER_GENERATOR_ID,
+};
+
+/** The generator. */
 export function hexFlowerGenerator(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelpers): GeneratorContribution {
   const names = () => flowerStoreOf(plugin)?.list().map((e) => e.flower.name) ?? [];
   return {
@@ -160,7 +170,7 @@ export function hexFlowerGenerator(plugin: HexmakerPlugin, { toPaths, procGrid }
     label: "Hex flower",
     description: "Starts blank: each hex the party walks into is filled from a hex flower made from this palette.",
     source: "built-in",
-    everyScale: true,
+    unlisted: true,
     options: [flowerOption([]), FLOWER_OPTIONS.start, FLOWER_OPTIONS.party, FLOWER_OPTIONS.reveal],
     optionsFor: () => [flowerOption(names()), FLOWER_OPTIONS.start, FLOWER_OPTIONS.party, FLOWER_OPTIONS.reveal],
     fits: (terrains) => terrains.length > 0,

@@ -32,6 +32,7 @@ import type {
   MapOverlayDef,
   MapPropertiesSection,
   NewMapSetupExtra,
+  NewMapModeContribution,
   ModuleRuntime,
   ModuleStore,
   RefLinker,
@@ -234,6 +235,11 @@ export function moduleMapProperties(): MapPropertiesSection[] {
 /** The New map setup extras for generator `generatorId`, in module order. */
 export function moduleNewMapSetup(generatorId: string): NewMapSetupExtra[] {
   return MODULE_RUNTIMES.flatMap((m) => (m.newMapSetup ?? []).filter((x) => x.forGenerators.includes(generatorId)));
+}
+
+/** The kinds of map New map offers beside Generate it now and Blank, in module order. */
+export function moduleNewMapModes(): NewMapModeContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.newMapModes ?? [])]);
 }
 
 /** The table source for rolls on arrival: the first module that answers. */

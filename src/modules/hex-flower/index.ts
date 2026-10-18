@@ -4,7 +4,8 @@
  * each new hex is rolled on one or more hex flowers (a 19-cell flower of
  * results walked with 2d6) or tables. Flowers are notes the user makes
  * from their own palette; nothing is shipped. Not a map type: it works on
- * any map. Pure data; what needs the plugin is in ./runtime.ts.
+ * any map, and New map makes one with "Explore as you go" (HF8). Pure
+ * data; what needs the plugin is in ./runtime.ts.
  */
 
 import type { HexmakerModule } from "../types";
@@ -55,6 +56,7 @@ export const hexFlowerModule: HexmakerModule = {
       "Fill from palette",
       "Test walk",
       "Hex flowers folder",
+      "Explore as you go",
     ],
   },
 };

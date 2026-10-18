@@ -439,6 +439,43 @@ export interface NewMapSetupExtra {
 }
 
 /**
+ * A kind of map New map offers beside "Generate it now" and "Blank" (Hex
+ * flower: Explore as you go, HF8). Made by a generator that's never in the
+ * generator list (TerrainGeneratorKind.unlisted): its preview, size and
+ * what it writes after the map is made. The mode draws its own setup where
+ * the list sits; the generator's options show below it as usual.
+ */
+export interface NewMapModeContribution {
+  id: string;
+  label: string;
+  /** One line under the choices while it's picked. */
+  desc: string;
+  /** The (unlisted) generator that makes such a map. */
+  generatorId: string;
+  /** Its setup, in place of the generator list. */
+  render?(el: HTMLElement, ctx: NewMapModeContext): void;
+}
+
+/** What a New map mode's setup knows about the form (NewMapModeContribution.render). */
+export interface NewMapModeContext {
+  plugin: HexmakerPlugin;
+  paletteName: string;
+  terrains: TerrainColor[];
+  /** The generators the form would list for this palette (Blank and unlisted ones left out). */
+  generators: readonly TerrainGeneratorKind[];
+  /** The generator's options: set in place, then call changed(). */
+  options: Record<string, string>;
+  /** Redraw the preview (and the options, with `options: true`). */
+  changed(opts?: { options?: boolean }): void;
+  /** Where placement id `id` goes on the form (null: hidden); `fallback` when it's main. */
+  target(id: string, fallback: HTMLElement): HTMLElement | null;
+  /** The new map's grid as the form stands. */
+  grid(): GridSpec;
+  /** Next to a map: the side the new one joins (its seam is that edge of the new map). */
+  joins?: "east" | "west" | "north" | "south";
+}
+
+/**
  * A yes/no choice a map scale adds beside its generator on the setup
  * wizard's first map and New map (World maps' Biomes: "Make every region
  * now"). Each surface places it by its own id (src/ui/placement.ts).
@@ -636,6 +673,8 @@ export interface ModuleRuntime {
   mapProperties?: readonly MapPropertiesSection[];
   /** Additions to New map setup. */
   newMapSetup?: readonly NewMapSetupExtra[];
+  /** Kinds of map New map offers beside Generate it now and Blank. */
+  newMapModes?: readonly NewMapModeContribution[];
   /** Hooks for places made on arrival. */
   arrival?: ArrivalHooks;
   /**

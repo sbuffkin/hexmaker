@@ -14,14 +14,15 @@ import type { Disclosure } from "./disclosure";
 import { renderLabeledSlider } from "./sliders";
 
 /**
- * "What are you mapping?": a radio group of scale cards in `parent`
+ * "What are you mapping?": a radio group of scale cards in `parent` (New
+ * map's "Terrain" choice uses it too)
  * (labelled by the element with id `labelId`). Clicking, Enter / Space and
  * the arrow keys pick; `sync()` redraws which one is ticked.
  */
-export function renderScaleCards(
+export function renderScaleCards<S extends Pick<MapScaleDef, "id" | "label" | "description">>(
 	parent: HTMLElement,
-	scales: readonly MapScaleDef[],
-	opts: { labelId: string; selected: () => string | undefined; pick: (scale: MapScaleDef) => void },
+	scales: readonly S[],
+	opts: { labelId: string; selected: () => string | undefined; pick: (scale: S) => void },
 ): { sync: () => void } {
 	const row = parent.createDiv({
 		cls: "duckmage-wizard-orient-row duckmage-wizard-scale-row",

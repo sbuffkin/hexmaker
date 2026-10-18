@@ -207,8 +207,8 @@ describe("generators, engines and table roles through modules (P3)", () => {
       ["procedural:overland", "world"], ["procedural:world-biomes", "world-maps"], ["procedural:planet-surface", "space"],
     ];
     expect(gens.map((g) => g.id)).toEqual(order.filter(([, m]) => moduleOn(m)).map(([id]) => id));
-    // Each generator is tagged with a map type a module provides (Hex flower: none, it fits any map, on every scale).
-    for (const g of gens) if (!g.everyScale) expect(registry.kindIds()).toContain(g.mapKind);
+    // Each generator is tagged with a map type a module provides (Hex flower: none, it fits any map and is never listed).
+    for (const g of gens) if (!g.everyScale && !g.unlisted) expect(registry.kindIds()).toContain(g.mapKind);
   });
 
   itWith("space", "first-map generators and background terrains come from the map types", () => {

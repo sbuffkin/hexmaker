@@ -123,6 +123,12 @@ export interface TerrainGeneratorKind {
   /** Offered on every map scale of the setup wizard and New map, right after Blank. */
   everyScale?: boolean;
   /**
+   * Never in a generator list: only a New map mode makes maps with it
+   * (NewMapModeContribution.generatorId). Still found by id, so saves and
+   * saved submap defaults that name it resolve.
+   */
+  unlisted?: boolean;
+  /**
    * After a map is made with it (setup wizard, New map): what it writes
    * beyond the terrain (notes, map settings, tokens). Such a map has no
    * fresh-map Reroll / Lock bar.
@@ -414,7 +420,7 @@ export function optionsWithTuning(kind: Pick<TerrainGeneratorKind, "options" | "
 /**
  * Generators to offer: those whose map type is on, those of a type offered
  * in context (Space) on a map with that type in context (`context`, contextKindsOf), and
- * the current/saved choice (`selectedId`).
+ * the current/saved choice (`selectedId`). Never an unlisted one (a New map mode's).
  */
 export function visibleKinds(
   kinds: TerrainGeneratorKind[],
@@ -422,7 +428,7 @@ export function visibleKinds(
   context: ReadonlySet<MapKind>,
   selectedId?: string,
 ): TerrainGeneratorKind[] {
-  return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { context, selected: k.id === selectedId }));
+  return kinds.filter((k) => !k.unlisted && isGeneratorShown(settings, k.mapKind, { context, selected: k.id === selectedId }));
 }
 
 /**
