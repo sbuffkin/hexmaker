@@ -2096,6 +2096,76 @@ input.duckmage-input-error {
 .duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-west { grid-area: 2 / 1; }
 .duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-north-west { grid-area: 1 / 1; }
 
+/* Party starts on: the new map's hexes as small hex buttons (flat-top: by column, pointy-top: by row). */
+.duckmage-explore-start {
+    display: flex;
+    padding: 0.2em 0 0.6em;
+}
+
+.duckmage-explore-start.is-flat {
+    flex-direction: row;
+}
+
+.duckmage-explore-start.is-pointy {
+    flex-direction: column;
+}
+
+.duckmage-explore-start-line {
+    display: flex;
+}
+
+.duckmage-explore-start.is-flat .duckmage-explore-start-line {
+    flex-direction: column;
+    margin-right: -0.3em;
+}
+
+.duckmage-explore-start.is-flat .duckmage-explore-start-line.is-shifted {
+    margin-top: 0.55em;
+}
+
+.duckmage-explore-start.is-pointy .duckmage-explore-start-line {
+    flex-direction: row;
+    margin-bottom: -0.3em;
+}
+
+.duckmage-explore-start.is-pointy .duckmage-explore-start-line.is-shifted {
+    margin-left: 0.6em;
+}
+
+.duckmage-explore-start-hex {
+    width: 1.3em;
+    height: 1.1em;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--background-modifier-border);
+    cursor: pointer;
+}
+
+.duckmage-explore-start.is-flat .duckmage-explore-start-hex {
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+
+.duckmage-explore-start.is-pointy .duckmage-explore-start-hex {
+    width: 1.2em;
+    height: 1.35em;
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+.duckmage-explore-start-hex:hover {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-explore-start-hex.is-seam {
+    background: var(--color-base-40, var(--background-modifier-border-hover));
+}
+
+.duckmage-explore-start-hex.is-active {
+    background: var(--interactive-accent);
+}
+
 .duckmage-setup-options {
     display: flex;
     flex-direction: column;

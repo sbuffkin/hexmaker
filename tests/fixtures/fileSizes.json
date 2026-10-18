@@ -12,7 +12,7 @@
 		"src/overworld/regionGen.ts": 1394,
 		"src/random-tables/randomTable.ts": 1293,
 		"src/export/mapPngRenderer.ts": 1242,
-		"src/worldgen/NewMapSetupModal.ts": 1150,
+		"src/worldgen/NewMapSetupModal.ts": 1121,
 		"src/SetupWizardView.ts": 1077,
 		"src/hex-table/HexTableView.ts": 1102,
 		"src/space/worldTypes.ts": 1075,

@@ -31,14 +31,14 @@ import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "../ui
 import { NEW_MAP_TUNING_ID } from "../wizardText";
 import { SIZE_PRESETS } from "./sizePresets";
 import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
-import { LIVE_PREVIEW_DELAY_MS, sizeForScalePick, sizeFromInput } from "../sizeInput";
+import { LIVE_PREVIEW_DELAY_MS, sizeForScalePick } from "../sizeInput";
 import { showFieldError } from "../ui/fieldError";
 import { keepScroll } from "../ui/keepScroll";
 import { Disclosure } from "../ui/disclosure";
-import { makeScrubbable } from "../ui/scrub";
 import { groupId } from "../ui/placeGroup";
 import { newMapOptionId } from "./newMapOptionIds";
 import { newPickerState, pickerSettings, renderGeneratorPicker } from "./newMapSetup/generatorPicker";
+import { renderSizeRow } from "./newMapSetup/sizeRow";
 import { withRecent } from "./newMapSetup/pickerRows";
 import { BLANK_MODE, GENERATE_MODE, mapModeChoices, modeOfKind, type MapModeChoice } from "./newMapSetup/modes";
 import {
@@ -301,57 +301,30 @@ export class NewMapSetupModal extends HexmakerModal {
     this.rememberBox(palRow, "palette", "NewMap.rememberPalette");
     attachPaletteHint(palRow, paletteSelect);
 
-    // ── Size ──
+    // ── Size (src/worldgen/newMapSetup/sizeRow.ts) ──
     const sizeRow = this.row(form, "Size");
-    const presetBox = sizeRow.createDiv({ cls: "duckmage-setup-size-presets" });
-    const custom = sizeRow.createDiv({ cls: "duckmage-setup-size-custom" });
-    const colsInput = this.labelled(sizeRow, custom.createEl("input", { type: "number", value: String(this.cols), attr: { min: "1", max: "200", "aria-label": "Columns" } }));
-    custom.createSpan({ text: "×" });
-    const rowsInput = custom.createEl("input", { type: "number", value: String(this.rows), attr: { min: "1", max: "200", "aria-label": "Rows" } });
-    // The number-field standard: drag or scroll to change (clamped on commit below).
-    for (const input of [colsInput, rowsInput]) makeScrubbable(input, { min: 1, max: 200, pxPerStep: 4 });
-    const presets = this.origin ? SUBMAP_SIZE_PRESETS : SIZE_PRESETS;
-    const presetBtns: HTMLButtonElement[] = [];
-    const syncPresetBtns = () => presets.forEach((p, i) =>
-      presetBtns[i].toggleClass("is-active", p.cols === this.cols && p.rows === this.rows));
-    for (const p of presets) {
-      const b = presetBox.createEl("button", { text: p.label, attr: { title: `${p.cols} × ${p.rows}` } });
-      b.addEventListener("click", () => {
-        this.sizeChosen = true;
-        this.cols = p.cols; this.rows = p.rows;
-        colsInput.value = String(p.cols); rowsInput.value = String(p.rows);
-        syncPresetBtns();
-        refresh();
-      });
-      presetBtns.push(b);
-    }
-    syncPresetBtns();
-    // The preview follows the size while typing (debounced); blur / Enter
-    // commits the clamped value at once.
-    let sizeTimer: number | undefined;
-    const onSize = (committed: boolean) => {
-      const cols = sizeFromInput(colsInput.value, { min: 1, max: 200, fallback: 1, committed });
-      const rows = sizeFromInput(rowsInput.value, { min: 1, max: 200, fallback: 1, committed });
-      if (cols === undefined && rows === undefined) return;
-      if ((cols ?? this.cols) !== this.cols || (rows ?? this.rows) !== this.rows) this.sizeChosen = true;
-      this.cols = cols ?? this.cols;
-      this.rows = rows ?? this.rows;
-      syncPresetBtns();
+    const size = renderSizeRow(sizeRow, this.origin ? SUBMAP_SIZE_PRESETS : SIZE_PRESETS, { cols: this.cols, rows: this.rows }, (cols, rows, chosen) => {
+      if (chosen) this.sizeChosen = true;
+      this.cols = cols; this.rows = rows;
       refresh();
-    };
-    for (const input of [colsInput, rowsInput]) {
-      input.addEventListener("input", () => {
-        window.clearTimeout(sizeTimer);
-        sizeTimer = window.setTimeout(() => onSize(false), LIVE_PREVIEW_DELAY_MS);
-      });
-      input.addEventListener("change", () => {
-        window.clearTimeout(sizeTimer);
-        onSize(true);
-      });
-    }
+    }, (el) => this.labelled(sizeRow, el));
     this.rememberBox(sizeRow, "size", "NewMap.rememberSize");
+    /** The size a generator sets (TerrainGeneratorKind.sizeFor), else the form's own again; true when it changed. */
+    let ownSize: { cols: number; rows: number } | undefined;
+    const syncSize = (): boolean => {
+      const kind = this.kind();
+      const set = !this.placement && !this.asRegion && kind ? kind.sizeFor?.(this.resolvedOptions(kind)) : undefined;
+      if (set && !ownSize) ownSize = { cols: this.cols, rows: this.rows };
+      const to = set ?? ownSize;
+      if (!set) ownSize = undefined;
+      size.setBy(set?.why);
+      if (!to || (to.cols === this.cols && to.rows === this.rows)) return false;
+      this.cols = to.cols; this.rows = to.rows;
+      size.show(to.cols, to.rows);
+      return true;
+    };
     if (this.asRegion) {
-      for (const el of [colsInput, rowsInput, ...presetBtns]) el.disabled = true;
+      size.lock(true);
       sizeRow.createDiv({
         cls: "setting-item-description",
         text: `${regionSettingsLabel(this.asRegion.settings)}: fixed by this map's region settings, so every region lines up.`,
@@ -377,12 +350,10 @@ export class NewMapSetupModal extends HexmakerModal {
       this.pickedKind = false;
       this.options = {};
       this.scaleChoices = {};
-      const size = sizeForScalePick(this.sizeChosen ? { cols: this.cols, rows: this.rows } : null, s.size);
-      this.cols = size.cols;
-      this.rows = size.rows;
-      colsInput.value = String(size.cols);
-      rowsInput.value = String(size.rows);
-      syncPresetBtns();
+      const picked = sizeForScalePick(this.sizeChosen ? { cols: this.cols, rows: this.rows } : null, s.size);
+      this.cols = picked.cols;
+      this.rows = picked.rows;
+      size.show(picked.cols, picked.rows);
       usePalette(scalePalette(s, undefined));
       scaleCards?.sync();
       renderGenerators();
@@ -435,8 +406,7 @@ export class NewMapSetupModal extends HexmakerModal {
             };
             this.cols = spec.cols;
             this.rows = spec.rows;
-            colsInput.value = String(spec.cols);
-            rowsInput.value = String(spec.rows);
+            size.show(spec.cols, spec.rows);
             paletteSelect.value = spec.paletteName;
             refreshPaletteHint(paletteSelect);
             this.context = buildRegionContext(this.plugin, this.placement);
@@ -453,11 +423,9 @@ export class NewMapSetupModal extends HexmakerModal {
         lockMore?.(locked);
         // Next to a map, the neighbour decides what this is: no scale.
         scaleField?.toggle(!locked);
-        colsInput.disabled = locked;
-        rowsInput.disabled = locked;
+        size.lock(locked);
         paletteSelect.disabled = locked;
-        presetBtns.forEach((b) => { b.disabled = locked; });
-        syncPresetBtns();
+        size.show(this.cols, this.rows);
         renderGenerators();
         renderBase();
         refresh();
@@ -723,7 +691,8 @@ export class NewMapSetupModal extends HexmakerModal {
           }, () => genList.querySelector<HTMLElement>(".duckmage-gen-pick-row.is-active"));
         },
       });
-      // A module's mode: its own setup where the list was.
+      // A module's mode: its own setup where the list was (on the size its generator sets).
+      syncSize();
       modeBox.empty();
       moduleNewMapModes().find((m) => m.id === mode)?.render?.(modeBox, {
         plugin: this.plugin,
@@ -830,6 +799,8 @@ export class NewMapSetupModal extends HexmakerModal {
     baseSelect.addEventListener("change", () => { this.baseTerrain = baseSelect.value || undefined; refresh(); });
 
     const refresh = () => {
+      // An option changed the size its generator sets (Explore as you go's Party sees): draw the setup on it.
+      if (syncSize()) renderGenerators();
       seedLabel.setText(`seed ${this.seed}`);
       const terrains = this.terrains(paletteSelect.value);
       const kind = this.kind();

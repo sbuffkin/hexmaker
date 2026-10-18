@@ -6,14 +6,18 @@
  * directions (plan-hf6-generator-realms). A direction where another area
  * already holds the land is off, its tooltip saying which. Each area is
  * picked with New map's generator list; under it, the terrain mix its flower
- * will roll on. Everything is written into the Hex flower generator's
- * options (exploreSetup.ts), so the preview follows at once.
+ * will roll on. Then where the party starts (HF8 B4): a small grid of the
+ * map's hexes, the middle by default, sized by the map (as big as the party
+ * can see); next to a map, its seam edge is marked. Everything is written
+ * into the Hex flower generator's options (exploreSetup.ts), so the preview
+ * follows at once.
  */
 
 import type { NewMapModeContext } from "../modules/types";
 import type { TerrainGeneratorKind } from "../worldgen/registry";
 import { newPickerState, pickerSettings, renderGeneratorPicker, type PickerState } from "../worldgen/newMapSetup/generatorPicker";
 import { hashSeed } from "../arrival/arrival";
+import { hexKey, hexXY } from "../hexKey";
 import { exploreOf } from "./context";
 import { EXPLORE_OPTION, formatAreas, parseAreas, setupRealms, startHexOf, type SetupArea } from "./exploreSetup";
 import { REACH_LABEL, blockedDirections, directions, type Geometry } from "./realms";
@@ -35,6 +39,66 @@ export function defaultHome(kinds: readonly Pick<TerrainGeneratorKind, "id" | "s
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Grids up to this many hexes are drawn to click on; bigger ones get two number fields. */
+export const START_GRID_MAX = 900;
+
+/** Is hex (x, y) on the edge a new map shares with the map it joins (`joins`: the side of it the new one is on)? */
+export function onSeam(x: number, y: number, grid: { cols: number; rows: number; offset: { x: number; y: number } }, joins: NewMapModeContext["joins"]): boolean {
+  switch (joins) {
+    case "east": return x === grid.offset.x;
+    case "west": return x === grid.offset.x + grid.cols - 1;
+    case "north": return y === grid.offset.y + grid.rows - 1;
+    case "south": return y === grid.offset.y;
+    default: return false;
+  }
+}
+
+/** "Party starts on": the map's hexes, the start ticked; a click moves it. */
+function renderStartPicker(parent: HTMLElement, ctx: NewMapModeContext, start: string, set: (hex: string) => void): void {
+  const grid = ctx.grid();
+  const row = parent.createDiv({ cls: "duckmage-setup-row" });
+  row.createEl("label", { cls: "duckmage-setup-label", text: "Party starts on" });
+  const control = row.createDiv({ cls: "duckmage-setup-control" });
+  const { x: sx, y: sy } = hexXY(start);
+  if (grid.cols * grid.rows > START_GRID_MAX) {
+    const fields = control.createDiv({ cls: "duckmage-setup-size-custom" });
+    const x = fields.createEl("input", { type: "number", value: String(sx), attr: { "aria-label": "Start column" } });
+    fields.createSpan({ text: "," });
+    const y = fields.createEl("input", { type: "number", value: String(sy), attr: { "aria-label": "Start row" } });
+    const commit = () => set(hexKey(Math.trunc(Number(x.value)) || 0, Math.trunc(Number(y.value)) || 0));
+    x.addEventListener("change", commit);
+    y.addEventListener("change", commit);
+  } else {
+    const orientation = ctx.plugin.settings.hexOrientation;
+    const flat = orientation === "flat";
+    const shifted = (n: number) => (grid.stagger === "odd" ? n % 2 !== 0 : n % 2 === 0);
+    const box = control.createDiv({ cls: `duckmage-explore-start is-${orientation}`, attr: { role: "radiogroup", "aria-label": "Party starts on" } });
+    // Flat-top hexes stagger by column, pointy-top by row: one line each.
+    const lines = flat ? grid.cols : grid.rows;
+    const along = flat ? grid.rows : grid.cols;
+    for (let i = 0; i < lines; i++) {
+      const v = (flat ? grid.offset.x : grid.offset.y) + i;
+      const line = box.createDiv({ cls: `duckmage-explore-start-line${shifted(v) ? " is-shifted" : ""}` });
+      for (let j = 0; j < along; j++) {
+        const x = flat ? v : grid.offset.x + j;
+        const y = flat ? grid.offset.y + j : v;
+        const key = hexKey(x, y);
+        const on = key === start;
+        const seam = onSeam(x, y, grid, ctx.joins);
+        const b = line.createEl("button", {
+          cls: `duckmage-explore-start-hex${on ? " is-active" : ""}${seam ? " is-seam" : ""}`,
+          attr: { role: "radio", "aria-checked": on ? "true" : "false", "aria-label": `${x}, ${y}`, title: `${x}, ${y}${seam ? ": on the edge it shares with the next map" : ""}` },
+        });
+        b.addEventListener("click", () => set(key));
+      }
+    }
+  }
+  control.createDiv({
+    cls: "setting-item-description",
+    text: ctx.joins ? "Click a hex to start the party there. Marked hexes are on the edge shared with the next map." : "Click a hex to start the party there (the middle by default).",
+  });
+}
 
 export function renderExploreSetup(el: HTMLElement, ctx: NewMapModeContext): void {
   const kinds = ctx.generators;
@@ -134,6 +198,11 @@ export function renderExploreSetup(el: HTMLElement, ctx: NewMapModeContext): voi
       else o[EXPLORE_OPTION.home] = k.id;
       ctx.changed({ options: true });
     },
+  });
+
+  renderStartPicker(box, ctx, start, (hex) => {
+    o[EXPLORE_OPTION.startHex] = hex;
+    ctx.changed({ options: true });
   });
 
   // What its flower rolls on (the palette gap check: nothing of this palette, said here).

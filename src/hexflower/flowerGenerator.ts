@@ -253,6 +253,12 @@ export function hexFlowerGenerator(plugin: HexmakerPlugin, { toPaths, procGrid }
     options: [flowerOption([]), ...Object.values(FLOWER_OPTIONS)],
     optionsFor: () => [flowerOption(names()), ...Object.values(FLOWER_OPTIONS)],
     fits: (terrains) => terrains.length > 0,
+    // HF5 part A: a blank start is exactly as big as the party can see; the map grows from there (HF4).
+    sizeFor: (o) => {
+      if (o.start === "fill") return undefined;
+      const side = 2 * parseReveal(o.reveal) + 1;
+      return { cols: side, rows: side, why: `Starts ${side} × ${side}, as big as the party can see, and grows as they explore.` };
+    },
     generate: (req) => {
       const terrains = req.terrains.map((t) => t.name);
       const g: Geometry = { orientation: procGrid(req.grid).orientation, stagger: req.grid.stagger };

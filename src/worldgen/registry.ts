@@ -123,6 +123,12 @@ export interface TerrainGeneratorKind {
   /** Offered on every map scale of the setup wizard and New map, right after Blank. */
   everyScale?: boolean;
   /**
+   * The size a map made with these options starts at, when the generator
+   * decides it, and one line saying why (shown in place of New map's size
+   * controls). Unset or undefined: the form's size.
+   */
+  sizeFor?(options: Readonly<Record<string, string>>): { cols: number; rows: number; why: string } | undefined;
+  /**
    * Never in a generator list: only a New map mode makes maps with it
    * (NewMapModeContribution.generatorId). Still found by id, so saves and
    * saved submap defaults that name it resolve.
