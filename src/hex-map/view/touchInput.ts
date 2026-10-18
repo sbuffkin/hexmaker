@@ -71,6 +71,14 @@ export function attachTouchInput(host: TouchInputHost, contentEl: HTMLElement, c
     return pinchFrame(a, b, clipEl.getBoundingClientRect());
   };
 
+  // Obsidian mobile opens its sidebar drawers on a horizontal swipe anywhere in
+  // the workspace: a map drag must not. Its swipe listener sits above the map,
+  // so keep the map's touches from bubbling up to it (scrolling is handled by
+  // the CSS touch-action: none, not by cancelling these).
+  for (const type of ["touchstart", "touchmove", "touchend"] as const) {
+    host.registerDomEvent(clipEl, type, (e: TouchEvent) => e.stopPropagation(), { passive: true });
+  }
+
   host.registerDomEvent(contentEl, "pointerdown", (e: PointerEvent) => {
     if (e.pointerType !== "touch") return;
     if (!(e.target instanceof Node) || !clipEl.contains(e.target)) return;
@@ -105,6 +113,16 @@ export function attachTouchInput(host: TouchInputHost, contentEl: HTMLElement, c
     }
   }, { passive: false });
 
+  // The menu a long-press opens appears under the finger: the lift that
+  // follows must not click one of its items. Swallow the one click that
+  // follows, wherever it lands.
+  const guardLiftClick = () => {
+    const swallow = (ev: Event) => { ev.preventDefault(); ev.stopImmediatePropagation(); off(); };
+    const off = () => { doc.removeEventListener("click", swallow, true); win().clearTimeout(t); };
+    doc.addEventListener("click", swallow, true);
+    const t = win().setTimeout(off, 450);
+  };
+
   const lift = (e: PointerEvent) => {
     if (e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
     pts.delete(e.pointerId);
@@ -112,7 +130,8 @@ export function attachTouchInput(host: TouchInputHost, contentEl: HTMLElement, c
     if (mode === "single") {
       const fired = longPress.fired;
       longPress.end();
-      if (!fired) stopStream(e.clientX, e.clientY);
+      if (fired) guardLiftClick();
+      else stopStream(e.clientX, e.clientY);
     } else if (mode === "pinch") {
       mode = "done"; // the remaining finger does nothing until all are up
       prev = null;
