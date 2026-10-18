@@ -32,6 +32,8 @@ export const hexFlowerModule: HexmakerModule = {
     "FlowerPage.matrix": "debug",
     "NewMap.flowerParty": "main",
     "NewMap.flowerReveal": "main",
+    // Explore as you go rolls on the generators it's powered by; a flower note of your own is Advanced (HF8 B3).
+    "NewMap.flowerOwn": "advanced",
     "Wizard.flowerParty": "main",
     "Wizard.flowerReveal": "main",
   },
@@ -57,6 +59,8 @@ export const hexFlowerModule: HexmakerModule = {
       "Test walk",
       "Hex flowers folder",
       "Explore as you go",
+      "Make your own flower",
+      "Add another area",
     ],
   },
 };

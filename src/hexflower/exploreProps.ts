@@ -2,14 +2,16 @@
  * Map properties → Hex flower (plan-hex-flower; a map setting, owner HF8):
  * on any map, a switch to explore it with a hex flower (exploreSwitch.ts).
  * On a map the party explores: its rules (one per line, top to bottom),
- * what a step reveals (the hex, or 1–3 rings around it), whether the map
- * grows as the party nears an edge (HF4), filling every blank hex now, and
- * turning it off.
+ * the areas of a map powered by generators (HF6: each with its generator
+ * and where it lies; Remove, and the borders between them), what a step
+ * reveals (the hex, or 1–3 rings around it), whether the map grows as the
+ * party nears an edge (HF4), filling every blank hex now, and turning it off.
  */
 
 import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
+import type { ExploreMap } from "./exploreFields";
 import type { MapPropertiesSection } from "../modules/types";
 import { isExploreMap } from "./exploreFields";
 import { growOff } from "./exploreGrow";
@@ -17,6 +19,7 @@ import { formatReveal, parseFlowerAt, parseReveal, parseRule } from "./explore";
 import { exploreOf, flowerStoreOf } from "./context";
 import { disableExploring, enableExploring } from "./exploreSwitch";
 import { NEW_FLOWER } from "./flowerGenerator";
+import { describeCentre, formatRealm, parseBorders, parseRealms, REACH_LABEL, type Borders } from "./realms";
 
 export const EXPLORE_PROPS: MapPropertiesSection = {
   id: "exploring",
@@ -42,6 +45,8 @@ export const EXPLORE_PROPS: MapPropertiesSection = {
       void plugin.saveSettings();
       if (!isExploreMap(map)) rerender();
     });
+
+    renderAreas(box, plugin, map, rerender);
 
     const row = box.createDiv({ cls: "duckmage-region-row" });
     row.createSpan({ text: "Each step fills" });
@@ -92,6 +97,44 @@ export const EXPLORE_PROPS: MapPropertiesSection = {
 };
 
 export const GROW_LABEL = "Grow the map as the party nears an edge";
+
+const BORDER_CHOICES: [Borders, string][] = [["narrow", "Narrow"], ["normal", "Normal"], ["wide", "Wide"], ["sharp", "Sharp (no mixing)"]];
+
+/** A map powered by generators: its areas (realms.ts), each removable but home, and the borders between them. */
+function renderAreas(box: HTMLElement, plugin: HexmakerPlugin, map: ExploreMap, rerender: () => void): void {
+  const { realms, unread } = parseRealms(map.exploreRealms);
+  if (!realms.length && !unread.length) return;
+  box.createEl("h5", { text: "Areas" });
+  const g = exploreOf(plugin)?.geometry(map);
+  const home = realms.find((r) => r.reach === "home") ?? realms[0];
+  const list = box.createEl("ul", { cls: "duckmage-explore-area-list" });
+  for (const r of realms) {
+    const li = list.createEl("li");
+    const from = r.flower ? `flower ${r.flower}` : r.from.map((s) => s.ref.replace(/^.*\//, "")).join(" + ");
+    const where = r === home ? "where the party started" : g && home ? `${describeCentre(r.centre, home.centre, g)} of the start` : r.centre;
+    li.createSpan({ text: `${r.name}: ${from}. ${REACH_LABEL[r.reach]}, ${where}.` });
+    if (r === home) continue;
+    const remove = li.createEl("button", { cls: "duckmage-explore-area-remove-btn", text: "Remove", attr: { title: "Its hexes already explored stay; new ones come from the other areas" } });
+    remove.addEventListener("click", () => {
+      map.exploreRealms = [...realms.filter((x) => x !== r).map(formatRealm), ...unread];
+      void plugin.saveSettings();
+      rerender();
+    });
+  }
+  if (unread.length) box.createDiv({ cls: "duckmage-map-origin-desc", text: `Can't read: ${unread.join("; ")}` });
+  if (realms.length < 2) return;
+  const row = box.createDiv({ cls: "duckmage-region-row" });
+  row.createSpan({ text: "Borders" });
+  const borders = row.createEl("select", { attr: { "aria-label": "Borders between areas" } });
+  for (const [value, text] of BORDER_CHOICES) borders.createEl("option", { value, text });
+  borders.value = parseBorders(map.exploreBlend);
+  borders.addEventListener("change", () => {
+    if (borders.value === "normal") delete map.exploreBlend;
+    else map.exploreBlend = borders.value;
+    void plugin.saveSettings();
+  });
+  row.createSpan({ cls: "duckmage-map-origin-desc", text: "Wide borders mix the areas over more hexes." });
+}
 
 /** The map-note values the "Each step fills" choice offers (0 = the hex entered). */
 const REVEAL_CHOICES: [string, string][] = [

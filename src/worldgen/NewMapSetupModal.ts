@@ -733,7 +733,7 @@ export class NewMapSetupModal extends HexmakerModal {
         options: this.options,
         changed: (o) => { if (o?.options) renderGenerators(); refresh(); },
         target: (id, fallback) => disclosure.target(id, fallback),
-        grid: () => this.grid(),
+        grid: () => this.grid(), seed: () => this.seed,
         ...(this.placement ? { joins: this.placement.side } : {}),
       });
       const hidden = pool.length - fitting.length;
@@ -772,7 +772,7 @@ export class NewMapSetupModal extends HexmakerModal {
         }
         return box;
       };
-      for (const opt of kind ? kindOptions(kind, terrains, this.plugin.getPathTypes(paletteSelect.value)) : []) {
+      for (const opt of (kind ? kindOptions(kind, terrains, this.plugin.getPathTypes(paletteSelect.value)) : []).filter((o) => !o.setBySetup)) {
         const host = optionHost(newMapOptionId(kind?.id ?? "", opt.key));
         if (!host) continue;
         const r = this.row(host, opt.label);

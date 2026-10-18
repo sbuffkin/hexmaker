@@ -1,13 +1,15 @@
 /**
  * What exploring adds to the map (ModuleRuntime hooks): the party's step,
- * the party controls' Reveal 1 · 2 · 3, the hex menu's Roll this hex /
- * Reroll this hex, and the "?" frontier.
+ * the party controls' Reveal 1 · 2 · 3 and (on a map powered by
+ * generators) Area: <the area it's in>, which opens Change area; the hex
+ * menu's Roll this hex / Reroll this hex, and the "?" frontier.
  */
 
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexMenuContribution, PartyAt, PartyControl, PartyStep } from "../modules/types";
 import type { UndoItem } from "../hex-map/undoItems";
 import { exploreOf } from "./context";
+import { areaAt, openChangeArea } from "./ChangeAreaModal";
 
 /** The hex menu items (src/workMode.ts classifies each as `discover`: any mode). */
 export const EXPLORE_MENU = {
@@ -21,11 +23,21 @@ export function exploreStep(plugin: HexmakerPlugin, step: PartyStep): Promise<Un
 
 /** The party's Reveal control (owner HF3): fill 1, 2 or 3 rings of blank hexes around it, any time. */
 export const REVEAL_CONTROL_ID = "explore.reveal";
+/** The party's Area control (HF6): the area it's in; a click opens Change area. */
+export const AREA_CONTROL_ID = "explore.area";
 
 export function explorePartyControls(plugin: HexmakerPlugin, party: PartyAt): PartyControl[] {
   const ex = exploreOf(plugin);
-  if (!ex?.exploreMap(party.map)) return [];
-  return [{
+  const map = ex?.exploreMap(party.map);
+  if (!ex || !map) return [];
+  const area = areaAt(plugin, map, party.hex);
+  const areaControl: PartyControl[] = area ? [{
+    id: AREA_CONTROL_ID,
+    label: "Area",
+    title: "The generator the land around the party comes from",
+    buttons: [{ label: area, title: "Change area: the land ahead comes from another generator", run: () => openChangeArea(plugin, map, party.hex) }],
+  }] : [];
+  return [...areaControl, {
     id: REVEAL_CONTROL_ID,
     label: "Reveal",
     title: "Fill in the blank hexes around the party, as far as it can see from here",

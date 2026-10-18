@@ -2021,6 +2021,81 @@ input.duckmage-input-error {
     padding: 0.1em 0 0.2em;
 }
 
+/* New map's Explore as you go: the areas that power it (HF8). */
+.duckmage-explore-setup .duckmage-setup-control {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.duckmage-explore-areas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+}
+
+.duckmage-explore-area.is-active {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: -2px;
+}
+
+.duckmage-explore-area-remove {
+    margin-left: 0.4em;
+    color: var(--text-faint);
+}
+
+.duckmage-explore-area-remove:hover {
+    color: var(--text-error);
+}
+
+.duckmage-explore-area-add::before {
+    content: "+ ";
+}
+
+.duckmage-explore-where {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+}
+
+.duckmage-explore-where-label {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+/* Which way?: the six sides of a hex, as a small ring of buttons. */
+.duckmage-explore-ring {
+    display: grid;
+    grid-template-columns: repeat(3, 2.4em);
+    grid-template-rows: repeat(3, 1.7em);
+    gap: 2px;
+}
+
+.duckmage-explore-dir {
+    padding: 0;
+    height: 100%;
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-explore-dir.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.duckmage-explore-ring.is-flat .duckmage-explore-dir.is-north { grid-area: 1 / 2; }
+.duckmage-explore-ring.is-flat .duckmage-explore-dir.is-north-east { grid-area: 1 / 3; }
+.duckmage-explore-ring.is-flat .duckmage-explore-dir.is-south-east { grid-area: 3 / 3; }
+.duckmage-explore-ring.is-flat .duckmage-explore-dir.is-south { grid-area: 3 / 2; }
+.duckmage-explore-ring.is-flat .duckmage-explore-dir.is-south-west { grid-area: 3 / 1; }
+.duckmage-explore-ring.is-flat .duckmage-explore-dir.is-north-west { grid-area: 1 / 1; }
+.duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-north-east { grid-area: 1 / 3; }
+.duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-east { grid-area: 2 / 3; }
+.duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-south-east { grid-area: 3 / 3; }
+.duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-south-west { grid-area: 3 / 1; }
+.duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-west { grid-area: 2 / 1; }
+.duckmage-explore-ring.is-pointy .duckmage-explore-dir.is-north-west { grid-area: 1 / 1; }
+
 .duckmage-setup-options {
     display: flex;
     flex-direction: column;

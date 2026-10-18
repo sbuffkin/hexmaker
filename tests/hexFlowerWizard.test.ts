@@ -51,12 +51,16 @@ describe("the Hex flower card", () => {
 		}
 	});
 
-	it("options: Flower (new from this palette first), Start (blank first); Party token and Reveal are main on New map and in the wizard (HF9)", () => {
+	it("options: Make your own flower (no: the generators, Advanced), Start (blank first); Party token and Party sees (1 ring) are main (HF9, HF5); the setup's own aren't drawn", () => {
 		const { kind, store } = setup();
-		expect(kind.options.map((o) => [o.key, o.default])).toEqual([["flower", "new"], ["start", "blank"], ["party", "on"], ["reveal", "entered"]]);
+		expect(kind.options.map((o) => [o.key, o.default, !!o.setBySetup])).toEqual([
+			["flower", "generators", false], ["start", "blank", false], ["party", "on", false], ["reveal", "1", false],
+			["home", "", true], ["areas", "", true], ["startHex", "", true],
+		]);
 		void store;
 		const ids = moduleNewMapOptionIds()[HEX_FLOWER_GENERATOR_ID];
-		expect(ids).toEqual({ party: "NewMap.flowerParty", reveal: "NewMap.flowerReveal" });
+		expect(ids).toEqual({ flower: "NewMap.flowerOwn", party: "NewMap.flowerParty", reveal: "NewMap.flowerReveal" });
+		expect(layerOf(ids.flower)).toBe("advanced");
 		for (const key of ["party", "reveal"]) {
 			expect(layerOf(ids[key])).toBe("main");
 			expect(layerOf(wizardOptionId(key, ids[key]))).toBe("main");
@@ -100,11 +104,12 @@ describe("the Hex flower card", () => {
 		const token = s.vault.files.get(`world/tokens/${PARTY_TOKEN_NAME}.md`)!;
 		expect(token).toMatch(/token-party: true/);
 		expect(token).toMatch(new RegExp(`token-hex: "?${middleHex(grid)}"?`));
-		// The flower note is the same flower the map's first hex came from.
-		const g = s.kind.generate({ terrains: TERRAINS.map((name) => ({ name, color: "#000" })), grid, seed: 9, options: { flower: "new", start: "blank" } } as never);
-		const first = g.ok ? g.cells.get(middleHex(grid)) : undefined;
-		const cell = [...parseFlowerAt(map.hexFlowerAt as string[]).values()][0];
-		expect(s.store.list()[0].flower.cells[cell - 1].result).toBe(first);
+		// The flower note is the same flower the preview came from: the same start and rings, the walk where they left it.
+		const g = s.kind.generate({ terrains: TERRAINS.map((name) => ({ name, color: "#000" })), grid, seed: 9, options: { flower: "new", start: "blank", reveal: "2" } } as never);
+		const note = s.store.list()[0].flower;
+		const again = startFill(note, TERRAINS, grid, "flat", 9, false, { sight: 2 });
+		expect(g.ok && [...g.cells]).toEqual([...again.cells]);
+		expect([...parseFlowerAt(map.hexFlowerAt as string[]).values()]).toEqual([...again.at.values()]);
 	});
 });
 

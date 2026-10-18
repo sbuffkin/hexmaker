@@ -163,8 +163,11 @@ describe("New map form: generator options by inventory id", () => {
 
   it("every generator option is main (owner 2026-10-12, as the wizard); the tuning sliders and Make every region now are Advanced", () => {
     for (const [kind, keys] of Object.entries(newMapOptionIds())) {
-      // The Hex flower card's Party token and Reveal too (owner HF9, 2026-10-16).
-      for (const key of Object.keys(keys)) expect([kind, key, layerOf(newMapOptionId(kind, key)!)]).toEqual([kind, key, "main"]);
+      // The Hex flower card's Party token and Reveal too (owner HF9, 2026-10-16); its own flower is Advanced (HF8 B3).
+      for (const key of Object.keys(keys)) {
+        const own = kind === HEX_FLOWER_GENERATOR_ID && key === "flower";
+        expect([kind, key, layerOf(newMapOptionId(kind, key)!)]).toEqual([kind, key, own ? "advanced" : "main"]);
+      }
     }
     if (moduleOn("space")) {
       expect(layerOf(newMapOptionId(STAR_SCATTER_ID, ROUTE_TYPE_KEY)!)).toBe("main");

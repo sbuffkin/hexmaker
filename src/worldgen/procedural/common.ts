@@ -112,6 +112,8 @@ export interface ProcOption {
   label: string;
   choices: { value: string; label: string }[];
   default: string;
+  /** Written by a New map mode's own setup (Explore as you go's generators and start hex), never drawn as a choice. */
+  setBySetup?: boolean;
 }
 
 /**

@@ -55,6 +55,20 @@ import {
   type Rolled,
 } from "./explore";
 import { hexPair, neighbourKeys } from "../hexKey";
+import { listGeneratorKinds, type TerrainGeneratorKind } from "../worldgen/registry";
+import { REALMS_SOURCE, parseBorders, parseRealms, realmAt, type Borders, type Geometry, type Realm, type RealmSource } from "./realms";
+import { kindForSource, RealmFlowers } from "./realmFlowers";
+import type { Flower } from "./flower";
+import type { TerrainColor } from "../types";
+
+/** A map's realms and the flower of each (by realm name, lower case). */
+export interface RealmState {
+  realms: Realm[];
+  borders: Borders;
+  flowers: Map<string, Flower>;
+  /** Realms whose generators couldn't be found or run. */
+  problems: string[];
+}
 
 /** The last fill on a map, for Reroll. */
 interface LastFill {
@@ -68,6 +82,10 @@ interface LastFill {
 
 export class ExploreService {
   private last = new Map<string, LastFill>();
+  /** Flowers made from generators (a map's realms), made once each. */
+  readonly realmFlowers = new RealmFlowers();
+  /** The generators realms are resolved against (listGeneratorKinds, read when one isn't found). */
+  private kindList: TerrainGeneratorKind[] | undefined;
 
   /** @param show  tells what a step filled, with its actions (Reroll, Undo): a notice. */
   constructor(
@@ -116,12 +134,72 @@ export class ExploreService {
     return this.plugin.tableNotes?.lookup() ?? { table: () => undefined };
   }
 
-  /** The table / flower a rule's link names. */
-  private source(map: ExploreMap): (link: string) => ExploreSource | undefined {
+  // ── realms (HF6 / HF8): terrain from generators ──────────────────────
+
+  /** The map's hex layout. */
+  geometry(map: ExploreMap): Geometry {
+    return { orientation: this.plugin.settings.hexOrientation, stagger: map.staggerOffset ?? this.plugin.settings.staggerOffset ?? "odd" };
+  }
+
+  /** Generators the caller already has (New map's list), so a preview's realms resolve at once. */
+  useKinds(kinds: readonly TerrainGeneratorKind[]): void {
+    const byId = new Map((this.kindList ?? []).map((k) => [k.id, k]));
+    for (const k of kinds) byId.set(k.id, k);
+    this.kindList = [...byId.values()];
+  }
+
+  /** The generators known now (no read). */
+  knownKinds(): readonly TerrainGeneratorKind[] {
+    return this.kindList ?? [];
+  }
+
+  /** The generators, read again when one of `sources` isn't known yet. */
+  async kindsFor(sources: readonly Pick<RealmSource, "ref" | "link">[]): Promise<readonly TerrainGeneratorKind[]> {
+    const known = this.kindList;
+    if (known && sources.every((s) => kindForSource(s, known))) return known;
+    this.kindList = await listGeneratorKinds(this.plugin);
+    return this.kindList;
+  }
+
+  /**
+   * Realm `realm`'s flower on a palette with `terrains` (`palette` names it,
+   * for the cache): its own flower note, else one made from its generators
+   * (no read: the generators known now unless `kinds` are given).
+   */
+  realmFlower(realm: Realm, terrains: TerrainColor[], palette: string, mapSeed: number, kinds: readonly TerrainGeneratorKind[] = this.knownKinds()): { flower: Flower; problems: string[] } | undefined {
+    if (realm.flower) {
+      const own = flowerStoreOf(this.plugin)?.get(realm.flower)?.flower;
+      if (own) return { flower: { ...own, name: realm.name }, problems: [] };
+    }
+    return this.realmFlowers.flowerOf(realm, { kinds, palette, terrains, mapSeed, orientation: this.plugin.settings.hexOrientation });
+  }
+
+  /** The map's realms and their flowers (undefined: it has none). */
+  async realmsOf(map: ExploreMap): Promise<RealmState | undefined> {
+    const { realms, unread } = parseRealms(map.exploreRealms);
+    if (!realms.length) return undefined;
+    const kinds = await this.kindsFor(realms.filter((r) => !r.flower).flatMap((r) => r.from));
+    const flowers = new Map<string, Flower>();
+    const problems = unread.map((u) => `Can't read the area "${u}".`);
+    for (const r of realms) {
+      const made = this.realmFlower(r, this.plugin.getPaletteOrPresetTerrains(map.paletteName), map.paletteName, this.seedOf(map), kinds);
+      if (made) flowers.set(r.name.toLowerCase(), made.flower);
+      problems.push(...(made?.problems ?? [`${r.name}: no terrain of this palette to roll on.`]));
+    }
+    return { realms, borders: parseBorders(map.exploreBlend), flowers, problems };
+  }
+
+  /** The table / flower a rule's link names (the realm's flower for `(realms)`, at hex `hex`). */
+  private source(map: ExploreMap, hex?: string, realms?: RealmState): (link: string) => ExploreSource | undefined {
     const store = flowerStoreOf(this.plugin);
     const lookup = this.tables();
     const terrains = this.terrains(map);
     return (link) => {
+      if (link.toLowerCase() === REALMS_SOURCE) {
+        const r = hex && realms ? realmAt(hex, realms.realms, this.geometry(map), { seed: this.seedOf(map), borders: realms.borders }) : undefined;
+        const flower = r ? realms?.flowers.get(r.name.toLowerCase()) : undefined;
+        return flower ? { kind: "flower", flower } : undefined;
+      }
       const f = store?.get(link);
       if (f) return { kind: "flower", flower: f.flower };
       if (!lookup.table(link)) return undefined;
@@ -157,6 +235,7 @@ export class ExploreService {
     const sections = ["Features", "Description"];
     const rules = readRules(map.exploreWith, sections);
     const lookup = this.tables();
+    const realms = rules.some((r) => r.source.toLowerCase() === REALMS_SOURCE) ? await this.realmsOf(map) : undefined;
     return planStep({
       rules,
       hex: k,
@@ -169,7 +248,7 @@ export class ExploreService {
       everyOnly,
       at,
       terrains: this.terrains(map),
-      source: this.source(map),
+      source: this.source(map, k, realms),
       isTable: (l) => !!lookup.table(l),
     });
   }
@@ -215,6 +294,7 @@ export class ExploreService {
   private setFlowerAt(map: ExploreMap, at: ReadonlyMap<string, number>): UndoItem[] {
     const before = map.hexFlowerAt;
     const names = new Map((flowerStoreOf(this.plugin)?.list() ?? []).map((e) => [e.flower.name.toLowerCase(), e.flower.name]));
+    for (const r of parseRealms(map.exploreRealms).realms) names.set(r.name.toLowerCase(), r.name);
     const after = formatFlowerAt(at, names);
     if (sameValue(before ?? [], after)) return [];
     map.hexFlowerAt = after;

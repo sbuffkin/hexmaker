@@ -469,8 +469,9 @@ export interface NewMapModeContext {
   changed(opts?: { options?: boolean }): void;
   /** Where placement id `id` goes on the form (null: hidden); `fallback` when it's main. */
   target(id: string, fallback: HTMLElement): HTMLElement | null;
-  /** The new map's grid as the form stands. */
+  /** The new map's grid as the form stands, and the seed it's previewed with. */
   grid(): GridSpec;
+  seed(): number;
   /** Next to a map: the side the new one joins (its seam is that edge of the new map). */
   joins?: "east" | "west" | "north" | "south";
 }
