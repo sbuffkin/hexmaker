@@ -21,6 +21,7 @@ import { addPlacedMenuItems, placeCommand } from "../ui/commandPlacement";
 import { RestoreBackupModal, openBackupsFolder } from "../BackupsModal";
 import { mapLinkUri } from "../hexLink";
 import { normalizeFolder } from "../utils";
+import { pdfAvailable } from "../platform";
 
 /** The ribbon icon, every command and the file menu (in onload's order). */
 export function registerCommands(plugin: HexmakerPlugin): void {
@@ -125,7 +126,7 @@ export function registerCommands(plugin: HexmakerPlugin): void {
     name: "Export current note to PDF",
     checkCallback: (checking) => {
       const file = plugin.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-      if (!file) return false;
+      if (!file || !pdfAvailable()) return false;
       if (!checking) void exportSingleNoteAsPdf(plugin, file);
       return true;
     },
@@ -208,7 +209,7 @@ export function registerCommands(plugin: HexmakerPlugin): void {
     plugin.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof TFile) || file.extension !== "md") return;
       addPlacedMenuItems(menu, "Export note", "file-down", [
-        { id: "Plugin.fileMenuExportPdf", title: "Export to PDF", short: "PDF", icon: "file-down", run: () => void exportSingleNoteAsPdf(plugin, file) },
+        ...(pdfAvailable() ? [{ id: "Plugin.fileMenuExportPdf", title: "Export to PDF", short: "PDF", icon: "file-down", run: () => void exportSingleNoteAsPdf(plugin, file) }] : []),
         { id: "Plugin.fileMenuExportMarkdown", title: "Export to Markdown", short: "Markdown", icon: "file-text", run: () => void exportSingleNoteAsMarkdown(plugin, file) },
       ], isDebugMode(plugin.app));
     }),

@@ -20,6 +20,7 @@
  * wouldn't load. A partition would need every resource inlined first.
  */
 
+import { pdfAvailable, PDF_UNAVAILABLE_MESSAGE } from "../platform";
 // Minimal local types — avoids adding `electron` as a dependency just for typings.
 interface PrintToPDFOptions {
   landscape?: boolean;
@@ -72,6 +73,8 @@ export async function exportToPdfBytes(
   doc: RenderedDoc,
   opts: PdfExportOptions = {},
 ): Promise<Uint8Array> {
+  // Mobile has no <webview>: say so instead of failing on a tag that never loads.
+  if (!pdfAvailable()) throw new Error(PDF_UNAVAILABLE_MESSAGE);
   // "webview" is an Electron tag not present in HTMLElementTagNameMap, so the
   // tag name (and the resulting element) need casts.
   const webview = createEl("webview" as keyof HTMLElementTagNameMap, {
