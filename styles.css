@@ -1913,6 +1913,114 @@ input.duckmage-input-error {
     font-size: var(--font-ui-smaller);
 }
 
+/* New map's generator list (HF8, owner C1): a search box over a short
+   list that scrolls inside a fixed height, one line per generator. */
+.duckmage-gen-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+    width: 100%;
+}
+
+.duckmage-gen-pick-search {
+    width: 100%;
+}
+
+.duckmage-gen-pick-list {
+    max-height: 16em;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    padding: 0.2em 0;
+}
+
+.duckmage-gen-pick-heading {
+    padding: 0.3em 0.6em 0.1em;
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.duckmage-gen-pick-row,
+.duckmage-gen-pick-group {
+    padding: 0.2em 0.6em;
+    cursor: pointer;
+}
+
+.duckmage-gen-pick-row:hover,
+.duckmage-gen-pick-group:hover {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-gen-pick-row.is-active {
+    background: var(--background-modifier-active-hover);
+    box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+
+.duckmage-gen-pick-group {
+    display: flex;
+    gap: 0.4em;
+    color: var(--text-muted);
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-gen-pick-group ~ .duckmage-gen-pick-row {
+    padding-left: 1.6em;
+}
+
+.duckmage-gen-pick-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    min-width: 0;
+}
+
+.duckmage-gen-pick-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.duckmage-gen-pick-tag {
+    padding: 0 0.35em;
+    border-radius: var(--radius-s);
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-gen-pick-tag.is-continues {
+    color: var(--text-accent);
+}
+
+.duckmage-gen-pick-tag.is-continues::before {
+    content: "↔ ";
+}
+
+.duckmage-gen-pick-star {
+    margin-left: auto;
+    color: var(--text-faint);
+    visibility: hidden;
+}
+
+.duckmage-gen-pick-row:hover .duckmage-gen-pick-star,
+.duckmage-gen-pick-row.is-active .duckmage-gen-pick-star,
+.duckmage-gen-pick-star.is-starred,
+.duckmage-gen-pick-star:focus-visible {
+    visibility: visible;
+}
+
+.duckmage-gen-pick-star.is-starred {
+    color: var(--color-yellow);
+}
+
+.duckmage-gen-pick-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    padding: 0.1em 0 0.2em;
+}
+
 .duckmage-setup-options {
     display: flex;
     flex-direction: column;
@@ -6571,17 +6679,6 @@ button.duckmage-wfc-library-tab.is-active {
 }
 
 /* New map / submap setup: neighbour seam, labelled defaults. */
-.duckmage-setup-gen-seam {
-    font-size: var(--font-ui-smaller);
-    color: var(--text-faint);
-}
-.duckmage-setup-gen-seam.is-continues {
-    color: var(--text-accent);
-    font-weight: 600;
-}
-.duckmage-setup-gen-seam.is-continues::before {
-    content: "↔ ";
-}
 .duckmage-setup-seam-note {
     max-width: 320px;
 }

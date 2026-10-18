@@ -11,7 +11,7 @@ import { NEIGHBOUR_WEIGHT, storeNeighbourWeight } from "./neighbourWeight";
 import { renderNeighbourSlider } from "../ui/neighbourSlider";
 import { markFreshMap } from "./freshMap";
 import { hexRangeText, type Side as WorldSide } from "./world";
-import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
+import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect, refreshPaletteHint } from "../palettes/paletteOptions";
 import { enabledKinds, kindOfTerrains } from "../mapKinds";
@@ -29,7 +29,7 @@ import { scaleGenerators, scalePalette, scalesFor, type MapScaleDef } from "../m
 import { scaleStarter } from "../wizardKinds";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "../ui/mapScaleForm";
 import { NEW_MAP_TUNING_ID } from "../wizardText";
-import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
+import { SIZE_PRESETS } from "./sizePresets";
 import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
 import { LIVE_PREVIEW_DELAY_MS, sizeForScalePick, sizeFromInput } from "../sizeInput";
 import { showFieldError } from "../ui/fieldError";
@@ -38,7 +38,8 @@ import { Disclosure } from "../ui/disclosure";
 import { makeScrubbable } from "../ui/scrub";
 import { groupId } from "../ui/placeGroup";
 import { newMapOptionId } from "./newMapOptionIds";
-import { renderGeneratorCards } from "./newMapSetup/generatorPicker";
+import { newPickerState, pickerSettings, renderGeneratorPicker } from "./newMapSetup/generatorPicker";
+import { withRecent } from "./newMapSetup/pickerRows";
 import { BLANK_MODE, GENERATE_MODE, mapModeChoices, modeOfKind, type MapModeChoice } from "./newMapSetup/modes";
 import {
   BLANK_ID,
@@ -60,32 +61,9 @@ import {
 } from "./registry";
 import { logWarn } from "../log";
 
-/** Submaps are local (a system, a dungeon): smaller, odd sizes so there's a true centre hex. */
-export const SUBMAP_SIZE_PRESETS: SizePreset[] = [
-  { label: "Small", cols: 9, rows: 9 },
-  { label: "Medium", cols: 13, rows: 13 },
-  { label: "Large", cols: 19, rows: 19 },
-];
-
-/**
- * Base terrain wording. With map notes a hex note is only ever created
- * when a hex first gets content, whatever the base terrain; the base only
- * decides what an unpainted hex shows (fresh-eyes r4: the old "None
- * (create every hex note)" was outdated and alarming).
- */
-export const BASE_TERRAIN_NONE_LABEL = "None (unpainted hexes stay blank)";
-export const BASE_TERRAIN_HELP =
-  "What hexes you haven't painted show: this terrain, or nothing with None. Painting a hex overrides it. Either way a hex only gets its own note when you first add something to it.";
-
-/** Why Overland's Sea starts where it does next to a neighbouring map. */
-export function neighbourSeaText(hint: NeighbourSea, anchor: string): string {
-  switch (hint.why) {
-    case "edge": return `Picked from ${anchor}: its sea reaches the shared edge, so the sea is on the ${hint.side}.`;
-    case "end": return `Picked from ${anchor}: its coast meets the shared edge at the ${hint.side} end, so the sea runs along the ${hint.side}.`;
-    case "middle": return `Picked from ${anchor}: its shared edge has water only in the middle, so lakes and inlets.`;
-    case "dry": return `Picked from ${anchor}: its shared edge has no water, so no sea by default.`;
-  }
-}
+// The form's fixed words and submap sizes (also read by tests and the arrival service).
+export { BASE_TERRAIN_HELP, BASE_TERRAIN_NONE_LABEL, SUBMAP_SIZE_PRESETS, neighbourSeaText } from "./newMapSetup/text";
+import { BASE_TERRAIN_HELP, BASE_TERRAIN_NONE_LABEL, SUBMAP_SIZE_PRESETS, neighbourSeaText } from "./newMapSetup/text";
 
 export interface NewMapSetupResult {
   name: string;
@@ -160,6 +138,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private scaleChoices: Record<string, boolean> = {};
   /** The generator's tuning sliders and scale choices on the form (taken off when it changes). */
   private generatorExtras: HTMLElement[] = [];
+  /** The generator list's search, open groups and scroll (HF8). */
+  private picker = newPickerState();
   /** Ids for <label for> on this modal's controls. */
   private static nextId = 0;
 
@@ -541,7 +521,7 @@ export class NewMapSetupModal extends HexmakerModal {
     // aria-labelledby (the row label), not aria-label: Obsidian shows aria-label as a tooltip.
     const genLabelId = `duckmage-setup-field-${NewMapSetupModal.nextId++}`;
     genRow.parentElement?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", genLabelId);
-    const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-labelledby": genLabelId } });
+    const genList = genRow.createDiv();
     this.rememberBox(genRow, "generator", "NewMap.rememberGenerator", "generator and its options");
     /** A module's mode draws its setup here, in place of the list. */
     const modeBox = form.createDiv({ cls: "duckmage-setup-mode" });
@@ -717,10 +697,13 @@ export class NewMapSetupModal extends HexmakerModal {
       const mode = modeNow();
       modeCards.sync();
       genRow.parentElement?.toggle(mode === GENERATE_MODE);
-      renderGeneratorCards(genList, {
+      renderGeneratorPicker(genList, {
         kinds: listed,
         terrains,
         selected: this.kindId,
+        state: this.picker,
+        ...pickerSettings(this.plugin),
+        labelId: genLabelId,
         // Region detail says what this hex's neighbours will do, not a generic example.
         describe: (k) => (k.id === REGION_DETAIL_ID && this.origin ? regionDetailDescription(this.context) : undefined),
         ...(where.neighbour ? { neighbour: anchor ? this.plugin.mapLabel(anchor) : "the neighbour" } : {}),
@@ -737,7 +720,7 @@ export class NewMapSetupModal extends HexmakerModal {
             renderGenerators();
             if (paletteSelect.value !== palette) renderBase();
             refresh();
-          }, () => genList.querySelector<HTMLElement>(".duckmage-setup-gen.is-active"));
+          }, () => genList.querySelector<HTMLElement>(".duckmage-gen-pick-row.is-active"));
         },
       });
       // A module's mode: its own setup where the list was.
@@ -1156,7 +1139,10 @@ export class NewMapSetupModal extends HexmakerModal {
       markFreshMap(this.plugin, result.name, { generator: kind.id, options: this.resolvedOptions(kind), seed: this.seed });
       await this.plugin.saveSettings();
     }
+    // The list's Recent (HF8): what New map last made maps with.
+    if (!openGenerator && kind && kind.id !== BLANK_ID && !kind.unlisted) this.plugin.settings.recentGenerators = withRecent(this.plugin.settings.recentGenerators, kind.id);
     await this.saveDefaults(paletteName);
+    await this.plugin.saveSettings();
     this.close();
     this.onCreated({ ...result, backgroundImage }, { openGenerator });
     if (openGenerator) await genPage()?.open(this.plugin, { mapName: result.name, paletteName, generatorPath: kind?.generatorPath });

@@ -385,6 +385,10 @@ export interface HexmakerPluginSettings {
 	logFolder?: string;
 	/** Icon a link section's "Show on map" offers, by section (blank = none). Unset = src/ui/linkIcons.ts defaults. */
 	linkSectionIcons?: Partial<Record<string, string>>;
+	/** Generators starred in New map's list (ids), shown first. Unset = none. */
+	starredGenerators?: string[];
+	/** Generators New map made maps with last (ids, newest first, at most 5). Unset = none. */
+	recentGenerators?: string[];
 	defaultTableDice: number;
 	hexEditorTerrainCollapsed: boolean;
 	hexEditorFeaturesCollapsed: boolean;
