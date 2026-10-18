@@ -4,6 +4,7 @@
  * fitting / centring in the part of the view no overlay covers, and each
  * map's last viewport. The view reaches it through `ViewportHost`.
  */
+import { pinchStep, type PinchFrame } from "../pinchStep";
 import { Notice } from "obsidian";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { MapData } from "../../types";
@@ -248,6 +249,21 @@ export class MapViewport {
       this.zoomFrameId = null;
       this.flushPendingZoom();
     });
+  }
+
+  /**
+   * Two-finger pinch: one step. `prev` and `cur` are the finger pair's
+   * distance + midpoint (map-relative) on the last and this event; the zoom
+   * and pan follow (pinchStep.ts). Applied at once (the browser already
+   * paces touch moves per frame); the zoom bakes after the usual pause.
+   */
+  pinchBy(prev: PinchFrame, cur: PinchFrame): void {
+    const next = pinchStep(prev, cur, { zoom: this.zoom, panX: this.panX, panY: this.panY });
+    this.zoom = next.zoom;
+    this.panX = next.panX;
+    this.panY = next.panY;
+    this.applyTransform();
+    this.scheduleZoomBake();
   }
 
   private flushPendingZoom(): void {

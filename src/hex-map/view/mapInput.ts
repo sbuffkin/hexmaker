@@ -20,6 +20,7 @@ import { wheelZoomsMap } from "../wheelZoom";
 import type { AreaOverlay } from "./areaOverlay";
 import type { BackgroundCalibration } from "./backgroundCalibration";
 import type { MapToolbar } from "./mapToolbar";
+import { attachTouchInput } from "./touchInput";
 import type { MapViewport } from "./mapViewport";
 import type { UndoController } from "./undoController";
 import { hexKey } from "../../hexKey";
@@ -35,7 +36,7 @@ export interface MapInputHost extends Pick<Component, "registerDomEvent" | "regi
   resetSubStrokeHint(): void;
   biomeStroke(): BiomeStroke<CellEdit> | null;
   calibration(): Pick<BackgroundCalibration, "active">;
-  viewport(): Pick<MapViewport, "panX" | "panY" | "applyTransform" | "queueWheelZoom">;
+  viewport(): Pick<MapViewport, "panX" | "panY" | "applyTransform" | "queueWheelZoom" | "pinchBy">;
   undos(): Pick<UndoController,
     "currentTerrainStroke" | "currentIconStroke" | "currentFactionStroke" | "currentRegionStroke" | "currentSubStroke" | "strokePins"
     | "commitTerrainStroke" | "commitIconStroke" | "commitFactionStroke" | "commitRegionStroke">;
@@ -70,6 +71,8 @@ export class MapInput {
 
   /** Wire the pointer handlers on the view's content (`clipEl`: the map's clipping viewport). */
   attach(contentEl: HTMLElement, clipEl: HTMLElement): void {
+    // Touch first: its capture-phase click / contextmenu guards must run before the mouse handlers'.
+    attachTouchInput(this.host, contentEl, clipEl);
     this.host.registerDomEvent(clipEl, "mouseleave", () => {
       this.host.updateBrushHighlight(null, null);
     });

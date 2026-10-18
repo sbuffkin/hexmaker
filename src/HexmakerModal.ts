@@ -1,4 +1,4 @@
-import { App, Modal } from "obsidian";
+import { App, Modal, Platform } from "obsidian";
 import { ICON_PACK_LABELS, iconLabel, iconPack, iconPackTabs, iconSubgroup, iconSubgroups, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 import { Disclosure, type IsSet, type SectionName } from "./ui/disclosure";
@@ -315,6 +315,9 @@ export class HexmakerModal extends Modal {
 			modalEl.setCssProps({ left: `${left}px`, top: `${top}px` });
 		};
 		win.requestAnimationFrame(centerInViewport);
+
+		// Phones: the modal fills the screen, there is nowhere to drag it to.
+		if (Platform.isMobile) return;
 
 		modalEl.addEventListener("mousedown", (e: MouseEvent) => {
 			const modalContent = modalEl.querySelector<HTMLElement>(".modal-content");
