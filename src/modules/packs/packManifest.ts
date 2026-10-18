@@ -33,6 +33,7 @@
  *
  * Pure: no Obsidian imports.
  */
+import { splitBarePipes } from "../../barePipes";
 
 /** The manifest file's name, at the pack root. */
 export const MANIFEST_FILE = "pack.md";
@@ -106,7 +107,7 @@ function unquote(v: string): string {
 /** Split a table row into cells (escaped pipes kept). */
 function cells(row: string): string[] {
   const inner = row.trim().replace(/^\|/, "").replace(/\|$/, "");
-  return inner.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
+  return splitBarePipes(inner).map((c) => c.trim().replace(/\\\|/g, "|"));
 }
 
 /** Read a manifest note. Never throws: missing parts get defaults. */

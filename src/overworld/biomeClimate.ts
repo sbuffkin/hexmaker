@@ -101,7 +101,7 @@ function readEnd(raw: string, words: readonly [string, number, number][]): { lo:
 export function parseClimateRange(raw: string, words: readonly [string, number, number][]): { range?: ClimateRange; problem?: string } {
   const t = raw.trim().toLowerCase();
   if (!t || t === "any") return {};
-  const parts = t.split(/\s*(?:–|—|\.\.|\bto\b|(?<=[a-z%\d.])\s*-\s*(?=[a-z\d.]))\s*/).filter((p) => p !== "");
+  const parts = t.replace(/([a-z%\d.])\s*-\s*(?=[a-z\d.])/g, "$1–").split(/\s*(?:–|—|\.\.|\bto\b)\s*/).filter((p) => p !== "");
   const names = words.map(([n]) => n).join(", ");
   if (parts.length > 2) return { problem: `"${raw.trim()}" should be one band or a range like ${words[0][0]}–${words[1][0]}` };
   const ends = parts.map((p) => readEnd(p, words));

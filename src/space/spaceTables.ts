@@ -37,6 +37,7 @@ import { formatWhen } from "../random-tables/tableConditions";
 import { ENGINE_ROLES, type RoleId } from "../worldgen/tableRoles";
 import { attrsOf, conditionsOf } from "./worldTypesSource";
 import { ORBIT_ZONES, type OrbitZone, type WorldTypeRow, type WorldTypeTable } from "./worldTypes";
+import { escapeBarePipes, stripTrailingBarePipe } from "../barePipes";
 
 /** The subfolder of the tables folder that holds space sets. */
 export const SPACE_TABLES_FOLDER = "space";
@@ -69,7 +70,7 @@ export function wholeScale(weights: readonly number[]): number {
 }
 
 const fmtWeight = (w: number) => (near(w, Math.round(w)) ? String(Math.round(w)) : String(Math.round(w * 1e6) / 1e6));
-const esc = (s: string) => s.replace(/\r?\n/g, " ").replace(/(?<!\\)\|/g, "\\|");
+const esc = (s: string) => escapeBarePipes(s.replace(/\r?\n/g, " "));
 
 /** A link cell: `[[path\|Name]]` (the escaped pipe keeps the table whole). */
 export function linkCell(path: string): string {
@@ -303,7 +304,7 @@ const splitCells = (line: string): string[] => {
   const out: string[] = [];
   let cur = "";
   let depth = 0;
-  const s = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  const s = stripTrailingBarePipe(line.trim().replace(/^\|/, ""));
   for (let i = 0; i < s.length; i++) {
     if (s[i] === "[" && s[i + 1] === "[") { depth++; cur += "[["; i++; continue; }
     if (s[i] === "]" && s[i + 1] === "]" && depth) { depth--; cur += "]]"; i++; continue; }
