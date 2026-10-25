@@ -9,5 +9,5 @@
 	"fundingUrl": {
 		"Buy Me a Coffee": "https://buymeacoffee.com/morkdev"
 	},
-	"isDesktopOnly": true
+	"isDesktopOnly": false
 }

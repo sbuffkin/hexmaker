@@ -10,6 +10,7 @@
 
 import { App, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { pdfAvailable } from "../platform";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
   exportHexAsPdf,
@@ -88,16 +89,18 @@ export class HexExportModal extends HexmakerModal {
     // Action buttons
     const actions = contentEl.createDiv({ cls: "duckmage-export-tab-actions" });
     // A list of export choices: plain buttons (audit B1).
-    const pdfBtn = actions.createEl("button", {
-      text: "Export PDF",
-    });
-    pdfBtn.addEventListener("click", () => {
-      void exportHexAsPdf(this.plugin, this.hexFile, {
-        outputName: buildStem(),
-        includeGmSections: gmCb.checked,
+    if (pdfAvailable()) {
+      const pdfBtn = actions.createEl("button", {
+        text: "Export PDF",
       });
-      this.close();
-    });
+      pdfBtn.addEventListener("click", () => {
+        void exportHexAsPdf(this.plugin, this.hexFile, {
+          outputName: buildStem(),
+          includeGmSections: gmCb.checked,
+        });
+        this.close();
+      });
+    }
     const mdBtn = actions.createEl("button", {
       text: "Export Markdown",
     });

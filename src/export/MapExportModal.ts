@@ -16,6 +16,7 @@ import { Disclosure, Fold } from "../ui/disclosure";
 import { uniqueMapsByName } from "../maps/mapTree";
 import { moduleExportForm } from "../modules/runtime";
 import { inlineCheck } from "./exportFormControls";
+import { pdfAvailable, PDF_UNAVAILABLE_MESSAGE } from "../platform";
 
 /**
  * The map export form: PNG, PDF with reference table, and the modules'
@@ -216,14 +217,18 @@ export function renderMapExportForm(
     void exportMapAsPng(plugin, mapName, collectOpts());
     form.onExport?.();
   });
-  actions.createEl("button", { text: "Export PDF with reference table" }).addEventListener("click", () => {
-    remember();
-    void exportMapAsPdf(plugin, mapName, collectOpts());
-    form.onExport?.();
-  });
+  if (pdfAvailable()) {
+    actions.createEl("button", { text: "Export PDF with reference table" }).addEventListener("click", () => {
+      remember();
+      void exportMapAsPdf(plugin, mapName, collectOpts());
+      form.onExport?.();
+    });
+  } else {
+    actions.createDiv({ cls: "duckmage-export-mobile-note", text: PDF_UNAVAILABLE_MESSAGE });
+  }
   for (const p of parts) {
     const button = p.button;
-    if (!button) continue;
+    if (!button || !pdfAvailable()) continue;  // module buttons print PDFs
     actions.createEl("button", { text: button.label }).addEventListener("click", () => {
       remember();
       void button.run(collectOpts(), names().parts[p.id]);

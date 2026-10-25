@@ -13,6 +13,11 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
+    /* Touch: the map handles drag, pinch and long-press itself (touchInput.ts). */
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 /* Transparent overlay for expand & toolbar buttons — no overflow clipping */
@@ -10024,4 +10029,51 @@ button.is-armed {
 .duckmage-hex.duckmage-hex-reveal[data-reveal-ring="3"] { animation-delay: 180ms; }
 @media (prefers-reduced-motion: reduce) {
     .duckmage-hex.duckmage-hex-reveal { animation: none; }
+}
+
+/* ── Mobile (phones / small tablets) ───────────────────────────────────
+   Modals fill the screen width instead of keeping a desktop minimum, and
+   scroll inside. Fixed desktop min-widths are lifted. */
+.duckmage-export-mobile-note {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    flex-basis: 100%;
+}
+
+body.is-mobile .modal.duckmage-editor-modal-drag,
+body.is-mobile .modal.duckmage-setup-modal.duckmage-editor-modal-drag {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    min-width: 0;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    min-height: 0;
+}
+body.is-mobile .duckmage-editor-modal-drag .modal-close-button,
+body.is-mobile .duckmage-editor-modal-drag .modal-title {
+    cursor: default;
+}
+body.is-mobile .duckmage-link-picker-modal,
+body.is-mobile .duckmage-roll-modal,
+body.is-mobile .duckmage-table-editor,
+body.is-mobile .duckmage-faction-picker,
+body.is-mobile .duckmage-setup-preview {
+    min-width: 0;
+    max-width: 100%;
+}
+body.is-mobile .duckmage-setup-layout {
+    grid-template-columns: 1fr;
+}
+body.is-mobile .duckmage-setup-layout > .duckmage-setup-preview {
+    position: static;
+    width: 100%;
+}
+body.is-mobile .duckmage-side-panel {
+    min-width: 0;
+    max-width: calc(100vw - 24px);
+}
+/* Finger-sized targets for the map's toolbar. */
+body.is-mobile .duckmage-hex-map-controls button {
+    min-height: 36px;
+    min-width: 36px;
 }

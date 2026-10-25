@@ -7,6 +7,7 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "build:full": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production --full",
+    "smoke:mobile": "node dev/smoke/mobile-emulation.mjs",
     "check:release": "node dev/release/check-release.mjs",
     "test:slices": "node dev/release/test-slices.mjs",
     "version": "node version-bump.mjs && npm run compat:snapshot && git add manifest.json versions.json tests/fixtures/compat",

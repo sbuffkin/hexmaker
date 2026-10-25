@@ -52,6 +52,7 @@ import { DETAIL_REFRESH_MS, LIST_REFRESH_MS, ListSignatures, listSignature, touc
 import { tableTitle } from "../encounterLinks";
 import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
 import { ensureFolder } from "../vault/ensureFolder";
+import { pdfAvailable } from "../platform";
 
 /** Collapse key (and key prefix) of the tree's "Made by the map" section. */
 const MAP_MADE_KEY = "map-made:";
@@ -1531,9 +1532,8 @@ export class RandomTableView extends ItemView {
     });
     exportPdfLink.title = "Export this table as a printable PDF";
      
-    exportPdfLink.addEventListener("click", () => {
-      void exportRandomTableAsPdf(this.plugin, file);
-    });
+    exportPdfLink.addEventListener("click", () => { void exportRandomTableAsPdf(this.plugin, file); });
+    exportPdfLink.toggle(pdfAvailable());
 
     const exportMdLink = header.createEl("a", {
       text: "Export Markdown",

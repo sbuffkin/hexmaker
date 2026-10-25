@@ -37,7 +37,7 @@ export function readIntRange(raw: string): IntRange | undefined {
 
 /** "20×14", "20x14", "16–24 × 10–14", "20 by 14" → a size range. */
 export function readSize(raw: string): WorldSizeRange | undefined {
-  const parts = raw.trim().toLowerCase().split(/\s*(?:×|\*|\bby\b|(?<=[\d\s])x(?=[\s\d]))\s*/).filter((p) => p !== "");
+  const parts = raw.trim().toLowerCase().replace(/([\d\s])x(?=[\s\d])/g, "$1×").split(/\s*(?:×|\*|\bby\b)\s*/).filter((p) => p !== "");
   if (parts.length !== 2) return undefined;
   const cols = readIntRange(parts[0]), rows = readIntRange(parts[1]);
   return cols && rows ? { cols, rows } : undefined;
