@@ -244,15 +244,17 @@ export async function exploreAsYouGo(id) {
   if ((map.exploreRealms ?? []).length !== 2) fail(`explore-realms: ${JSON.stringify(map.exploreRealms)}`);
   if (JSON.stringify(map.exploreWith) !== JSON.stringify(["(realms) -> terrain"])) fail(`explore-with: ${JSON.stringify(map.exploreWith)}`);
   const startTerrain = store.get(made.name, "1_2")?.terrain;
-  if (!startTerrain || !homeMix.includes(startTerrain)) fail(`start hex 1_2: ${startTerrain} (home rolls on ${homeMix.join(", ")})`);
+  if (!startTerrain) fail("start hex 1_2 is blank");
   // Not out at sea: the start is the biggest terrain the party can walk on.
   const startColor = p.getPaletteOrPresetTerrains(map.paletteName).find((t) => t.name === startTerrain);
   if (startColor && (startColor.impassable ?? /water/.test(startColor.type ?? ""))) fail(`the party starts on ${startTerrain} (impassable)`);
   const note = await app.vault.adapter.read(store.notePath(made.name));
   if (!/^explore-realms:/m.test(note)) fail("the map note has no explore-realms");
-  const both = new Set([...homeMix, ...areaMix]);
-  const bad = [...store.all(made.name)].filter(([, h]) => h.terrain && !both.has(h.terrain)).map(([k, h]) => `${k} ${h.terrain}`);
-  if (bad.length) fail(`terrain from outside the areas: ${bad.join(", ")}`);
+  // HF10: hexes reveal the areas' hidden generated land (every terrain the
+  // generators make, not only the mix's top few): palette terrains only.
+  const palette = new Set(p.getPaletteOrPresetTerrains(map.paletteName).map((t) => t.name));
+  const bad = [...store.all(made.name)].filter(([, h]) => h.terrain && !palette.has(h.terrain)).map(([k, h]) => `${k} ${h.terrain}`);
+  if (bad.length) fail(`terrain not in the palette: ${bad.join(", ")}`);
   if (out.ok) out.steps.push(`made ${made.name}: 3×3, 2 areas, 1_2 ${startTerrain}, ${[...store.all(made.name)].filter(([, h]) => h.terrain).length} hexes seen`);
   // Play: five steps north.
   await waitFor(() => view.activeMapName === made.name, 4000);
@@ -273,8 +275,22 @@ export async function exploreAsYouGo(id) {
   }
   const blank = walked.filter((w) => / \?$/.test(w));
   if (blank.length) fail(`steps left blank: ${blank.join(", ")}`);
-  const outside = [...store.all(made.name)].filter(([, h]) => h.terrain && !both.has(h.terrain)).map(([k, h]) => `${k} ${h.terrain}`);
-  if (outside.length) fail(`after the walk, terrain from outside the areas: ${outside.join(", ")}`);
+  const outside = [...store.all(made.name)].filter(([, h]) => h.terrain && !palette.has(h.terrain)).map(([k, h]) => `${k} ${h.terrain}`);
+  if (outside.length) fail(`after the walk, terrain not in the palette: ${outside.join(", ")}`);
+  // The GM's peek (HF10): Peek → Show tints the blank hexes with their hidden land, never a filled one.
+  p.getMap(made.name).explorePeek = "on";
+  p.refreshHexMap();
+  const peeked = await waitFor(() => { const els = [...view.containerEl.querySelectorAll(".duckmage-hex.duckmage-hex-peek")]; return els.length ? els : null; }, 10000);
+  if (!peeked) fail("peek on: no blank hex shows its hidden land");
+  else {
+    const labels = peeked.map((el) => (el.getAttribute("aria-label") ?? "").replace(/^Hidden: /, ""));
+    const wrong = labels.filter((t) => !palette.has(t));
+    if (wrong.length) fail(`peek shows terrain not in the palette: ${[...new Set(wrong)].join(", ")}`);
+    const onFilled = peeked.filter((el) => store.get(made.name, `${el.dataset.x}_${el.dataset.y}`)?.terrain);
+    if (onFilled.length) fail(`peek tints ${onFilled.length} filled hexes`);
+    if (out.ok) out.steps.push(`peek: ${peeked.length} blank hexes show hidden land (${[...new Set(labels)].slice(0, 4).join(", ")})`);
+  }
+  delete p.getMap(made.name).explorePeek;
   if (p.getMap(made.name).gridSize.rows <= rows0) fail(`the map didn't grow (rows ${p.getMap(made.name).gridSize.rows})`);
   const areaBtn = view.containerEl.querySelector(".duckmage-party-controls")?.textContent ?? "";
   if (out.ok) out.steps.push(`walked north: ${walked.join(", ")}; rows ${rows0} → ${p.getMap(made.name).gridSize.rows}${areaBtn ? `; party controls: ${areaBtn.trim().slice(0, 60)}` : ""}`);
