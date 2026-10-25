@@ -8,6 +8,7 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexMenuContribution, PartyAt, PartyControl, PartyStep } from "../modules/types";
 import type { UndoItem } from "../hex-map/undoItems";
+import type { MapData } from "../types";
 import { exploreOf } from "./context";
 import { areaAt, openChangeArea } from "./ChangeAreaModal";
 
@@ -25,6 +26,8 @@ export function exploreStep(plugin: HexmakerPlugin, step: PartyStep): Promise<Un
 export const REVEAL_CONTROL_ID = "explore.reveal";
 /** The party's Area control (HF6): the area it's in; a click opens Change area. */
 export const AREA_CONTROL_ID = "explore.area";
+/** The GM's peek at the hidden land (owner 2026-10-25), on a map powered by generators. */
+export const PEEK_CONTROL_ID = "explore.peek";
 
 export function explorePartyControls(plugin: HexmakerPlugin, party: PartyAt): PartyControl[] {
   const ex = exploreOf(plugin);
@@ -37,7 +40,18 @@ export function explorePartyControls(plugin: HexmakerPlugin, party: PartyAt): Pa
     title: "The generator the land around the party comes from",
     buttons: [{ label: area, title: "Change area: the land ahead comes from another generator", run: () => openChangeArea(plugin, map, party.hex) }],
   }] : [];
-  return [...areaControl, {
+  const peeking = !!map.exploreRealms?.length && ex.peeking(party.map);
+  const peekControl: PartyControl[] = map.exploreRealms?.length ? [{
+    id: PEEK_CONTROL_ID,
+    label: "Peek",
+    title: "For the GM: show the land the party hasn't found yet, faintly, on the blank hexes",
+    buttons: [{
+      label: peeking ? "Hide" : "Show",
+      title: peeking ? "Hide the land the party hasn't found yet" : "Show the land the party hasn't found yet, faintly",
+      run: () => { ex.setPeek(party.map, !peeking); return Promise.resolve([]); },
+    }],
+  }] : [];
+  return [...areaControl, ...peekControl, {
     id: REVEAL_CONTROL_ID,
     label: "Reveal",
     title: "Fill in the blank hexes around the party, as far as it can see from here",
@@ -57,6 +71,12 @@ export function exploreHexMenu(plugin: HexmakerPlugin, map: string, hex: string)
   if (ex.isBlank(map, hex)) out.push({ id: EXPLORE_MENU.roll.menuId, label: EXPLORE_MENU.roll.label, icon: EXPLORE_MENU.roll.icon, run: () => void ex.rollHex(map, hex) });
   if (ex.canReroll(map, hex)) out.push({ id: EXPLORE_MENU.reroll.menuId, label: EXPLORE_MENU.reroll.label, icon: EXPLORE_MENU.reroll.icon, run: () => void ex.reroll(map) });
   return out;
+}
+
+export function exploreHiddenTerrain(plugin: HexmakerPlugin, map: MapData): ((hex: string) => string | undefined) | undefined {
+  const ex = exploreOf(plugin);
+  const m = ex?.exploreMap(map.name);
+  return m ? ex!.peekFor(m) : undefined;
 }
 
 export function exploreFrontier(plugin: HexmakerPlugin, map: string): string[] {

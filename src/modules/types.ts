@@ -570,6 +570,12 @@ export interface PlayHooks {
    * per hex while drawing (read-then-write: never read layout in it).
    */
   gridDecorations?(plugin: HexmakerPlugin, map: MapData): ((hex: string) => readonly string[]) | undefined;
+  /**
+   * A terrain to show faintly on hexes that have none (Hex flower: the GM's
+   * peek at an explored map's hidden land). Asked once per render like
+   * gridDecorations; undefined: nothing to show.
+   */
+  hiddenTerrain?(plugin: HexmakerPlugin, map: MapData): ((hex: string) => string | undefined) | undefined;
   /** Items for a token's right-click menu, after the core's. */
   tokenMenu?(plugin: HexmakerPlugin, token: TokenAt): TokenMenuContribution[];
   /** Places a roll made on a hex can go, listed before the hex's sections. */

@@ -54,10 +54,11 @@ import {
   type Plan,
   type Rolled,
 } from "./explore";
-import { hexPair, neighbourKeys } from "../hexKey";
+import { hexKey, hexPair, neighbourKeys } from "../hexKey";
 import { listGeneratorKinds, type TerrainGeneratorKind } from "../worldgen/registry";
 import { REALMS_SOURCE, parseBorders, parseRealms, realmAt, type Borders, type Geometry, type Realm, type RealmSource } from "./realms";
 import { kindForSource, RealmFlowers } from "./realmFlowers";
+import { nudge, RealmWorlds, type WorldContext } from "./world";
 import type { Flower } from "./flower";
 import type { TerrainColor } from "../types";
 
@@ -66,6 +67,8 @@ export interface RealmState {
   realms: Realm[];
   borders: Borders;
   flowers: Map<string, Flower>;
+  /** The generators the realms were resolved against (for their hidden tiles, world.ts). */
+  kinds: readonly TerrainGeneratorKind[];
   /** Realms whose generators couldn't be found or run. */
   problems: string[];
 }
@@ -84,6 +87,8 @@ export class ExploreService {
   private last = new Map<string, LastFill>();
   /** Flowers made from generators (a map's realms), made once each. */
   readonly realmFlowers = new RealmFlowers();
+  /** The hidden world each realm's generators make (world.ts), made once each. */
+  readonly worlds = new RealmWorlds();
   /** The generators realms are resolved against (listGeneratorKinds, read when one isn't found). */
   private kindList: TerrainGeneratorKind[] | undefined;
 
@@ -174,6 +179,85 @@ export class ExploreService {
     return this.realmFlowers.flowerOf(realm, { kinds, palette, terrains, mapSeed, orientation: this.plugin.settings.hexOrientation });
   }
 
+  /** What the hidden world of `map` is made from. */
+  worldContext(map: ExploreMap, realms: Pick<RealmState, "kinds" | "borders">): WorldContext {
+    return {
+      kinds: realms.kinds,
+      palette: map.paletteName,
+      terrains: this.plugin.getPaletteOrPresetTerrains(map.paletteName),
+      mapSeed: this.seedOf(map),
+      geometry: this.geometry(map),
+      borders: realms.borders,
+    };
+  }
+
+  /** Each map's realms as the peek last read them (peekFor is asked while drawing: no awaits). */
+  private peekRealms = new Map<string, { key: string; realms: RealmState | undefined }>();
+
+  /** Is the GM's peek on for `mapName`? */
+  peeking(mapName: string): boolean {
+    return this.exploreMap(mapName)?.explorePeek === "on";
+  }
+
+  /** Turn the GM's peek on or off, and draw the map again. */
+  setPeek(mapName: string, on: boolean): void {
+    const map = this.exploreMap(mapName);
+    if (!map) return;
+    if (on) map.explorePeek = "on";
+    else delete map.explorePeek;
+    void this.plugin.saveSettings();
+    this.plugin.refreshHexMap();
+  }
+
+  /**
+   * The hidden terrain per hex while the GM peeks at `map` (asked once per
+   * render, then per hex). The first ask reads the map's realms and draws
+   * the map again when they're in.
+   */
+  peekFor(map: ExploreMap): ((hex: string) => string | undefined) | undefined {
+    if (map.explorePeek !== "on" || !map.exploreRealms?.length) return undefined;
+    const key = [...map.exploreRealms, map.exploreBlend ?? "", map.paletteName, this.seedOf(map)].join("\u0000");
+    const got = this.peekRealms.get(map.name);
+    if (got?.key !== key) {
+      this.peekRealms.set(map.name, { key, realms: undefined });
+      void this.realmsOf(map).then((realms) => {
+        if (this.peekRealms.get(map.name)?.key !== key) return;
+        this.peekRealms.set(map.name, { key, realms });
+        if (realms) this.plugin.refreshHexMap();
+      });
+      return undefined;
+    }
+    const realms = got.realms;
+    if (!realms) return undefined;
+    const ctx = this.worldContext(map, realms);
+    return (hex) => this.worlds.baseAt(hex, realms.realms, ctx)?.terrain;
+  }
+
+  /**
+   * The GM's peek (owner 2026-10-25): the hidden terrain of each blank hex
+   * of `mapName` (no nudge; what a reveal starts from). Empty when the map
+   * isn't powered by generators.
+   */
+  async hiddenTerrain(mapName: string): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const map = this.exploreMap(mapName);
+    if (!map) return out;
+    const realms = await this.realmsOf(map);
+    if (!realms) return out;
+    const ctx = this.worldContext(map, realms);
+    const { cols, rows } = map.gridSize;
+    const { x: ox, y: oy } = map.gridOffset ?? { x: 0, y: 0 };
+    for (let x = ox; x < ox + cols; x++) {
+      for (let y = oy; y < oy + rows; y++) {
+        const k = hexKey(x, y);
+        if (!this.isBlank(mapName, k)) continue;
+        const base = this.worlds.baseAt(k, realms.realms, ctx);
+        if (base) out.set(k, base.terrain);
+      }
+    }
+    return out;
+  }
+
   /** The map's realms and their flowers (undefined: it has none). */
   async realmsOf(map: ExploreMap): Promise<RealmState | undefined> {
     const { realms, unread } = parseRealms(map.exploreRealms);
@@ -186,7 +270,7 @@ export class ExploreService {
       if (made) flowers.set(r.name.toLowerCase(), made.flower);
       problems.push(...(made?.problems ?? [`${r.name}: no terrain of this palette to roll on.`]));
     }
-    return { realms, borders: parseBorders(map.exploreBlend), flowers, problems };
+    return { realms, borders: parseBorders(map.exploreBlend), flowers, kinds, problems };
   }
 
   /** The table / flower a rule's link names (the realm's flower for `(realms)`, at hex `hex`). */
@@ -196,6 +280,14 @@ export class ExploreService {
     const terrains = this.terrains(map);
     return (link) => {
       if (link.toLowerCase() === REALMS_SOURCE) {
+        // The hidden world's terrain here, with a little local variety (world.ts).
+        const base = hex && realms ? this.worlds.baseAt(hex, realms.realms, this.worldContext(map, realms)) : undefined;
+        if (base) {
+          const flower = realms?.flowers.get(base.realm.name.toLowerCase());
+          const colours = this.plugin.getPaletteOrPresetTerrains(map.paletteName);
+          return { kind: "table", roll: (seed) => ({ kind: "terrain", value: nudge(base.terrain, flower, colours, seed) }) };
+        }
+        // A realm with its own flower note (or whose generators can't run): its flower.
         const r = hex && realms ? realmAt(hex, realms.realms, this.geometry(map), { seed: this.seedOf(map), borders: realms.borders }) : undefined;
         const flower = r ? realms?.flowers.get(r.name.toLowerCase()) : undefined;
         return flower ? { kind: "flower", flower } : undefined;

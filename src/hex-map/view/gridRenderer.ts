@@ -28,7 +28,7 @@ import { revealedNow } from "../revealBounce";
 import { regionsViewTip } from "../hexHover";
 import { whenSized } from "../whenSized";
 import type { MapData } from "../../types";
-import { moduleGridDecorations, moduleUnchartedKeys } from "../../modules/runtime";
+import { moduleGridDecorations, moduleHiddenTerrain, moduleUnchartedKeys } from "../../modules/runtime";
 import { renderUnchartedLayer, unchartedKeys } from "../unchartedLayer";
 import { FrameThrottle } from "../../frameThrottle";
 import { terrainDiff } from "../terrainDiff";
@@ -357,6 +357,8 @@ export class GridRenderer {
     // The modules' own marks per hex (ModuleRuntime.play.gridDecorations: Solo play's
     // visited hexes), asked once before drawing.
     const decorate = moduleGridDecorations(this.plugin, region);
+    // The GM's peek at an explored map's hidden land (Hex flower), asked once.
+    const hidden = moduleHiddenTerrain(this.plugin, region);
     // Hexes exploring just filled bounce in (HF3; revealBounce.ts).
     const revealed = revealedNow(region.name);
     const addHex = (parent: HTMLElement, x: number, y: number) => {
@@ -398,6 +400,13 @@ export class GridRenderer {
       }
 
       this.setHexColor(hexEl, terrainEntry?.color);
+      const peek = !terrainEntry && hidden ? hidden(hexKey(x, y)) : undefined;
+      const peekColor = peek ? paletteByName.get(peek)?.color : undefined;
+      if (peekColor) {
+        hexEl.addClass("duckmage-hex-peek");
+        hexEl.setCssProps({ "--duckmage-peek-color": peekColor });
+        hexEl.setAttr("aria-label", `Hidden: ${peek}`);
+      }
 
       const iconOverride = iconOverrides?.has(path)
         ? iconOverrides.get(path)!

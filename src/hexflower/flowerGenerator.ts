@@ -29,7 +29,8 @@ import { applyTokenFrontmatter } from "../frontmatter";
 import { normalizeFolder } from "../utils";
 import { emptyFlower, isCell, type Flower } from "./flower";
 import { fillFromPalette } from "./fromPalette";
-import { classifyResult, formatFlowerAt, formatReveal, formatRule, parseReveal, planStep, readRules, startCell } from "./explore";
+import { classifyResult, formatFlowerAt, formatReveal, formatRule, parseReveal, planStep, readRules, ruleSeed, startCell } from "./explore";
+import { nudge } from "./world";
 import { exploreOrder, ringOrder } from "./exploreOrder";
 import { exploreOf, flowerStoreOf } from "./context";
 import type { ExploreMap } from "./exploreFields";
@@ -117,7 +118,7 @@ export function startFill(
   orientation: "flat" | "pointy",
   seed: number,
   whole: boolean,
-  opts: { start?: string; sight?: number } = {},
+  opts: { start?: string; sight?: number; world?: (hex: string, seed: number) => string | undefined } = {},
 ): { cells: Map<string, string>; at: Map<string, number> } {
   const start = opts.start ?? middleHex(grid);
   const flowerAt = typeof flower === "function" ? flower : () => flower;
@@ -129,6 +130,9 @@ export function startFill(
   const cell = ordered.find((n) => isCell(n) && classifyResult(first.cells[n - 1].result, terrains, () => false)?.kind === "terrain");
   let at = new Map<string, number>(cell ? [[first.name.toLowerCase(), cell]] : []);
   if (cell) cells.set(start, classifyResult(first.cells[cell - 1].result, terrains, () => false)!.value);
+  // A map powered by generators: the start hex is the hidden world's (world.ts anchors it on land).
+  const startWorld = opts.world?.(start, ruleSeed({ seed, hex: start }, 0, false));
+  if (startWorld) cells.set(start, startWorld);
   const sight = Math.max(0, opts.sight ?? 0);
   if (!whole && sight === 0) return { cells, at };
   const inGrid = (k: string) => {
@@ -140,6 +144,8 @@ export function startFill(
   const order = whole ? exploreOrder(start, near) : ringOrder(start, sight, near);
   for (const { hex, from } of order) {
     if (cells.has(hex)) continue;
+    const w = opts.world?.(hex, ruleSeed({ seed, hex, from }, 0, false));
+    if (w) { cells.set(hex, w); continue; }
     const f = flowerAt(hex);
     if (!f) continue;
     const plan = planStep({
@@ -161,6 +167,21 @@ function realmFlowerAt(plugin: HexmakerPlugin, realms: readonly Realm[], terrain
   return (hex) => {
     const r = realmAt(hex, realms, g, { seed });
     return r ? flowers.get(r.name) : undefined;
+  };
+}
+
+/**
+ * The hidden world's terrain for realms `realms` (world.ts), nudged by each
+ * realm's flower: undefined where a realm has no generator tile.
+ */
+function realmWorldAt(plugin: HexmakerPlugin, realms: readonly Realm[], terrains: TerrainColor[], palette: string, seed: number, g: Geometry, kinds: readonly TerrainGeneratorKind[]): (hex: string, rollSeed: number) => string | undefined {
+  const ex = exploreOf(plugin);
+  if (!ex) return () => undefined;
+  const flowers = new Map(realms.map((r) => [r.name, ex.realmFlower(r, terrains, palette, seed, kinds)?.flower]));
+  const ctx = { kinds, palette, terrains, mapSeed: seed, geometry: g };
+  return (hex, rollSeed) => {
+    const base = ex.worlds.baseAt(hex, realms, ctx);
+    return base ? nudge(base.terrain, flowers.get(base.realm.name), terrains, rollSeed) : undefined;
   };
 }
 
@@ -187,7 +208,8 @@ async function afterCreate(plugin: HexmakerPlugin, made: ScaleMapMade): Promise<
     });
     const terrainColors = plugin.getPaletteOrPresetTerrains(made.paletteName);
     const flowerAt = realmFlowerAt(plugin, realms, terrainColors, made.paletteName, made.seed, g, kinds);
-    const { at } = startFill(flowerAt, terrainColors.map((t) => t.name), made.grid, g.orientation, made.seed, whole, { start, sight });
+    const world = realmWorldAt(plugin, realms, terrainColors, made.paletteName, made.seed, g, kinds);
+    const { at } = startFill(flowerAt, terrainColors.map((t) => t.name), made.grid, g.orientation, made.seed, whole, { start, sight, world });
     map.exploreRealms = realms.map(formatRealm);
     map.exploreWith = [REALMS_RULE];
     map.hexFlowerAt = formatFlowerAt(at, new Map(realms.map((r) => [r.name.toLowerCase(), r.name])));
@@ -266,10 +288,12 @@ export function hexFlowerGenerator(plugin: HexmakerPlugin, { toPaths, procGrid }
       const whole = req.options.start === "fill";
       if (usesRealms(req.options)) {
         // The preview: the generators New map has at hand (exploreSetupForm hands them to the service).
-        const known = new Map((exploreOf(plugin)?.knownKinds() ?? []).map((k) => [k.id, k.label]));
+        const kinds = exploreOf(plugin)?.knownKinds() ?? [];
+        const known = new Map(kinds.map((k) => [k.id, k.label]));
         const realms = setupRealms(req.options, start, req.seed, g, (id) => known.get(id));
         const palette = terrains.join("\u0000");
-        const { cells } = startFill(realmFlowerAt(plugin, realms, req.terrains, palette, req.seed, g), terrains, req.grid, g.orientation, req.seed, whole, opts);
+        const world = realmWorldAt(plugin, realms, req.terrains, palette, req.seed, g, kinds);
+        const { cells } = startFill(realmFlowerAt(plugin, realms, req.terrains, palette, req.seed, g), terrains, req.grid, g.orientation, req.seed, whole, { ...opts, world });
         return cells.size ? { ok: true, cells, paths: [], warnings: [] } : { ok: false, message: "These generators make no terrain of this palette." };
       }
       const flower = runFlower(plugin, req.options.flower, terrains, req.seed);

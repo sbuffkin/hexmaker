@@ -189,6 +189,15 @@ export function moduleGridDecorations(plugin: HexmakerPlugin, map: MapData): (he
   return each.length ? (hex) => each.flatMap((f) => [...f(hex)]) : () => [];
 }
 
+/** The terrain the modules show faintly on hexes of map `map` that have none (asked once per render). */
+export function moduleHiddenTerrain(plugin: HexmakerPlugin, map: MapData): ((hex: string) => string | undefined) | undefined {
+  for (const m of MODULE_RUNTIMES) {
+    const f = m.play?.hiddenTerrain?.(plugin, map);
+    if (f) return f;
+  }
+  return undefined;
+}
+
 /** The modules' items for a token's right-click menu, in module order. */
 export function moduleTokenMenu(plugin: HexmakerPlugin, token: TokenAt): TokenMenuContribution[] {
   return MODULE_RUNTIMES.flatMap((m) => m.play?.tokenMenu?.(plugin, token) ?? []);

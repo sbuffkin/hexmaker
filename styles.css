@@ -10077,3 +10077,9 @@ body.is-mobile .duckmage-hex-map-controls button {
     min-height: 36px;
     min-width: 36px;
 }
+
+/* The GM's peek at an explored map's hidden land (Hex flower, owner
+   2026-10-25): blank hexes tinted faintly with the terrain they'll reveal. */
+.duckmage-hex.duckmage-hex-peek:not(.duckmage-hex-painted) {
+    background: color-mix(in srgb, var(--duckmage-peek-color, transparent) 35%, var(--background-secondary));
+}

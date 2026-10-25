@@ -7,6 +7,7 @@
  *   explore-grow: off        (only when the map shouldn't grow at its edge; HF4)
  *   explore-realms: ["Overland: procedural:overland at 10_10, home"]   (realms.ts)
  *   explore-blend: normal    (the realms' borders: narrow, normal, wide, sharp)
+ *   explore-peek: on         (the GM sees the hidden land faintly on blank hexes; world.ts)
  *
  * One plain key each (src/maps/mapNote.ts reads and writes them like the
  * core's, through the module's mapNoteFields). Pure data.
@@ -29,6 +30,8 @@ export interface ExploreFields {
   exploreRealms?: string[];
   /** The realms' borders: narrow, normal (unset), wide or sharp. */
   exploreBlend?: string;
+  /** "on": the GM's peek at the hidden land (unset: off). */
+  explorePeek?: string;
 }
 
 export type ExploreMap = MapData & ExploreFields;
@@ -40,6 +43,7 @@ export const EXPLORE_FIELDS: readonly MapNoteField[] = [
   { field: "exploreGrow", key: "explore-grow", kind: "str" },
   { field: "exploreRealms", key: "explore-realms", kind: "list" },
   { field: "exploreBlend", key: "explore-blend", kind: "str" },
+  { field: "explorePeek", key: "explore-peek", kind: "str" },
 ];
 
 /** Is `map` explored by the party (it has at least one rule)? */

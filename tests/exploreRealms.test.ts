@@ -5,7 +5,7 @@ import type { HexData } from "../src/maps/mapNote";
 import { ExploreService } from "../src/hexflower/ExploreService";
 import { FlowerStore } from "../src/hexflower/FlowerStore";
 import { setExplore, setFlowerStore } from "../src/hexflower/context";
-import { AREA_CONTROL_ID, explorePartyControls, exploreStep } from "../src/hexflower/exploreHooks";
+import { AREA_CONTROL_ID, PEEK_CONTROL_ID, explorePartyControls, exploreStep } from "../src/hexflower/exploreHooks";
 import { ChangeAreaModal, areaAt } from "../src/hexflower/ChangeAreaModal";
 import { parseFlowerAt } from "../src/hexflower/explore";
 import { REALMS_RULE, directionOf, formatRealm, parseRealms, placeCentre } from "../src/hexflower/realms";
@@ -85,15 +85,15 @@ async function walkEast(s: ReturnType<typeof setup>, to: number): Promise<string
 }
 
 describe("exploring a map powered by generators", () => {
-  it("each hex rolls on its realm's flower: the woods near home, the lakes near theirs; each realm's walk kept by name", async () => {
+  it("each hex comes from its realm's hidden land: the woods near home, the lakes near theirs", async () => {
     const s = setup({ exploreRealms: REALMS });
     const row = await walkEast(s, 55);
     const woods = new Set(["forest", "hills"]);
     const lakes = new Set(["lake", "grassland"]);
     expect(row.slice(0, 15).every((t) => woods.has(t))).toBe(true);
     expect(row.slice(40, 52).every((t) => lakes.has(t))).toBe(true);
-    expect([...parseFlowerAt(s.mapData.hexFlowerAt as string[]).keys()].sort()).toEqual(["lakes", "woods"]);
-    expect((s.mapData.hexFlowerAt as string[]).every((e) => /^(Woods|Lakes): \d+$/.test(e))).toBe(true);
+    // The realms' land is generated, not walked: no flower walks to keep.
+    expect([...parseFlowerAt(s.mapData.hexFlowerAt as string[] | undefined).keys()].filter((k) => k === "lakes")).toEqual([]);
   });
 
   it("the same seed makes the same map; the lakes' share rises as the party walks toward them", async () => {
@@ -166,7 +166,7 @@ describe("Play: the party's Area and Change area", () => {
   it("the party controls say the area the party is in, before Reveal; none on a map without areas", () => {
     const s = setup({ exploreRealms: REALMS });
     const controls = explorePartyControls(s.plugin as never, { map: "m", hex: "1_2", token: "party.md" });
-    expect(controls.map((c) => [c.id, c.label, c.buttons[0].label])).toEqual([[AREA_CONTROL_ID, "Area", "Woods"], ["explore.reveal", "Reveal", "1"]]);
+    expect(controls.map((c) => [c.id, c.label, c.buttons[0].label])).toEqual([[AREA_CONTROL_ID, "Area", "Woods"], [PEEK_CONTROL_ID, "Peek", "Show"], ["explore.reveal", "Reveal", "1"]]);
     expect(areaAt(s.plugin as never, s.mapData as never, "45_2")).toBe("Lakes");
     const plain = setup({ exploreWith: ["[[Wilds]] -> terrain"] });
     expect(explorePartyControls(plain.plugin as never, { map: "m", hex: "1_2", token: "party.md" }).map((c) => c.id)).toEqual(["explore.reveal"]);
