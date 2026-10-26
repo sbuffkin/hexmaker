@@ -202,7 +202,8 @@ export function exploreHexMenu(plugin: HexmakerPlugin, map: string, hex: string)
     out.push(item(EXPLORE_MENU.stop, () => done(plugin, map, fog.stop(map))));
     return out;
   }
-  if (fog && workModeOf(plugin.getMap(map)) === "play") out.push(item(EXPLORE_MENU.start, () => openStartExploring(plugin, map, hex)));
+  // Not on an overworld: its regions are drawn by their own layer, which the fog doesn't cover.
+  if (fog && workModeOf(plugin.getMap(map)) === "play" && !plugin.arrival?.isOverworld(map)) out.push(item(EXPLORE_MENU.start, () => openStartExploring(plugin, map, hex)));
   return out;
 }
 

@@ -381,6 +381,9 @@ export class MapInput {
       if (brushStroke) {
         brushCommit(brushStroke, false);
         brushStroke = null;
+        // The click that ends the stroke (if one comes) is swallowed below; a
+        // drag that ends with none must not eat the next click (a button).
+        window.setTimeout(() => { hasDragged = false; }, 0);
       } else if (isTerrainPainting) {
         if (this.host.drawingMode() === "biome") void this.host.finishBiomeStroke();
         else if (this.host.drawingMode() === "terrain") this.host.undos().commitTerrainStroke();

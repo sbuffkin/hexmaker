@@ -129,6 +129,14 @@ describe("fog: start, step, look, stop (FogService)", () => {
 		expect(exploreFog(s.plugin as never, s.mapData as never)).toBeUndefined();
 	});
 
+	it("a map with its tokens layer off shows tokens again, so the party is seen (undone with the start)", async () => {
+		const s = setup({ showTokens: false });
+		const undo = await s.fog.start("m", { start: "4_4", sees: 0 });
+		expect(s.mapData.showTokens).toBeUndefined();
+		await applyAll(s.plugin, undo, "undo");
+		expect(s.mapData.showTokens).toBe(false);
+	});
+
 	it("an existing token becomes the party and moves to the start", async () => {
 		const s = setup({}, { "world/tokens/Scout.md": "---\ntoken: true\ntoken-hex: \"1_1\"\ntoken-map: m\n---\n" });
 		const undo = await s.fog.start("m", { start: "2_2", sees: 0, token: "world/tokens/Scout.md" });

@@ -170,6 +170,100 @@ try {
   check("a tap still opens the hex (click path)", after.md > before || after.modals > 0 || after.menu, `markdown leaves ${before} -> ${after.md}, modals ${after.modals}`);
   await shot(page, runDir, "04-after-tap");
 
+  // HF11 on a phone: Start exploring from the long-press menu, the party bar's Sees 2 is one tap,
+  // a tap on the party's own hex reveals ring 2 (token unmoved), and the Reveal hexes brush takes a finger drag.
+  const hasFog = await ev((pid) => window.app.plugins.plugins[pid].moduleGenerators({ toPaths: () => ({ paths: [], missing: [] }), procGrid: (g) => g }).some((k) => k.id === "procedural:hex-flower"), id);
+  if (hasFog) {
+    await ev(() => { document.querySelector(".menu") && document.body.click(); document.querySelectorAll(".modal-container .modal-close-button").forEach((b) => b.click()); window.app.workspace.getLeavesOfType("markdown").forEach((l) => l.detach()); });
+    for (let i = 0; i < 3 && (await ev(() => document.querySelectorAll(".modal").length)); i++) { await page.keyboard.press("Escape"); await sleep(400); }
+    await ev(async (pid, name) => { const p = window.app.plugins.plugins[pid]; await p.showMap(name); window.app.workspace.getLeavesOfType("duckmage-hex-map")[0].view.setWorkMode("play"); }, id, mapName);
+    await sleep(1200);
+    const tapAt = async (x, y) => { await touch("touchStart", [[x, y]]); await sleep(40); await touch("touchEnd", []); await sleep(500); };
+    const centreOf = (sel) => ev((q) => { const el = document.querySelector(q); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }, sel);
+    const g3 = await ev(() => {
+      const v = window.app.workspace.getLeavesOfType("duckmage-hex-map")[0].view;
+      const r = v.containerEl.querySelector(".duckmage-hex-map-clip").getBoundingClientRect();
+      const mid = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      const hexes = [...v.containerEl.querySelectorAll(".duckmage-hex[data-x]")].map((h) => ({ k: `${h.dataset.x}_${h.dataset.y}`, b: h.getBoundingClientRect() }))
+        .filter((o) => o.b.left > r.left + 20 && o.b.right < r.right - 20 && o.b.top > r.top + 20 && o.b.bottom < r.bottom - 20)
+        .sort((a, b) => Math.hypot(a.b.left - mid.x, a.b.top - mid.y) - Math.hypot(b.b.left - mid.x, b.b.top - mid.y));
+      const h = hexes[0];
+      return { k: h.k, x: h.b.left + h.b.width / 2, y: h.b.top + h.b.height / 2 };
+    });
+    await touch("touchStart", [[g3.x, g3.y]]);
+    await sleep(750);
+    await touch("touchEnd", []);
+    await sleep(900);
+    const start = await ev(() => { const i = [...document.querySelectorAll(".menu .menu-item")].find((m) => m.textContent.includes("Start exploring")); if (!i) return null; const r = i.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    const why = start ? "" : await ev((pid, name) => JSON.stringify({ mode: window.app.plugins.plugins[pid].getMap(name).workMode, items: [...document.querySelectorAll(".menu .menu-item")].map((m) => m.textContent), modals: [...document.querySelectorAll(".modal")].map((m) => m.className) }), id, mapName);
+    check("long-press menu offers Start exploring (Play)", !!start, why);
+    if (start) {
+      await tapAt(start.x, start.y);
+      await sleep(600);
+      const dlg = await ev(() => { const m = document.querySelector(".duckmage-start-exploring")?.closest(".modal"); return m ? m.getBoundingClientRect().width : null; });
+      check("Start exploring dialog fits the phone", dlg !== null && dlg <= 392, `${dlg}px`);
+      const cta = await centreOf(".duckmage-start-exploring .mod-cta");
+      if (cta) await tapAt(cta.x, cta.y);
+      await sleep(1200);
+      const fog = await ev((pid, name) => { const p = window.app.plugins.plugins[pid]; return { on: p.getMap(name).exploreFog, fogged: document.querySelectorAll(".duckmage-hex-fogged").length }; }, id, mapName);
+      check("a tap on Start exploring fogs the map", fog.on === "on" && fog.fogged > 0, JSON.stringify(fog));
+      const tok = await centreOf(".duckmage-token.is-party");
+      if (tok) await tapAt(tok.x, tok.y);
+      await sleep(600);
+      const bar = await ev(() => { const b = document.querySelector(".duckmage-party-controls"); return b ? b.getBoundingClientRect().width : null; });
+      check("tapping the party shows its bar, within the phone width", bar !== null && bar <= 390, `${bar}px`);
+      await shot(page, runDir, "05-fog-party-bar");
+      const s2 = await centreOf('.duckmage-party-controls button[aria-label="Sees 2"]');
+      if (s2) await tapAt(s2.x, s2.y);
+      const seesNow = await ev((pid, name) => window.app.plugins.plugins[pid].getMap(name).exploreReveal, id, mapName);
+      check("Sees 2 is one tap", seesNow === "2 rings", String(seesNow));
+      // The party's own hex, away from the token.
+      const own = await ev((k) => {
+        const [x, y] = k.split("_");
+        const h = document.querySelector(`.duckmage-hex[data-x="${x}"][data-y="${y}"]`);
+        const r = h.getBoundingClientRect();
+        for (const [fx, fy] of [[0.5, 0.12], [0.5, 0.88], [0.2, 0.5], [0.8, 0.5], [0.3, 0.2], [0.7, 0.8]]) {
+          const px = r.left + r.width * fx, py = r.top + r.height * fy;
+          const at = document.elementFromPoint(px, py);
+          if (at && at.closest(".duckmage-hex") === h && !at.closest(".duckmage-token")) return { x: px, y: py };
+        }
+        return null;
+      }, g3.k);
+      const seenBefore = await ev((pid, name) => (window.app.plugins.plugins[pid].getMap(name).exploreSeen ?? []).join(";"), id, mapName);
+      if (own) await tapAt(own.x, own.y);
+      await sleep(800);
+      const look = await ev((pid, name, k) => {
+        const p = window.app.plugins.plugins[pid];
+        const n = (p.getMap(name).exploreSeen ?? []).reduce((a, row) => a + row.split(":")[1].split(",").reduce((c, r) => { const [x0, x1] = r.trim().split("-").map(Number); return c + (x1 === undefined ? 1 : x1 - x0 + 1); }, 0), 0);
+        const v = window.app.workspace.getLeavesOfType("duckmage-hex-map")[0].view;
+        v.tokens.loadTokensForMap();
+        return { n, at: v.tokens.tokenEntries.find((t) => t.party)?.hex, k };
+      }, id, mapName, g3.k);
+      check("a tap on the party's own hex reveals ring 2, token unmoved", !!own && look.n === 19 && look.at === g3.k, `${own ? "" : "no free spot on the hex; "}seen ${seenBefore.length ? "" : "0 "}→ ${look.n}, party on ${look.at}`);
+      await shot(page, runDir, "06-fog-look");
+      // The brush: a one-finger drag over hidden hexes reveals them.
+      const pick = await centreOf('.duckmage-party-controls button[aria-label="Reveal hexes Pick"]');
+      if (pick) await tapAt(pick.x, pick.y);
+      const path = await ev(() => {
+        const r = document.querySelector(".duckmage-hex-map-clip").getBoundingClientRect();
+        const hid = [...document.querySelectorAll(".duckmage-hex-fogged")].map((h) => ({ k: `${h.dataset.x}_${h.dataset.y}`, b: h.getBoundingClientRect() }))
+          .filter((o) => o.b.left > r.left + 10 && o.b.right < r.right - 10 && o.b.top > r.top + 10 && o.b.bottom < r.bottom - 10);
+        const a = hid[0];
+        const b = a && hid.find((o) => o.k !== a.k && Math.abs(o.b.left - a.b.left) < 2 && Math.abs(o.b.top - a.b.bottom) < a.b.height * 0.6);
+        return a && b ? { keys: [a.k, b.k], from: [a.b.left + a.b.width / 2, a.b.top + a.b.height / 2], to: [b.b.left + b.b.width / 2, b.b.top + b.b.height / 2] } : null;
+      });
+      if (path) {
+        await touch("touchStart", [path.from]);
+        for (let i = 1; i <= 6; i++) { await touch("touchMove", [[path.from[0] + (path.to[0] - path.from[0]) * i / 6, path.from[1] + (path.to[1] - path.from[1]) * i / 6]]); await sleep(20); }
+        await touch("touchEnd", []);
+        await sleep(900);
+      }
+      const brushed = path ? await ev((ks) => ks.map((k) => { const [x, y] = k.split("_"); return document.querySelector(`.duckmage-hex[data-x="${x}"][data-y="${y}"]`)?.classList.contains("duckmage-hex-fogged"); }), path.keys) : null;
+      check("Reveal hexes: a finger drag reveals the hexes crossed", !!pick && !!brushed && brushed.every((f) => f === false), path ? `${path.keys.join(" + ")}: fogged ${JSON.stringify(brushed)}` : "no pair of hidden hexes on screen");
+      await shot(page, runDir, "07-fog-brush");
+    }
+  }
+
   const errs = pluginErrors(sess.log.slice(mark), id).filter((e) => !/emulateMobile/.test(e.text));
   check("no plugin console errors on mobile", errs.length === 0, errs.slice(0, 3).map((e) => e.text.slice(0, 160)).join(" | "));
 } catch (e) {

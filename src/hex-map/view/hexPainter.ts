@@ -464,6 +464,11 @@ export class HexPainter {
    * base)" until the hex was hovered again).
    */
   labelHex(hexEl: HTMLElement, terrain?: string | null, path?: string): void {
+    // Under fog (HF11) a hidden hex says nothing of itself, unless the GM peeks.
+    if (hexEl.hasClass("duckmage-hex-fogged") && !hexEl.hasClass("duckmage-hex-peek")) {
+      if (hexEl.title !== "Not seen yet") { hexEl.title = "Not seen yet"; hexEl.setAttr("aria-label", "Not seen yet"); }
+      return;
+    }
     const x = Number(hexEl.dataset.x);
     const y = Number(hexEl.dataset.y);
     const hexPath = this.plugin.hexPath(x, y, this.activeMapName);

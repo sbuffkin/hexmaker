@@ -625,6 +625,27 @@ async function overworldExtra(ctx) {
     return { steps, problems };
   }, ctx.pluginId, ow.name);
   out.push({ check: "GM4-overworld-arrival", ok: !a.skipped && a.problems.length === 0, detail: a.skipped ?? [...a.steps, ...a.problems].join("; ") });
+  // C10c: explore a region of the demo world with fog of war (HF11).
+  const region = regions.slice().sort((x, y) => y.cols * y.rows - x.cols * x.rows)[0];
+  if (region) out.push(fogCheck(await ctx.ev((id, n) => window.__smokePage.exploreFog(id, n), ctx.pluginId, region.name), `C10c-fog ${region.name}`));
+  return out;
+}
+
+/** A fog check's result as a smoke check line (render times in the detail). */
+function fogCheck(r, check) {
+  const bench = r.bench?.fog !== undefined ? ` [render ${r.bench.noFog} ms → ${r.bench.fog} ms with fog]` : "";
+  return { check, ok: r.ok, detail: r.skipped ? `skipped: ${r.skipped}` : [...r.steps, ...r.problems].join("; ") + bench, bench: r.bench };
+}
+
+/**
+ * Real data (HF11): explore the coastal map with fog of war, and time its
+ * render with and without fog; chult (3843 hexes) for the render time only.
+ */
+async function realDataExtra(ctx) {
+  const out = [];
+  const names = ctx.state.maps.map((m) => m.name);
+  if (names.includes("the-coast")) out.push(fogCheck(await ctx.ev((id, n) => window.__smokePage.exploreFog(id, n, { runs: 5 }), ctx.pluginId, "the-coast"), "C10c-fog the-coast"));
+  if (names.includes("chult")) out.push(fogCheck(await ctx.ev((id, n) => window.__smokePage.exploreFog(id, n, { runs: 5, benchOnly: true }), ctx.pluginId, "chult"), "C10c-fog-bench chult"));
   return out;
 }
 
@@ -696,6 +717,7 @@ export const SETUPS = [
     },
     migration: true,
     expect: { readyMs: 600_000, openMs: 60_000 },
+    extra: realDataExtra,
   },
   // `slices`: the slices a setup exercises beyond the foundation (premerge runs those with an unreleased one on a build with every slice).
   { id: "fresh", title: "Fresh install", build: (dir) => ({ seed: seedDir(dir) }), expect: { wizard: true }, extra: freshExtra, skipPaint: true, slices: ["play", "hexflower"] },

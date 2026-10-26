@@ -238,6 +238,11 @@ export class FogService {
     undo.push(...await this.placeParty(mapName, how.start, how.token));
     undo.push(...this.setField(map, "exploreReveal", formatReveal(how.sees)));
     undo.push(...this.setField(map, "exploreFog", "on"));
+    // The party must be seen: a map with its tokens layer off shows it again (a view toggle, undone with the start).
+    if (map.showTokens === false) {
+      undo.push({ kind: "map-field", mapName, field: "showTokens", before: false, after: undefined });
+      delete map.showTokens;
+    }
     if (how.reset) undo.push(...this.setSeen(map, new Set()));
     const fog = this.fogMap(mapName);
     if (fog) undo.push(...this.revealAround(mapName, how.start).undo);

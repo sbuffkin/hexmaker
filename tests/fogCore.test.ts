@@ -91,6 +91,8 @@ describe("the hexBrush tool", () => {
 		expect(input).toMatch(/if \(this\.host\.drawingMode\(\) === "hexBrush"\) \{\n\s*brushStroke = \[\];/);
 		expect(input).toMatch(/if \(undo\.length\) this\.host\.undos\(\)\.pushUndo\(undo\.length === 1 \? undo\[0\] : \{ kind: "group", items: undo \}, map\);/);
 		expect(input).toMatch(/\.finally\(\(\) => this\.host\.renderGrid\(\)\);/);
+		// A stroke that ends without a click doesn't leave the next click swallowed.
+		expect(input).toMatch(/brushStroke = null;\n[^\n]*\n[^\n]*\n\s*window\.setTimeout\(\(\) => \{ hasDragged = false; \}, 0\);/);
 		expect(input).toMatch(/if \(this\.host\.drawingMode\(\) === "hexBrush" && hexX !== null && hexY !== null\) \{\n\s*brushCommit\(\[hexKey\(hexX, hexY\)\], true\);/);
 		expect(input).toMatch(/else if \(this\.drawingMode === "hexBrush"\) this\.exitBrushMode\(\);/);
 	});
@@ -132,6 +134,9 @@ describe("fog hides a hidden hex's own things in every layer (PlayHooks.fog)", (
 		// Read before the layer is written (read-then-write).
 		expect(read).toBeLessThan(tokens.indexOf('const layer = gridContainer.createDiv({ cls: "duckmage-token-layer" });'));
 		expect(tokens).toMatch(/if \(fogged\.has\(token\.hex\) && !isParty\(token\)\) continue;/);
+		// The hover tooltip says nothing of a hidden hex (unless the GM peeks).
+		const painter = readSource("src/hex-map/view/hexPainter.ts");
+		expect(painter).toMatch(/if \(hexEl\.hasClass\("duckmage-hex-fogged"\) && !hexEl\.hasClass\("duckmage-hex-peek"\)\) \{\n\s*if \(hexEl\.title !== "Not seen yet"\)/);
 	});
 
 	it("exports: As the party has seen it blanks hidden hexes (PNG, PDF table, manual)", () => {
