@@ -136,6 +136,7 @@ src/
                           (map creation is core: New map and the wizard run generators without the page)
   overworld/ space/ hexflower/ ← module code (World maps, Space, hex flowers)
   random-tables/        ← RandomTableView, table parse/roll (randomTable.ts), TableStore, workflows
+  fields/               ← custom hex fields (#52): fields note, types, formulas, place influences (FieldsService in services/)
   palettes/             ← PaletteStore (palette notes ⇄ settings), paletteNote, pathTypeTable, presets
   paths/                ← PathsService (resolved chains, route cache), router, path edits, legacy readers
   arrival/              ← places made on arrival, events ledgers (Solo play is src/modules/play/)
