@@ -83,6 +83,7 @@ export type ModeAction =
   | "map-properties" // rename, palette, stagger, background, map tables
   | "place-biome" // first biome on an empty overworld hex
   | "edit-biomes" // biome library, world types
+  | "edit-fields" // hex fields (src/fields): typed in the editor, Recalculate fields. Fills when a hex gets terrain ride on that write (exploring's are discover)
   // ── God only ──
   | "reshape" // swap a placed biome, reroll, regenerate, region settings after lock
   | "swap-hexes"
@@ -128,6 +129,7 @@ export const CORE_ACTION_POLICY: Readonly<Partial<Record<ModeAction, ActionPolic
   "map-properties": { modes: BUILD, verb: "change the map's properties" },
   "place-biome": { modes: BUILD, verb: "place a biome" },
   "edit-biomes": { modes: BUILD, verb: "edit biomes" },
+  "edit-fields": { modes: BUILD, verb: "edit hex fields" },
   reshape: { modes: GOD, verb: "change a placed biome" },
   "swap-hexes": { modes: GOD, verb: "swap hexes" },
   "shrink-map": { modes: GOD, verb: "shrink the map" },
@@ -243,6 +245,7 @@ export const CORE_COMMAND_ACTIONS: Readonly<Record<string, ModeAction>> = {
   "add-map-data-to-hex-notes": "edit-note",
   "update-region-faction-map-data": "edit-note",
   "export-current-map": "export",
+  "recalculate-fields": "edit-fields",
 };
 
 /** Every command id this build registers: the core's and the modules'. */

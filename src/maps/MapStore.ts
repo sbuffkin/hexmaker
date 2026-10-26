@@ -22,6 +22,7 @@ import {
 } from "./mapNote";
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
 import { regionMirrorFixes } from "./submaps";
+import { fillFields } from "./fieldFill";
 import { mergePaths, pathRouteStats } from "./mapPathMerge";
 export { mergePaths, pathRouteStats } from "./mapPathMerge";
 import { guardWrite } from "../modeGate";
@@ -188,9 +189,7 @@ export class MapStore {
   }
 
   /** Where the last known copy of each map note is kept (plugin folder, outside the vault's notes). */
-  private cacheDir(): string {
-    return `${this.plugin.manifest.dir}/map-cache`;
-  }
+  private cacheDir(): string { return `${this.plugin.manifest.dir}/map-cache`; }
 
   cachePath(map: string): string {
     return `${this.cacheDir()}/${map.replace(/[\\/:*?"<>|]/g, "_")}.md`;
@@ -335,9 +334,7 @@ export class MapStore {
 
   // ── paths ────────────────────────────────────────────────────────────
 
-  private hexFolder(): string {
-    return normalizeFolder(this.plugin.settings.hexFolder ?? "");
-  }
+  private hexFolder(): string { return normalizeFolder(this.plugin.settings.hexFolder ?? ""); }
 
   mapFolder(map: string): string {
     const root = this.hexFolder();
@@ -396,6 +393,7 @@ export class MapStore {
       if (empty) delete h[k];
       else (h as Record<string, unknown>)[k] = v;
     }
+    fillFields(map, key, t.get(key), h, patch);
     if (Object.keys(h).length) t.set(key, h); else t.delete(key);
     if (!t.size) this.clearedHexes.add(map);
     if ("terrain" in patch) this.terrainChanged(map);
@@ -435,6 +433,7 @@ export class MapStore {
       this.recorder?.(map, key, t.get(key));
       const h: HexData = { ...(t.get(key) ?? {}), ...patch };
       for (const k of Object.keys(h) as (keyof HexData)[]) if (h[k] === undefined || h[k] === "") delete h[k];
+      fillFields(map, key, t.get(key), h, patch);
       if (Object.keys(h).length) t.set(key, h); else t.delete(key);
     }
     if (!t.size) this.clearedHexes.add(map);
@@ -1318,9 +1317,7 @@ export class MapStore {
     return cleanHexNotes(this.migrationHost(), maps, trustNote);
   }
 
-  private backupDir(): string {
-    return mapNotesBackupDir(this.plugin.manifest.dir);
-  }
+  private backupDir(): string { return mapNotesBackupDir(this.plugin.manifest.dir); }
 }
 
 const NO_FRONTMATTER = "its frontmatter (the --- lines with hexmaker-map at the top) is missing or broken";

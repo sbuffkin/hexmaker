@@ -46,6 +46,7 @@ import type {
 } from "./types";
 import { clearPendingTerrain } from "./frontmatter";
 import { MapStore } from "./maps/MapStore";
+import { FieldsService } from "./services/FieldsService";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
@@ -95,15 +96,11 @@ export default class HexmakerPlugin extends Plugin {
   /** Each module's note stores (src/modules/runtime.ts), made once with the plugin. */
   readonly moduleStores: ModuleStore[] = createModuleStores(this);
   /** A module's store by id. */
-  moduleStore(id: string): ModuleStore | undefined {
-    return this.moduleStores.find((s) => s.id === id);
-  }
+  moduleStore(id: string): ModuleStore | undefined { return this.moduleStores.find((s) => s.id === id); }
   /** Every module's built-in generators; worldgen/registry asks here so it never imports modules/runtime (import cycle). */
   moduleGenerators(helpers: GeneratorHelpers): GeneratorContribution[] { return moduleGenerators(this, helpers); }
   /** Overworld biome notes (#50; the World maps module's store). Module code only: undefined without World maps. */
-  get biomeStore(): BiomeStore {
-    return this.moduleStore("biomes") as BiomeStore;
-  }
+  get biomeStore(): BiomeStore { return this.moduleStore("biomes") as BiomeStore; }
   /** World types tables for the space generators (the Space module's store). */
   get worldTypeStore(): WorldTypeStore {
     return this.moduleStore("world-types") as WorldTypeStore;
@@ -124,6 +121,8 @@ export default class HexmakerPlugin extends Plugin {
   events = new EventsService(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
+  /** Custom hex fields (#52): the world's fields note, fills, Recalculate (src/services/FieldsService.ts). */
+  readonly fields = new FieldsService(this);
   /** What each hex note's Map data callout last showed (phase 2: tells a hand edit from a stale copy). */
   calloutMemory = new CalloutMemory(() => this.app.vault.adapter, () => this.manifest.dir ?? "");
   /** Hex notes' terrain/area/icon/name properties, both ways (MG4, src/maps/hexPropsSync.ts). */

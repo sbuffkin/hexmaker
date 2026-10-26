@@ -4,12 +4,12 @@
  * separate handlers used to be registered in HexmakerPlugin.onload, so
  * who sees a change first is unchanged:
  *
- *   metadata changed: pending-terrain cache → hex-note properties
+ *   metadata changed: pending-terrain cache → hex-note properties → hex fields' places
  *   file-open:        hex-note properties → region/faction callout, hex callout focus
- *   create:           icons → palette store → module stores → map store
- *   modify:           palette store → module stores → map store
- *   delete:           hex-note properties → icons → map store → palette store → module stores → callout memory → workflow steps
- *   rename:           hex-note properties → icons → palette store → module stores → callout memory → region note → linkedFolder links
+ *   create:           icons → palette store → module stores → map store → fields note
+ *   modify:           palette store → module stores → map store → fields note
+ *   delete:           hex-note properties → icons → map store → palette store → module stores → callout memory → fields note → workflow steps
+ *   rename:           hex-note properties → icons → palette store → module stores → callout memory → region note → fields note → linkedFolder links
  *   active-leaf-change: palette store (derived cells)
  *
  * Each group that used to be its own handler is isolated as Obsidian
@@ -54,6 +54,8 @@ export function registerVaultEvents(plugin: HexmakerPlugin): void {
     step(() => clearPendingTerrain(file.path));
     // A hex note's properties edited (properties panel, text, sync).
     step(() => sync.onMetadataChanged(file, data));
+    // A Towns link or a place-type changed: hex fields find the places again.
+    step(() => plugin.fields.onMetadataChanged());
   }));
 
   plugin.registerEvent(app.workspace.on("file-open", (file) => {
@@ -72,6 +74,7 @@ export function registerVaultEvents(plugin: HexmakerPlugin): void {
       plugin.paletteStore.onModify(f);
       for (const st of plugin.moduleStores) st.onCreate?.(f);
       plugin.mapStore.onCreate(f);
+      plugin.fields.store.onModify(f);
     });
   }));
 
@@ -83,6 +86,7 @@ export function registerVaultEvents(plugin: HexmakerPlugin): void {
       plugin.paletteStore.onDelete(f);
       for (const st of plugin.moduleStores) st.onDelete?.(f);
       plugin.calloutMemory.forget(f.path);
+      plugin.fields.store.onDelete(f);
     });
     // Remove workflow steps that reference a deleted table file.
     step(() => void onTableDeleted(plugin, f));
@@ -96,6 +100,7 @@ export function registerVaultEvents(plugin: HexmakerPlugin): void {
       for (const st of plugin.moduleStores) st.onRename?.(f, oldPath);
       plugin.calloutMemory.rename(oldPath, f.path);
       if (f instanceof TFile) void onRegionNoteRenamed(plugin, f, oldPath);
+      plugin.fields.store.onRename(f, oldPath);
     });
     // Keep linkedFolder frontmatter in sync when a folder is renamed.
     step(() => void onTableFolderRenamed(plugin, f, oldPath));
@@ -107,6 +112,7 @@ export function registerVaultEvents(plugin: HexmakerPlugin): void {
       plugin.paletteStore.onModify(f);
       for (const st of plugin.moduleStores) st.onModify?.(f);
       plugin.mapStore.onModify(f);
+      plugin.fields.store.onModify(f);
     });
   }));
 

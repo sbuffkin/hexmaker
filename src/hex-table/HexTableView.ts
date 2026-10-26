@@ -26,14 +26,13 @@ import {
   terrainTypeLabel,
 } from "./terrainTypeFilter";
 import { uniqueMapsByName } from "../maps/mapTree";
+import { hexKey } from "../hexKey";
+import { shownValue } from "../fields/hexFields";
+import { FieldFilterModal } from "./view/FieldFilterModal";
+import { compareFieldValues, filtersLabel, matchesFieldFilters, nextSort, renderFieldCells, renderFieldHeaders, sortField, sortLabel, valuesOfRow, type FieldFilters, type SortMode } from "./view/fieldColumns";
 
-type SortMode = "x" | "y" | "type";
-const SORT_LABELS: Record<SortMode, string> = {
-  x: "Sort: xy",
-  y: "Sort: yx",
-  type: "Sort: type",
-};
-const NEXT_SORT: Record<SortMode, SortMode> = { x: "y", y: "type", type: "x" };
+/** The "has a …" filters: a link section the row must link something in. */
+const HAS_FILTERS = [["towns", "Town", "Towns"], ["dungeons", "Dungeon", "Dungeons"], ["features", "Feature", "Features"], ["quests", "Quest", "Quests"], ["factions", "Faction", "Factions"]] as const;
 
 // Column definitions in template order
 const COLUMNS: { key: string; label: string; isLink: boolean }[] = [
@@ -81,11 +80,10 @@ export class HexTableView extends ItemView {
   private filterExcludeTerrains = new Set<string>();
   private filterTypes = new Set<string>();
   private filterExcludeTypes = new Set<string>();
-  private filterHasTown = false;
-  private filterHasDungeon = false;
-  private filterHasFeature = false;
-  private filterHasQuest = false;
-  private filterHasFaction = false;
+  /** Link sections a row must have something in ("has a …" checkboxes). */
+  private filterHas = new Set<string>();
+  /** Hex field filters (view/fieldColumns.ts). */
+  private fieldFilters: FieldFilters = new Map();
   private mapFilter = "all";
   /** Column names for link sections, per the shown maps' type (G4b). */
   private words: SectionWordsFn | null = null;
@@ -99,11 +97,8 @@ export class HexTableView extends ItemView {
   private filterYMinInput: HTMLInputElement | null = null;
   private filterYMaxInput: HTMLInputElement | null = null;
   private terrainFilterBtn: HTMLButtonElement | null = null;
-  private townCb: HTMLInputElement | null = null;
-  private dungeonCb: HTMLInputElement | null = null;
-  private featureCb: HTMLInputElement | null = null;
-  private questCb: HTMLInputElement | null = null;
-  private factionCb: HTMLInputElement | null = null;
+  private hasBoxes: HTMLInputElement[] = [];
+  private fieldFilterBtn: HTMLButtonElement | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -209,65 +204,24 @@ export class HexTableView extends ItemView {
 
     toolbar.createDiv({ cls: "duckmage-filter-separator" });
 
-    // Has Town checkbox
-    const townLabel = toolbar.createEl("label", {
-      cls: "duckmage-filter-check-label",
-    });
-    this.townCb = townLabel.createEl("input");
-    this.townCb.type = "checkbox";
-    townLabel.createSpan({ text: "Town", attr: { "data-duckmage-section": "Towns" } });
-    this.townCb.addEventListener("change", () => {
-      this.filterHasTown = this.townCb!.checked;
+    // "Has a …" checkboxes, one per link section.
+    for (const [key, text, section] of HAS_FILTERS) {
+      const label = toolbar.createEl("label", { cls: "duckmage-filter-check-label" });
+      const cb = label.createEl("input", { type: "checkbox" });
+      label.createSpan({ text, attr: { "data-duckmage-section": section } });
+      cb.addEventListener("change", () => {
+        if (cb.checked) this.filterHas.add(key); else this.filterHas.delete(key);
+        this.applyFilters();
+      });
+      this.hasBoxes.push(cb);
+    }
+    // Hex field filters (#52): only while the world has fields.
+    this.fieldFilterBtn = toolbar.createEl("button", { text: filtersLabel(this.fieldFilters), cls: "duckmage-filter-btn duckmage-field-filter-btn" });
+    this.fieldFilterBtn.toggle(this.plugin.fields.fields().length > 0);
+    this.fieldFilterBtn.addEventListener("click", () => new FieldFilterModal(this.app, this.plugin.fields.fields(), this.fieldFilters, () => {
+      this.fieldFilterBtn?.setText(filtersLabel(this.fieldFilters));
       this.applyFilters();
-    });
-
-    // Has Dungeon checkbox
-    const dungeonLabel = toolbar.createEl("label", {
-      cls: "duckmage-filter-check-label",
-    });
-    this.dungeonCb = dungeonLabel.createEl("input");
-    this.dungeonCb.type = "checkbox";
-    dungeonLabel.createSpan({ text: "Dungeon", attr: { "data-duckmage-section": "Dungeons" } });
-    this.dungeonCb.addEventListener("change", () => {
-      this.filterHasDungeon = this.dungeonCb!.checked;
-      this.applyFilters();
-    });
-
-    // Has Feature checkbox
-    const featureLabel = toolbar.createEl("label", {
-      cls: "duckmage-filter-check-label",
-    });
-    this.featureCb = featureLabel.createEl("input");
-    this.featureCb.type = "checkbox";
-    featureLabel.createSpan({ text: "Feature", attr: { "data-duckmage-section": "Features" } });
-    this.featureCb.addEventListener("change", () => {
-      this.filterHasFeature = this.featureCb!.checked;
-      this.applyFilters();
-    });
-
-    // Has Quest checkbox
-    const questLabel = toolbar.createEl("label", {
-      cls: "duckmage-filter-check-label",
-    });
-    this.questCb = questLabel.createEl("input");
-    this.questCb.type = "checkbox";
-    questLabel.createSpan({ text: "Quest", attr: { "data-duckmage-section": "Quests" } });
-    this.questCb.addEventListener("change", () => {
-      this.filterHasQuest = this.questCb!.checked;
-      this.applyFilters();
-    });
-
-    // Has Faction checkbox
-    const factionLabel = toolbar.createEl("label", {
-      cls: "duckmage-filter-check-label",
-    });
-    this.factionCb = factionLabel.createEl("input");
-    this.factionCb.type = "checkbox";
-    factionLabel.createSpan({ text: "Faction", attr: { "data-duckmage-section": "Factions" } });
-    this.factionCb.addEventListener("change", () => {
-      this.filterHasFaction = this.factionCb!.checked;
-      this.applyFilters();
-    });
+    }).open());
 
     toolbar.createDiv({ cls: "duckmage-filter-separator" });
 
@@ -297,14 +251,14 @@ export class HexTableView extends ItemView {
 
     // Sort controls
     this.sortPrimaryBtn = toolbar.createEl("button", {
-      text: SORT_LABELS[this.sortPrimary],
+      text: sortLabel(this.sortPrimary),
       cls: "duckmage-filter-btn",
     });
     this.sortPrimaryBtn.title =
-      "Cycle sort order: X first, y first, terrain type";
+      "Cycle sort order: X first, y first, terrain type, then each hex field";
     this.sortPrimaryBtn.addEventListener("click", () => {
-      this.sortPrimary = NEXT_SORT[this.sortPrimary];
-      this.sortPrimaryBtn!.setText(SORT_LABELS[this.sortPrimary]);
+      this.sortPrimary = nextSort(this.sortPrimary, this.plugin.fields.fields());
+      this.sortPrimaryBtn!.setText(sortLabel(this.sortPrimary));
       void this.loadTable();
     });
 
@@ -337,6 +291,11 @@ export class HexTableView extends ItemView {
       cls: "duckmage-hex-table-empty",
     });
 
+    // The world's hex fields changed (#52): new columns, the filter button.
+    this.register(this.plugin.fields.store.onChange(() => {
+      this.fieldFilterBtn?.toggle(this.plugin.fields.fields().length > 0);
+      void this.loadTable();
+    }));
     // ── Vault event listeners ─────────────────────────────────────────────
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
@@ -489,10 +448,15 @@ export class HexTableView extends ItemView {
         typeOf.set(f.path, this.resolveHexTerrain(f.path, f.region).type);
       }
     }
+    // Field sort (#52): by the field's shown value, then x, y.
+    const byField = sortField(this.sortPrimary, this.plugin.fields.fields());
+    const fieldOf = (f: { x: number; y: number; region: string }) => (byField ? this.plugin.mapStore.get(f.region, hexKey(f.x, f.y))?.extra : undefined);
     files.sort((a, b) => {
       let diff = 0;
       if (this.sortPrimary === "type") {
         diff = compareTerrainTypes(typeOf.get(a.path)!, typeOf.get(b.path)!);
+      } else if (byField) {
+        diff = compareFieldValues(byField, shownValue({ extra: fieldOf(a) }, byField), shownValue({ extra: fieldOf(b) }, byField));
       }
       if (diff === 0) {
         const p = this.sortPrimary === "y" ? "y" : "x";
@@ -535,6 +499,7 @@ export class HexTableView extends ItemView {
     headerRow.createEl("th", { text: "Hex" });
     headerRow.createEl("th", { text: "Terrain" });
     headerRow.createEl("th", { text: "Type" });
+    renderFieldHeaders(headerRow, this.plugin.fields.fields());
     const words = this.sectionWords();
     this.words = words;
     // The "has a …" filters follow too.
@@ -635,22 +600,16 @@ export class HexTableView extends ItemView {
     this.filterExcludeTerrains = new Set();
     this.filterTypes = new Set();
     this.filterExcludeTypes = new Set();
-    this.filterHasTown = false;
-    this.filterHasDungeon = false;
-    this.filterHasFeature = false;
-    this.filterHasQuest = false;
-    this.filterHasFaction = false;
+    this.filterHas.clear();
+    this.fieldFilters.clear();
+    this.fieldFilterBtn?.setText(filtersLabel(this.fieldFilters));
 
     if (this.filterXMinInput) this.filterXMinInput.value = "";
     if (this.filterXMaxInput) this.filterXMaxInput.value = "";
     if (this.filterYMinInput) this.filterYMinInput.value = "";
     if (this.filterYMaxInput) this.filterYMaxInput.value = "";
     this.toolbarDisclosure?.refreshSet();
-    if (this.townCb) this.townCb.checked = false;
-    if (this.dungeonCb) this.dungeonCb.checked = false;
-    if (this.featureCb) this.featureCb.checked = false;
-    if (this.questCb) this.questCb.checked = false;
-    if (this.factionCb) this.factionCb.checked = false;
+    for (const cb of this.hasBoxes) cb.checked = false;
     this.updateTerrainBtnLabel();
     this.applyFilters();
   }
@@ -673,6 +632,7 @@ export class HexTableView extends ItemView {
       types: this.filterTypes,
       excludeTypes: this.filterExcludeTypes,
     };
+    const fields = this.plugin.fields.fields();
     for (const tr of rows ?? Array.from(tbody.rows)) {
       const x = Number(tr.dataset.hexX);
       const y = Number(tr.dataset.hexY);
@@ -681,11 +641,7 @@ export class HexTableView extends ItemView {
         effectiveTerrain: tr.dataset.effectiveTerrain ?? "",
         type: tr.dataset.terrainType ?? "",
       };
-      const hasTown = tr.dataset.hasTown === "1";
-      const hasDungeon = tr.dataset.hasDungeon === "1";
-      const hasFeature = tr.dataset.hasFeature === "1";
-      const hasQuest = tr.dataset.hasQuest === "1";
-      const hasFaction = tr.dataset.hasFaction === "1";
+      const has = new Set((tr.dataset.has ?? "").split(" "));
 
       let show = true;
       if (this.filterXMin !== null && x < this.filterXMin) show = false;
@@ -693,11 +649,8 @@ export class HexTableView extends ItemView {
       if (this.filterYMin !== null && y < this.filterYMin) show = false;
       if (this.filterYMax !== null && y > this.filterYMax) show = false;
       if (!matchesTerrainFilter(terrainRow, terrainFilter)) show = false;
-      if (this.filterHasTown && !hasTown) show = false;
-      if (this.filterHasDungeon && !hasDungeon) show = false;
-      if (this.filterHasFeature && !hasFeature) show = false;
-      if (this.filterHasQuest && !hasQuest) show = false;
-      if (this.filterHasFaction && !hasFaction) show = false;
+      for (const key of this.filterHas) if (!has.has(key)) show = false;
+      if (!matchesFieldFilters(valuesOfRow(tr), this.fieldFilters, fields)) show = false;
 
       tr.classList.toggle("duckmage-row-hidden", !show);
     }
@@ -753,20 +706,11 @@ export class HexTableView extends ItemView {
 
     const paletteMap = this.getPaletteMap(region);
 
-    const hasTown = (links.get("towns") ?? []).length > 0;
-    const hasDungeon = (links.get("dungeons") ?? []).length > 0;
-    const hasFeature = (links.get("features") ?? []).length > 0;
-    const hasQuest = (links.get("quests") ?? []).length > 0;
-    const hasFaction = (links.get("factions") ?? []).length > 0;
 
     // Store filter-relevant data on the row
     tr.dataset.hexX = String(x);
     tr.dataset.hexY = String(y);
-    tr.dataset.hasTown = hasTown ? "1" : "0";
-    tr.dataset.hasDungeon = hasDungeon ? "1" : "0";
-    tr.dataset.hasFeature = hasFeature ? "1" : "0";
-    tr.dataset.hasQuest = hasQuest ? "1" : "0";
-    tr.dataset.hasFaction = hasFaction ? "1" : "0";
+    tr.dataset.has = HAS_FILTERS.filter(([key]) => (links.get(key) ?? []).length > 0).map(([key]) => key).join(" ");
     tr.dataset.region = region;
 
     // Coords cell — click to open note
@@ -813,6 +757,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-hex-table-cell-clickable",
     });
     const typeTd = tr.createEl("td");
+    renderFieldCells(tr, this.plugin.mapStore.get(region, hexKey(x, y)), this.plugin.fields.fields());
     // Renders terrain + type and refreshes the row's filter data, so a pick
     // shows at once (the vault modify event re-renders the row again later).
     const renderTerrainCell = () => {
