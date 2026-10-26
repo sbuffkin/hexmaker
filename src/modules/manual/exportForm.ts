@@ -28,6 +28,7 @@ export function manualExportOptions(o: MapPdfExportOptions, fileName: string, pl
     showRegionOverlay: o.showRegionOverlay,
     showHexNames: o.showHexNames,
     showTokens: o.showTokens,
+    ...(o.hidden ? { hidden: o.hidden } : {}),
     omit,
   };
 }

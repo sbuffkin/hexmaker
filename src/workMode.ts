@@ -70,6 +70,7 @@ export type ModeAction =
   | "discover" // arrival: make a place where nothing exists yet (only when the world is set to make places)
   // a module's own action, classified by its module (modeActions.policy)
   | "grow-while-exploring"
+  | "explore-play" // HF11: what the party sees and what the GM reveals (sight, peek, fog); play state, never map data
   | "lock-place" // lock a place made on arrival (after that, rerolling it needs God)
   | "show-place-icon" // "Show on map": a linked note's section icon as the hex's icon (SF4; works where linking works)
   // ── Build and God ──
@@ -217,6 +218,8 @@ const CORE_TOOL_ACTIONS: Record<DrawingMode, ModeAction> = {
   placeToken: "token",
   // First placements; a placed region's biome is God's (checked per hex, biomePainter.ts).
   biome: "place-biome",
+  // A module's brush (PlayHooks): every mode may hold it; each stroke's writes are gated by the module's own action.
+  hexBrush: "view",
 };
 
 /** The core's drawing tools, then the modules' (HexmakerModule.modeActions.tools). */

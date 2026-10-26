@@ -134,6 +134,7 @@ export async function exportMapAsPdf(
       sections,
       sectionImages,
       opts.columns,
+      opts.hidden,
     );
 
     // 5. Render to HTML and PDF
@@ -252,6 +253,7 @@ export async function buildMapPdfMarkdown(
   sections: MapSection[],
   sectionImageUris: string[],
   columns?: HandoutColumn[],
+  hidden?: (hex: string) => boolean,
 ): Promise<string> {
   const map = plugin.getMap(mapName);
   if (!map) throw new Error(`Map "${mapName}" not found`);
@@ -294,7 +296,7 @@ export async function buildMapPdfMarkdown(
     );
     lines.push("");
 
-    const table = hexTableLines(await collectHexRows(plugin, mapName, s), columns, plugin.sectionWordsFor(mapName));
+    const table = hexTableLines(await collectHexRows(plugin, mapName, s, hidden), columns, plugin.sectionWordsFor(mapName));
     if (table.length === 0) {
       lines.push(`*No hex notes with content in this section.*`);
       continue;
@@ -342,6 +344,7 @@ async function collectHexRows(
   plugin: HexmakerPlugin,
   mapName: string,
   section: MapSection,
+  hidden?: (hex: string) => boolean,
 ): Promise<HexRow[]> {
   const map = plugin.getMap(mapName);
   if (!map) return [];
@@ -353,6 +356,8 @@ async function collectHexRows(
     for (let col = section.colStart; col < section.colEnd; col++) {
       const hx = col + ox;
       const hy = row + oy;
+      // Fog ("As the party has seen it"): a hidden hex isn't listed.
+      if (hidden?.(`${hx}_${hy}`)) continue;
       const path = plugin.hexPath(hx, hy, mapName);
       const file = plugin.app.vault.getAbstractFileByPath(path);
       // A named hex is listed even without a note (its name is map data).

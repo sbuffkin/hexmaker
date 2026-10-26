@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import expect from "expect";
-import { readSource } from "./helpers/source";
+import { readSource, readSurface } from "./helpers/source";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -265,7 +265,8 @@ describe("play hooks: party click, grid marks, token menu, roll targets, log wri
     const click = { map: "m", token: "t.md", from: "0_0", to: "5_5", orientation: "flat" as const, stagger: "odd" as const };
     expect(modulePartyClick({} as never, click)).toBe("move");
     expect(modulePartyClick({} as never, { ...click, to: "9_9" })).toBe("none");
-    expect(readSource("src", "hex-map", "HexMapView.ts")).toMatch(/if \(party && click && modulePartyClick\(this\.plugin, click\) === "move"\) return this\.tokens\.moveParty\(party, click\.to\);/);
+    expect(readSource("src", "hex-map", "HexMapView.ts")).toMatch(/if \(party && click && await this\.tokens\.partyClicked\(party, click\)\) return;/);
+    expect(readSurface("map-view")).toMatch(/const how = modulePartyClick\(this\.plugin, click\);\n\s*if \(how === "move"\) await this\.moveParty\(party, click\.to\);/);
   });
 
   it("gridDecorations: asked once per render, then per hex; classes from every module", () => {

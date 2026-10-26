@@ -17,6 +17,7 @@ import type {
   HexAt,
   LogWriterContribution,
   PartyClick,
+  FogView,
   RollTargetContribution,
   SettingContribution,
   TokenAt,
@@ -172,9 +173,19 @@ export function runPartyStep(plugin: HexmakerPlugin, step: PartyStep): UndoItem[
   });
 }
 
-/** Does any module make this click on a hex the selected party's step? */
-export function modulePartyClick(plugin: HexmakerPlugin, click: PartyClick): "move" | "none" {
-  return MODULE_RUNTIMES.some((m) => m.play?.partyClick?.(plugin, click) === "move") ? "move" : "none";
+/** Does any module make this click on a hex the selected party's step ("move") or a look around where it stands ("look")? */
+export function modulePartyClick(plugin: HexmakerPlugin, click: PartyClick): "move" | "look" | "none" {
+  const said = MODULE_RUNTIMES.map((m) => m.play?.partyClick?.(plugin, click));
+  return said.includes("move") ? "move" : said.includes("look") ? "look" : "none";
+}
+
+/** The fog over map `map` (asked once per render), or undefined: none. */
+export function moduleFog(plugin: HexmakerPlugin, map: MapData): FogView | undefined {
+  for (const m of MODULE_RUNTIMES) {
+    const f = m.play?.fog?.(plugin, map);
+    if (f) return f;
+  }
+  return undefined;
 }
 
 /**
@@ -333,6 +344,24 @@ export async function runPartyEntered(plugin: HexmakerPlugin, step: PartyStep): 
       out.push(...await m.play.onEnter(plugin, step));
     } catch (e) {
       logError(`${m.id} party step`, e);
+    }
+  }
+  return out;
+}
+
+/**
+ * The party looks around where it stands (its own hex clicked in Play):
+ * each module's onLook, in module order; the undo entries of what they
+ * wrote. A hook that fails is logged and skipped.
+ */
+export async function runPartyLooked(plugin: HexmakerPlugin, party: PartyAt): Promise<UndoItem[]> {
+  const out: UndoItem[] = [];
+  for (const m of MODULE_RUNTIMES) {
+    if (!m.play?.onLook) continue;
+    try {
+      out.push(...await m.play.onLook(plugin, party));
+    } catch (e) {
+      logError(`${m.id} party look`, e);
     }
   }
   return out;

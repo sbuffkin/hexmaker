@@ -310,6 +310,42 @@ export interface StrokeOptions {
   seamEnd?: (typeName: string, hex: HexKey) => HexKey | undefined;
   /** Multiplies lane gaps (an export drawn bolder keeps lanes apart). Default 1. */
   laneScale?: number;
+  /**
+   * Fog (HF11): only the parts of a path between hexes this says are shown
+   * are drawn (a step from a shown hex into a hidden one isn't). Unset: all.
+   */
+  visible?: (hex: HexKey) => boolean;
+}
+
+/**
+ * The branches cut to their runs of shown hexes (`visible`): a step is
+ * kept only when both its hexes are shown, so a road stops at the fog. A
+ * cut branch loses its fork and join ties (its runs start and end where
+ * the fog does), and so does a branch tied to one that was cut.
+ */
+export function visibleBranches(resolved: readonly ResolvedBranch[], visible: (hex: HexKey) => boolean): ResolvedBranch[] {
+  const out: ResolvedBranch[] = [];
+  const cut = new Set<string>();
+  const id = (path: string, branch: number) => `${path}\u0000${branch}`;
+  for (const rb of resolved) {
+    if (rb.hexes.every(visible)) { out.push(rb); continue; }
+    cut.add(id(rb.path, rb.branch));
+    let run: HexKey[] = [];
+    const flush = () => {
+      if (run.length >= 2) out.push({ ...rb, hexes: run, anchorIdx: [0, run.length - 1], forkFrom: undefined, joinTo: undefined, fallbackSegments: [] });
+      run = [];
+    };
+    for (const h of rb.hexes) {
+      if (visible(h)) run.push(h);
+      else flush();
+    }
+    flush();
+  }
+  return out.map((rb) => {
+    const forkCut = rb.forkFrom && cut.has(id(rb.path, rb.forkFrom.branch));
+    const joinCut = rb.joinTo && cut.has(id(rb.path, rb.joinTo.branch));
+    return forkCut || joinCut ? { ...rb, ...(forkCut ? { forkFrom: undefined } : {}), ...(joinCut ? { joinTo: undefined } : {}) } : rb;
+  });
 }
 
 /**
@@ -319,11 +355,12 @@ export interface StrokeOptions {
  * sharing a route; same-type branches share a lane and merge.
  */
 export function buildPathStrokes(
-  resolved: readonly ResolvedBranch[],
+  allResolved: readonly ResolvedBranch[],
   types: readonly PathType[],
   grid: LatticeGrid,
   opts: StrokeOptions,
 ): PathStroke[] {
+  const resolved = opts.visible ? visibleBranches(allResolved, opts.visible) : allResolved;
   const typeByName = new Map<string, PathType>();
   for (const t of types) if (!typeByName.has(t.name)) typeByName.set(t.name, t);
   const order: { rb: ResolvedBranch; pt: PathType }[] = [];

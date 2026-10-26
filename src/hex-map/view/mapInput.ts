@@ -24,6 +24,7 @@ import { attachTouchInput } from "./touchInput";
 import type { MapViewport } from "./mapViewport";
 import type { UndoController } from "./undoController";
 import { hexKey } from "../../hexKey";
+import { logError } from "../../log";
 
 /** What the input handlers read and call on the view (read live, at event time). */
 export interface MapInputHost extends Pick<Component, "registerDomEvent" | "register"> {
@@ -39,9 +40,11 @@ export interface MapInputHost extends Pick<Component, "registerDomEvent" | "regi
   viewport(): Pick<MapViewport, "panX" | "panY" | "applyTransform" | "queueWheelZoom" | "pinchBy">;
   undos(): Pick<UndoController,
     "currentTerrainStroke" | "currentIconStroke" | "currentFactionStroke" | "currentRegionStroke" | "currentSubStroke" | "strokePins"
-    | "commitTerrainStroke" | "commitIconStroke" | "commitFactionStroke" | "commitRegionStroke">;
+    | "commitTerrainStroke" | "commitIconStroke" | "commitFactionStroke" | "commitRegionStroke" | "pushUndo">;
   areas(): Pick<AreaOverlay, "onHexFactionPaintClick" | "onHexRegionPaintClick">;
-  toolbar(): Pick<MapToolbar, "overworldPathItems" | "showPainterContextMenu">;
+  toolbar(): Pick<MapToolbar, "overworldPathItems" | "showPainterContextMenu" | "brush">;
+  activeMapName(): string;
+  renderGrid(): void;
   pathTool(): PathTool;
   overworldLayer(): OverworldLayer | undefined;
   wm(): WorldMapsApi | undefined;
@@ -148,6 +151,27 @@ export class MapInput {
     let lastPaintedKey: string | null = null;
     let isRightDragging = false;
     let rightDragMoved = false;
+    // A module brush's stroke (hexBrush): the hexes crossed, in order.
+    let brushStroke: string[] | null = null;
+    const brushAdd = (hexEl: HTMLElement | null) => {
+      if (!brushStroke || !hexEl) return;
+      const key = hexKey(Number(hexEl.dataset.x), Number(hexEl.dataset.y));
+      if (brushStroke.includes(key)) return;
+      brushStroke.push(key);
+      hexEl.addClass("duckmage-hex-brushed");
+    };
+    // One stroke is one undo; the map is drawn again once it's written.
+    const brushCommit = (hexes: string[], erase: boolean) => {
+      const brush = this.host.toolbar().brush;
+      const map = this.host.activeMapName();
+      if (!brush || !hexes.length) return;
+      void brush.stroke(hexes, erase)
+        .then((undo) => {
+          if (undo.length) this.host.undos().pushUndo(undo.length === 1 ? undo[0] : { kind: "group", items: undo }, map);
+        })
+        .catch((err) => logError(`brush ${brush.id}`, err))
+        .finally(() => this.host.renderGrid());
+    };
 
     this.host.registerDomEvent(contentEl, "mousedown", (e: MouseEvent) => {
       // Calibration mode owns left-click drag (image + grid handlers manage it)
@@ -185,6 +209,15 @@ export class MapInput {
       if (mode && !this.host.modeAllows(TOOL_ACTIONS[mode])) {
         this.host.exitCurrentMode();
         hasDragged = true;
+        return;
+      }
+      // A module's brush: the hexes pressed and dragged over make one stroke.
+      if (this.host.drawingMode() === "hexBrush") {
+        brushStroke = [];
+        brushAdd(this.host.hexElAt(e.target, e.clientX, e.clientY));
+        isTerrainPainting = true;
+        hasDragged = true;
+        beginDrag();
         return;
       }
       // The biome brush: each overworld hex crossed gets the biome (and its region).
@@ -294,6 +327,10 @@ export class MapInput {
     // window's document and drags silently die (issue #32).
     let dragDoc: Document | null = null;
     const onDragMove = (e: MouseEvent) => {
+      if (isTerrainPainting && brushStroke) {
+        brushAdd(this.host.hexElAt(dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null, e.clientX, e.clientY));
+        return;
+      }
       if (isTerrainPainting && this.host.drawingMode() === "biome") {
         const key = this.host.overworldHexKeyAt(dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null, e.clientX, e.clientY);
         if (key && key !== lastPaintedKey) {
@@ -341,7 +378,10 @@ export class MapInput {
       }
     };
     const onDragUp = () => {
-      if (isTerrainPainting) {
+      if (brushStroke) {
+        brushCommit(brushStroke, false);
+        brushStroke = null;
+      } else if (isTerrainPainting) {
         if (this.host.drawingMode() === "biome") void this.host.finishBiomeStroke();
         else if (this.host.drawingMode() === "terrain") this.host.undos().commitTerrainStroke();
         else if (this.host.drawingMode() === "icon") this.host.undos().commitIconStroke();
@@ -404,6 +444,11 @@ export class MapInput {
         const hexEl = this.host.hexElAt(e.target, e.clientX, e.clientY);
         const hexX = hexEl ? Number(hexEl.dataset.x) : null;
         const hexY = hexEl ? Number(hexEl.dataset.y) : null;
+        // A module's brush: right-click (a long press on touch) erases the hex.
+        if (this.host.drawingMode() === "hexBrush" && hexX !== null && hexY !== null) {
+          brushCommit([hexKey(hexX, hexY)], true);
+          return;
+        }
         const paintIconName = this.host.paintIconName();
         if (
           this.host.drawingMode() === "icon" &&

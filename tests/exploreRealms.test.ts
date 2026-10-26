@@ -163,13 +163,13 @@ describe("New map's Explore as you go makes such a map", () => {
 });
 
 describe("Play: the party's Area and Change area", () => {
-  it("the party controls say the area the party is in, before Reveal; none on a map without areas", () => {
+  it("the party controls say the area the party is in, after Sees; none on a map without areas", () => {
     const s = setup({ exploreRealms: REALMS });
     const controls = explorePartyControls(s.plugin as never, { map: "m", hex: "1_2", token: "party.md" });
-    expect(controls.map((c) => [c.id, c.label, c.buttons[0].label])).toEqual([[AREA_CONTROL_ID, "Area", "Woods"], [PEEK_CONTROL_ID, "Peek", "Show"], ["explore.reveal", "Reveal", "1"]]);
+    expect(controls.map((c) => [c.id, c.label, c.buttons[0].label])).toEqual([["explore.sees", "Sees", "0"], [AREA_CONTROL_ID, "Area", "Woods"], [PEEK_CONTROL_ID, "Peek", "Show"], ["explore.pick", "Reveal hexes", "Pick"]]);
     expect(areaAt(s.plugin as never, s.mapData as never, "45_2")).toBe("Lakes");
     const plain = setup({ exploreWith: ["[[Wilds]] -> terrain"] });
-    expect(explorePartyControls(plain.plugin as never, { map: "m", hex: "1_2", token: "party.md" }).map((c) => c.id)).toEqual(["explore.reveal"]);
+    expect(explorePartyControls(plain.plugin as never, { map: "m", hex: "1_2", token: "party.md" }).map((c) => c.id)).toEqual(["explore.sees", "explore.pick"]);
   });
 
   it("setting an area adds it to the map's areas as one undo (and the borders, when they changed)", () => {

@@ -198,7 +198,7 @@ export class AreaOverlay {
     if (!this.host.getActiveMap().showFactionOverlay) return;
 
     const hexEls = Array.from(
-      gridContainer.querySelectorAll<HTMLElement>(".duckmage-hex"),
+      gridContainer.querySelectorAll<HTMLElement>(".duckmage-hex:not(.duckmage-hex-fogged)"),
     );
     if (hexEls.length === 0) return;
 
@@ -367,7 +367,7 @@ export class AreaOverlay {
     if (!this.host.getActiveMap().showRegionOverlay) return;
 
     const hexEls = Array.from(
-      gridContainer.querySelectorAll<HTMLElement>(".duckmage-hex"),
+      gridContainer.querySelectorAll<HTMLElement>(".duckmage-hex:not(.duckmage-hex-fogged)"),
     );
     if (hexEls.length === 0) return;
 

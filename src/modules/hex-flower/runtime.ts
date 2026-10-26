@@ -8,9 +8,10 @@ import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { ModuleRuntime, ModuleStore } from "../types";
 import { FlowerStore } from "../../hexflower/FlowerStore";
 import { FLOWER_BLOCK } from "../../hexflower/flowerNote";
-import { flowerStoreOf, setExplore, setFlowerStore, terrainColors } from "../../hexflower/context";
+import { flowerStoreOf, setExplore, setFlowerStore, setFog, terrainColors } from "../../hexflower/context";
 import { ExploreService } from "../../hexflower/ExploreService";
-import { exploreFrontier, exploreHexMenu, exploreHiddenTerrain, explorePartyControls, exploreStep } from "../../hexflower/exploreHooks";
+import { FogService } from "../../hexflower/FogService";
+import { exploreFog, exploreFrontier, exploreHexMenu, exploreHiddenTerrain, exploreLook, explorePartyClick, explorePartyControls, exploreStep } from "../../hexflower/exploreHooks";
 import { drawFlowerList, renderFlowerPanel } from "../../hexflower/FlowerPanel";
 import { EXPLORE_MODE, HEX_FLOWER_GENERATOR_ID, hexFlowerGenerator } from "../../hexflower/flowerGenerator";
 import { EXPLORE_PROPS } from "../../hexflower/exploreProps";
@@ -29,6 +30,7 @@ function stores(plugin: HexmakerPlugin): ModuleStore[] {
   }));
   setFlowerStore(plugin, store);
   setExplore(plugin, new ExploreService(plugin));
+  setFog(plugin, new FogService(plugin));
   return [store];
 }
 
@@ -40,7 +42,16 @@ export const hexFlowerRuntime: ModuleRuntime = {
   newMapModes: [{ ...EXPLORE_MODE, render: renderExploreSetup }],
   newMapOptionIds: { [HEX_FLOWER_GENERATOR_ID]: { flower: "NewMap.flowerOwn", party: "NewMap.flowerParty", reveal: "NewMap.flowerReveal" } },
   mapProperties: [EXPLORE_PROPS],
-  play: { onEnter: exploreStep, partyControls: explorePartyControls, hiddenTerrain: exploreHiddenTerrain },
+  play: {
+    onEnter: exploreStep,
+    // The party's own hex clicked: a look around where it stands (HF11).
+    partyClick: explorePartyClick,
+    onLook: exploreLook,
+    partyControls: explorePartyControls,
+    hiddenTerrain: exploreHiddenTerrain,
+    // A finished map explored by revealing it (HF11).
+    fog: exploreFog,
+  },
   hexMenu: exploreHexMenu,
   unchartedKeys: exploreFrontier,
   // The generator page's third library tab: the flowers and their editor.

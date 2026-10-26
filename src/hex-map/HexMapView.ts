@@ -10,7 +10,7 @@ import { canDo } from "../modeGate";
 import { lockedNotice } from "./godOffer";
 import { nearestHex } from "./hitTest";
 import type { MapData, MapPath, TokenEntry } from "../types";
-import { modulePartyClick, worldMaps } from "../modules/runtime";
+import { worldMaps } from "../modules/runtime";
 import type { WorldMapsApi } from "../modules/world-maps/api";
 import type { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { regionMapAt } from "../maps/submaps";
@@ -320,7 +320,7 @@ export class HexMapView extends ItemView {
         pushTokenUndo: (path, mapName, before, after) => this.undos.pushTokenUndo(path, mapName, before, after),
       },
       zoom: () => this.viewport.zoom,
-      toolbar: { exitTokenMode: () => this.toolbar.exitTokenMode() },
+      toolbar: this.toolbar,
       hexMenu: {
         modeMenuOptions: () => this.hexMenu.modeMenuOptions(),
         addHexMenuItems: (menu, x, y, inToken) => this.hexMenu.addHexMenuItems(menu, x, y, inToken),
@@ -885,7 +885,7 @@ export class HexMapView extends ItemView {
       const party = this.activeParty();
       const click = party && { map: party.map, token: party.filePath, from: party.hex, to: hexKey(x, y), orientation: this.plugin.settings.hexOrientation, stagger: this.getActiveStagger() };
       // A step by a module's rule (ModuleRuntime.play.partyClick).
-      if (party && click && modulePartyClick(this.plugin, click) === "move") return this.tokens.moveParty(party, click.to);
+      if (party && click && await this.tokens.partyClicked(party, click)) return;
     }
 
     // Overworlds: the full view jumps into the region at the clicked hex;

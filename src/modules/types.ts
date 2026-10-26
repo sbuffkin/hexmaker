@@ -561,9 +561,24 @@ export interface PlayHooks {
   partyControls?(plugin: HexmakerPlugin, party: PartyAt): PartyControl[];
   /**
    * A hex clicked while a party token is selected in Play: "move" makes it
-   * the party's step (the core moves the token); any module saying so wins.
+   * the party's step (the core moves the token); "look" (its own hex) a
+   * look around where it stands (onLook: no move, no travel). A module
+   * saying "move" wins, then "look".
    */
-  partyClick?(plugin: HexmakerPlugin, click: PartyClick): "move" | "none";
+  partyClick?(plugin: HexmakerPlugin, click: PartyClick): "move" | "look" | "none";
+  /**
+   * The party looks around the hex it stands on (its own hex clicked: a
+   * step in place). Returns the undo entries of what it wrote (one undo);
+   * the token doesn't move and nothing counts it as travel.
+   */
+  onLook?(plugin: HexmakerPlugin, party: PartyAt): Promise<UndoItem[]>;
+  /**
+   * Fog over map `map` (Hex flower: a finished map explored by revealing
+   * it): which hexes are hidden. Asked once per render like
+   * gridDecorations; undefined: no fog. A hidden hex shows nothing of its
+   * own (terrain, icons, labels, overlays, tokens but the party's).
+   */
+  fog?(plugin: HexmakerPlugin, map: MapData): FogView | undefined;
   /**
    * Extra CSS classes for the hexes of map `map` (Solo play: visited).
    * Asked once per render, before the hexes are drawn; the answer is asked
@@ -593,17 +608,45 @@ export interface PartyAt {
   token: string;
 }
 
+/** What a module's fog hides on a map (PlayHooks.fog). */
+export interface FogView {
+  /** Is hex `hex` hidden? Asked per hex while drawing (no layout reads in it). */
+  hidden(hex: string): boolean;
+  /** The GM peeks: hidden hexes are drawn faded instead of dark. */
+  peek: boolean;
+}
+
+/**
+ * A brush a module offers in Play (the map view's "hexBrush" tool): click
+ * or tap a hex, or drag across several; right-click (a long press on
+ * touch) erases. One stroke is one undo.
+ */
+export interface HexBrush {
+  id: string;
+  /** What the mode bar says while it's on ("Revealing hexes: …"). */
+  label: string;
+  /** Apply a stroke: the hexes crossed, in order. Returns the undo entries of what it wrote. */
+  stroke(hexes: readonly string[], erase: boolean): Promise<UndoItem[]>;
+}
+
+/** One button of a party control. */
+export interface PartyControlButton {
+  label: string;
+  title: string;
+  /** Shown as the current choice (a setting's value, a tool that's on). */
+  selected?: boolean;
+  /** Does it, and returns the undo entries of what it wrote (recorded as one undo). */
+  run?(): Promise<UndoItem[]>;
+  /** Instead of run: turns this brush on (or off, when it's on). */
+  brush?: HexBrush;
+}
+
 /** One control on the party controls: a label and its buttons. */
 export interface PartyControl {
   id: string;
   label: string;
   title?: string;
-  buttons: readonly {
-    label: string;
-    title: string;
-    /** Does it, and returns the undo entries of what it wrote (recorded as one undo). */
-    run(): Promise<UndoItem[]>;
-  }[];
+  buttons: readonly PartyControlButton[];
 }
 
 /** An item a module adds to a hex's right-click menu. */

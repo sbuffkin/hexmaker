@@ -40,9 +40,20 @@ export const hexFlowerModule: HexmakerModule = {
   // How the work modes treat its entry points (merged into src/workMode.ts).
   modeActions: {
     // A map the party explores grows (blank hexes only) as the party nears its edge, in every mode like discovering (HF4).
-    policy: { "grow-while-exploring": { modes: ["play", "build", "god"], verb: "grow the map as the party explores" } },
-    // Its hex menu items (runtime hexMenu): rolling an unknown hex.
-    menus: { "hex.explore-roll": "discover", "hex.explore-reroll": "discover" },
+    policy: {
+      "grow-while-exploring": { modes: ["play", "build", "god"], verb: "grow the map as the party explores" },
+      // HF11: what the party sees and the GM reveals (sight, peek, start/stop, fog): play state, never map data.
+      "explore-play": { modes: ["play", "build", "god"], verb: "explore the map" },
+    },
+    // Its hex menu items (runtime hexMenu): rolling an unknown hex; revealing and hiding under fog.
+    menus: {
+      "hex.explore-roll": "discover",
+      "hex.explore-reroll": "discover",
+      "hex.explore-start": "explore-play",
+      "hex.explore-reveal-hex": "explore-play",
+      "hex.explore-hide-hex": "explore-play",
+      "hex.explore-stop": "explore-play",
+    },
   },
   owns: {
     settingsKeys: ["hexFlowersFolder"],
@@ -61,6 +72,8 @@ export const hexFlowerModule: HexmakerModule = {
       "Explore as you go",
       "Make your own flower",
       "Add another area",
+      "Start exploring",
+      "Reveal this hex",
     ],
   },
 };

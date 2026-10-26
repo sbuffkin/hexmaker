@@ -11,7 +11,8 @@ import { TFile, type App } from "obsidian";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { applyTokenFrontmatter, getTokenDataFromCache, readTokenPlace, removeTokenFrontmatter, setTokenHex } from "../../frontmatter";
 import { guardWrite } from "../../modeGate";
-import { moduleTokenMenu, partyTokensOn, runPartyEntered, runPartyStep } from "../../modules/runtime";
+import { modulePartyClick, moduleTokenMenu, partyTokensOn, runPartyEntered, runPartyLooked, runPartyStep } from "../../modules/runtime";
+import type { PartyClick } from "../../modules/types";
 import type { MenuActionId } from "../../workMode";
 import { openNoteFocused } from "../../openNote";
 import { drawPartyControls } from "./partyControls";
@@ -45,7 +46,7 @@ export interface TokenLayerHost {
   undos: Pick<UndoController, "currentWorkMode" | "pushUndo" | "pushTokenUndo">;
   /** The viewport's current CSS scale (drags move in unscaled px). */
   zoom(): number;
-  toolbar: Pick<MapToolbar, "exitTokenMode">;
+  toolbar: Pick<MapToolbar, "exitTokenMode" | "activeBrush" | "toggleBrush">;
   hexMenu: Pick<HexContextMenu, "modeMenuOptions" | "addHexMenuItems" | "addOverworldMenuItems">;
   /** A hex click (through the view, so a wrapper on view.onHexClick sees it). */
   onHexClick(x: number, y: number, e?: MouseEvent): Promise<void>;
@@ -135,6 +136,8 @@ export class TokenLayer {
       pushUndo: (item, map) => this.host.undos.pushUndo(item, map),
       renderGrid: () => this.host.renderGrid(),
       keepViewStill: (before, after) => this.host.keepViewStill(before, after),
+      activeBrush: () => this.host.toolbar.activeBrush(),
+      toggleBrush: (brush) => this.host.toolbar.toggleBrush(brush),
     }, party ? { map: party.map, hex: party.hex, token: party.filePath, title: party.title } : undefined);
   }
 
@@ -149,6 +152,10 @@ export class TokenLayer {
     const firstHexEl = gridContainer.querySelector<HTMLElement>(".duckmage-hex");
     const spread = Math.min(firstHexEl?.offsetWidth ?? 64, firstHexEl?.offsetHeight ?? 64) * 0.28;
     const emPx = parseFloat(getComputedStyle(gridContainer).fontSize) || 16;
+    // Fog (PlayHooks.fog) hides every token on a hidden hex but the party's: read before any write.
+    const fogged = new Set<string>();
+    gridContainer.querySelectorAll<HTMLElement>(".duckmage-hex-fogged").forEach((el) => fogged.add(`${el.dataset.x}_${el.dataset.y}`));
+
     // Token layer is a child of gridContainer (not viewportEl) so its
     // absolute-positioned tokens use the same coordinate space as
     // `buildTokenCenterMap` returns (which walks up to gridContainer).
@@ -167,6 +174,7 @@ export class TokenLayer {
     for (const token of this.tokenEntries) {
       if (!token.visible) continue;
       if (!centerMap.has(token.hex)) continue;
+      if (fogged.has(token.hex) && !isParty(token)) continue;
       if (!byHex.has(token.hex)) byHex.set(token.hex, []);
       byHex.get(token.hex)!.push(token);
     }
@@ -283,6 +291,33 @@ export class TokenLayer {
     for (const [nx, ny] of hexNeighbors(px, py, this.plugin.settings.hexOrientation, this.host.getActiveStagger())) {
       gridContainer.querySelector<HTMLElement>(`.duckmage-hex[data-x="${nx}"][data-y="${ny}"]`)?.addClass("duckmage-party-step");
     }
+  }
+
+  /**
+   * A hex clicked while the party is selected in Play (SF5): a step when a
+   * module says so, or a look around where it stands (its own hex: a step
+   * in place, PlayHooks.onLook). False: neither, the click goes on as usual.
+   */
+  async partyClicked(party: TokenEntry, click: PartyClick): Promise<boolean> {
+    const how = modulePartyClick(this.plugin, click);
+    if (how === "move") await this.moveParty(party, click.to);
+    else if (how === "look") await this.lookAround(party);
+    return how !== "none";
+  }
+
+  /**
+   * The party looks around where it stands (owner HF11: climbing a tree to
+   * see further): what the modules reveal, one undo. The token stays, and
+   * nothing marks a visit or logs travel.
+   */
+  async lookAround(party: TokenEntry): Promise<void> {
+    if (!guardWrite(party.map, "token")) return;
+    const gridBefore = gridBoxOf(this.host.getActiveMap());
+    const items = await runPartyLooked(this.plugin, { map: party.map, hex: party.hex, token: party.filePath });
+    const gridAfter = gridBoxOf(this.host.getActiveMap());
+    if (items.length) this.host.undos.pushUndo(items.length === 1 ? items[0] : { kind: "group", items }, party.map);
+    this.host.renderGrid();
+    if (!sameGrid(gridBefore, gridAfter)) this.host.keepViewStill(gridBefore, gridAfter);
   }
 
   /**

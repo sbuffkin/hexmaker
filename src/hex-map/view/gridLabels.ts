@@ -14,6 +14,7 @@ import { renderHexNameLayer } from "../hexNameLayer";
 import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, hiddenBadges, legendBadgeKinds, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "../linkBadges";
 import { legendSize, MAP_LEGEND_NAME_MAX, renderTerrainLegend, usedTerrainEntries } from "../terrainLegend";
 import { hexXY } from "../../hexKey";
+import { moduleFog } from "../../modules/runtime";
 
 export interface GridLabelsHost {
   plugin: HexmakerPlugin;
@@ -48,6 +49,12 @@ export class GridLabels {
   private settleTimer: number | null = null;
 
   constructor(private host: GridLabelsHost) {}
+
+  /** Is hex "x_y" hidden by fog (PlayHooks.fog)? Its labels, badges and name aren't drawn. */
+  private hiddenByFog(): (key: string) => boolean {
+    const fog = moduleFog(this.host.plugin, this.host.getActiveMap());
+    return fog ? (k) => fog.hidden(k) : () => false;
+  }
 
   /** A new grid: forget the last one's placements and labels. */
   resetCoords(): void {
@@ -152,6 +159,7 @@ export class GridLabels {
       Math.min(sx, sy);
 
     const wanted = new Set<string>();
+    const hidden = this.hiddenByFog();
     if (sx > 0 && sy > 0 && labelPx >= MIN_LABEL_PX) {
       const mx = clipRect.width * 0.25;
       const my = clipRect.height * 0.25;
@@ -160,7 +168,7 @@ export class GridLabels {
       const y0 = (clipRect.top - my - rect.top) / sy;
       const y1 = (clipRect.bottom + my - rect.top) / sy;
       for (const p of this.coordPlacements) {
-        if (p.ox >= x0 && p.ox <= x1 && p.oy >= y0 && p.oy <= y1) wanted.add(p.key);
+        if (p.ox >= x0 && p.ox <= x1 && p.oy >= y0 && p.oy <= y1 && !hidden(p.key.replace(",", "_"))) wanted.add(p.key);
       }
     }
 
@@ -189,12 +197,13 @@ export class GridLabels {
    */
   renderLinkBadges(gridContainer: HTMLElement): void {
     const sections = new Map<string, BadgeSection[]>();
+    const hidden = this.hiddenByFog();
     const folder = this.host.plugin.app.vault.getAbstractFileByPath(this.host.plugin.mapStore.mapFolder(this.host.activeMapName()));
     if (folder instanceof TFolder) {
       for (const child of folder.children) {
         if (!(child instanceof TFile) || child.extension !== "md") continue;
         const key = hexKeyFromBasename(child.basename);
-        if (!key) continue;
+        if (!key || hidden(key)) continue;
         const found = linkSectionsFromCache(this.host.plugin.app.metadataCache.getFileCache(child));
         if (found.length) sections.set(key, found);
       }
@@ -304,8 +313,9 @@ export class GridLabels {
     const { x: ox, y: oy } = map.gridOffset;
     const used: string[] = [];
     let painted = 0;
+    const hidden = this.hiddenByFog();
     for (const [key, h] of this.host.plugin.mapStore.all(this.host.activeMapName())) {
-      if (!h.terrain) continue;
+      if (!h.terrain || hidden(key)) continue;
       const { x, y } = hexXY(key);
       if (x < ox || y < oy || x >= ox + cols || y >= oy + rows) continue;
       used.push(h.terrain);
@@ -349,7 +359,8 @@ export class GridLabels {
   /** "x_y" → name for the active map's named hexes (map note data). */
   hexNames(): Map<string, string> {
     const out = new Map<string, string>();
-    for (const [key, h] of this.host.plugin.mapStore.all(this.host.activeMapName())) if (h.name) out.set(key, h.name);
+    const hidden = this.hiddenByFog();
+    for (const [key, h] of this.host.plugin.mapStore.all(this.host.activeMapName())) if (h.name && !hidden(key)) out.set(key, h.name);
     return out;
   }
 

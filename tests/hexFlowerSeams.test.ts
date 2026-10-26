@@ -16,7 +16,7 @@ const hexFlower = MODULES.find((m) => m.id === "hex-flower")!;
 describe("hex flower module: one unreleased slice", () => {
 	it("is registered in the hexflower slice with its map-note keys owned", () => {
 		expect(hexFlower.slice).toBe("hexflower");
-		expect(hexFlower.owns.mapNoteKeys).toEqual(["explore-with", "hex-flower-at", "explore-reveal", "explore-grow", "explore-realms", "explore-blend", "explore-peek"]);
+		expect(hexFlower.owns.mapNoteKeys).toEqual(["explore-with", "hex-flower-at", "explore-reveal", "explore-grow", "explore-realms", "explore-blend", "explore-peek", "explore-fog", "explore-seen"]);
 		expect(registry.mapNoteFields().map((f) => f.key)).toEqual(expect.arrayContaining(["explore-with", "hex-flower-at", "explore-reveal", "explore-grow"]));
 		expect(MODULE_RUNTIMES.some((r) => r.id === "hex-flower")).toBe(true);
 	});

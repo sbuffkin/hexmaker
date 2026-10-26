@@ -78,6 +78,8 @@ interface LastFill {
   hex: string;
   from?: string;
   reroll: number;
+  /** The rings it filled around the hex (Roll this hex: none). */
+  rings?: number;
   /** The cell edits it made (to take back on Reroll). */
   undo: UndoItem[];
 }
@@ -396,10 +398,11 @@ export class ExploreService {
 
   /**
    * Fill hex `k` (and, with the map's Reveal set to rings, the blank hexes
-   * that far around it) coming from `from`. Returns the undo entries and
-   * what to tell the user. The hexes it fills bounce in (revealBounce).
+   * that far around it; `rings` overrides it, 0 for just the hex) coming
+   * from `from`. Returns the undo entries and what to tell the user. The
+   * hexes it fills bounce in (revealBounce).
    */
-  async fill(mapName: string, k: string, from: string | undefined, reroll = 0): Promise<{ undo: UndoItem[]; lines: string[]; filled: boolean } | undefined> {
+  async fill(mapName: string, k: string, from: string | undefined, reroll = 0, rings?: number): Promise<{ undo: UndoItem[]; lines: string[]; filled: boolean } | undefined> {
     const map = this.exploreMap(mapName);
     if (!map || !this.inGrid(map, k)) return undefined;
     let at: ReadonlyMap<string, number> = parseFlowerAt(map.hexFlowerAt);
@@ -415,9 +418,9 @@ export class ExploreService {
     if (blank && plan.writes.some((w) => w.target.kind !== "log")) { filled = true; shown.set(k, 0); }
     lines.push(this.line(map, k, from, plan));
     // Reveal rings: the blank hexes around, each seen from the hex it was reached from.
-    at = await this.fillRings(map, k, parseReveal(map.exploreReveal), at, reroll, undo, lines, shown);
+    at = await this.fillRings(map, k, rings ?? parseReveal(map.exploreReveal), at, reroll, undo, lines, shown);
     undo.push(...this.setFlowerAt(map, at));
-    if (filled) this.last.set(mapName, { hex: k, from, reroll, undo: cellUndo });
+    if (filled) this.last.set(mapName, { hex: k, from, reroll, rings, undo: cellUndo });
     markRevealed(mapName, shown);
     return { undo, lines: lines.filter(Boolean), filled };
   }
@@ -501,12 +504,55 @@ export class ExploreService {
     return r.undo;
   }
 
-  /** "Roll this hex": fill a blank hex by hand, from a filled neighbour. Pushes its own undo entry. */
+  /**
+   * The party looks around where it stands (a step in place, owner HF11):
+   * the blank hexes it sees now are filled, one undo, one notice. With
+   * Party sees 0 that's only its own hex.
+   */
+  async look(mapName: string, center: string): Promise<UndoItem[]> {
+    const map = this.exploreMap(mapName);
+    if (!map) return [];
+    const r: number = parseReveal(map.exploreReveal);
+    if (r > 0) return this.reveal(mapName, center, r);
+    const [x, y] = hexPair(center);
+    if (!this.isBlank(mapName, center)) { this.show(`Nothing new to see at ${x}, ${y}.`, []); return []; }
+    const done = await this.fill(mapName, center, undefined, 0, 0);
+    if (done) this.notify(mapName, done);
+    return done?.undo ?? [];
+  }
+
+  /**
+   * "Roll this hex", one hex or a brush stroke (Reveal hexes): fill
+   * exactly these blank hexes, nothing around them (owner HF11: the GM
+   * shows the players one place), each from a filled neighbour. Returns
+   * the undo entries; at most one notice.
+   */
+  async fillHexes(mapName: string, keys: readonly string[]): Promise<UndoItem[]> {
+    const map = this.exploreMap(mapName);
+    if (!map) return [];
+    const undo: UndoItem[] = [];
+    const lines: string[] = [];
+    let filled = false;
+    for (const k of keys) {
+      if (!this.inGrid(map, k) || !this.isBlank(mapName, k)) continue;
+      const from = this.neighbours(map, k).find((n) => !this.isBlank(mapName, n));
+      const r = await this.fill(mapName, k, from, 0, 0);
+      if (!r) continue;
+      undo.push(...r.undo);
+      lines.push(...r.lines);
+      filled ||= r.filled;
+    }
+    if (keys.length === 1) this.notify(mapName, { undo, lines, filled });
+    else if (lines.length) this.show(`Filled ${lines.length} hex${lines.length === 1 ? "" : "es"}.`, []);
+    return undo;
+  }
+
+  /** "Roll this hex": fill a blank hex by hand (only that hex), from a filled neighbour. Pushes its own undo entry. */
   async rollHex(mapName: string, k: string): Promise<void> {
     const map = this.exploreMap(mapName);
     if (!map) return;
     const from = this.neighbours(map, k).find((n) => !this.isBlank(mapName, n));
-    const r = await this.fill(mapName, k, from);
+    const r = await this.fill(mapName, k, from, 0, 0);
     if (!r) return;
     if (r.undo.length) this.plugin.pushUndo(mapName, { kind: "group", items: r.undo });
     this.notify(mapName, r);
@@ -524,7 +570,7 @@ export class ExploreService {
     const map = this.exploreMap(mapName);
     if (!last || !map) return;
     const back = await this.takeBack(last.undo);
-    const r = await this.fill(mapName, last.hex, last.from, last.reroll + 1);
+    const r = await this.fill(mapName, last.hex, last.from, last.reroll + 1, last.rings);
     if (!r) return;
     this.plugin.pushUndo(mapName, { kind: "group", items: [...back, ...r.undo] });
     this.notify(mapName, r);

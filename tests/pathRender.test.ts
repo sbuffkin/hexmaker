@@ -148,7 +148,7 @@ describe("PNG and screen draw the same polylines", () => {
     const png = readSurface("png-renderer");
     const overlay = /\n {2}(?:private )?renderPathOverlay\(gridContainer[\s\S]*?\n {2}\}\n/.exec(view)![0];
     expect(overlay).toMatch(/this\.(?:host\.)?plugin\.paths\.strokes\(region\.name, \{\n\s*seamEnd:/);
-    expect(png).toMatch(/plugin\.paths\.strokes\(map\.name, \{ laneScale: boldPaths \? PNG_PATH_BOLD : 1 \}\)/);
+    expect(png).toMatch(/plugin\.paths\.strokes\(map\.name, \{ laneScale: boldPaths \? PNG_PATH_BOLD : 1, \.\.\.\(opts\.hidden \?/);
     // No layout reads in the overlay's stroke loop: the only reads are the calibration's.
     expect(overlay).not.toMatch(/offsetLeft|offsetTop|offsetWidth|getBoundingClientRect/);
   });

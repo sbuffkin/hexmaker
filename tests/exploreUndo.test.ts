@@ -9,7 +9,7 @@ import { ExploreService } from "../src/hexflower/ExploreService";
 import { exploreOrder } from "../src/hexflower/exploreOrder";
 import { FlowerStore } from "../src/hexflower/FlowerStore";
 import { setExplore, setFlowerStore } from "../src/hexflower/context";
-import { exploreFrontier, exploreHexMenu, explorePartyControls, exploreStep, REVEAL_CONTROL_ID } from "../src/hexflower/exploreHooks";
+import { EXPLORE_MENU, exploreFrontier, exploreHexMenu, exploreLook, explorePartyClick, explorePartyControls, exploreStep, PICK_CONTROL_ID, revealBrush, SEES_CONTROL_ID, setSight } from "../src/hexflower/exploreHooks";
 import { clearRevealed, revealedNow } from "../src/hex-map/revealBounce";
 import { emptyFlower } from "../src/hexflower/flower";
 import { buildFlowerNote } from "../src/hexflower/flowerNote";
@@ -142,34 +142,84 @@ describe("exploring: a party step", () => {
 		expect(s.store.all("m").size).toBe(19);
 	});
 
-	it("the party's Reveal button: rings around the party any time, one undo, and the hexes bounce in", async () => {
+	it("Sees and Look (HF11): set the sight, then look around where the party stands: rings filled, one undo, the hexes bounce in", async () => {
 		clearRevealed();
 		const s = setup();
 		await s.flowers.init();
 		await exploreStep(s.plugin as never, { map: "m", from: "2_1", to: "2_2" });
 		expect(s.store.all("m").size).toBe(1);
 		expect([...revealedNow("m")]).toEqual([["2_2", 0]]);
-		const controls = explorePartyControls(s.plugin as never, { map: "m", hex: "2_2", token: "party.md" });
-		expect(controls.map((c) => [c.id, c.label, c.buttons.map((b) => b.label)])).toEqual([[REVEAL_CONTROL_ID, "Reveal", ["1", "2", "3"]]]);
-		const undo = await controls[0].buttons[0].run();
+		const controls = () => explorePartyControls(s.plugin as never, { map: "m", hex: "2_2", token: "party.md" });
+		expect(controls().map((c) => [c.id, c.label, c.buttons.map((b) => b.label)])).toEqual([
+			[SEES_CONTROL_ID, "Sees", ["0", "1", "2", "3", "Look"]],
+			[PICK_CONTROL_ID, "Reveal hexes", ["Pick"]],
+		]);
+		const button = (label: string) => controls()[0].buttons.find((b) => b.label === label)!;
+		expect(button("0").selected).toBe(true);
+		// Sees 1, then Look: the ring around the party.
+		expect(await button("1").run!()).toEqual([]);
+		expect(s.mapData.exploreReveal).toBe("1 ring");
+		expect(button("1").selected).toBe(true);
+		const undo = await button("Look").run!();
 		expect(s.store.all("m").size).toBe(7);
 		expect(undo.map((u) => u.kind)).toEqual([...Array(6).fill("cells"), "map-field"]);
 		expect(s.notices.at(-1)).toMatch(/^Revealed 6 hexes \(1 ring around 2, 2\)\./);
 		const bouncing = revealedNow("m");
 		expect([...bouncing].filter(([, r]) => r === 1).length).toBe(6);
-		// Later, a bigger reveal from the same hex: the second ring only.
-		const undo2 = await controls[0].buttons[1].run();
+		// Later, Sees 2 (the party climbed a tree): the second ring only.
+		await button("2").run!();
+		const undo2 = await button("Look").run!();
 		expect(s.store.all("m").size).toBe(19);
-		// Undo takes back exactly that reveal.
+		// Undo takes back exactly that look.
 		await applyAll(s.plugin, undo2, "undo");
 		expect(s.store.all("m").size).toBe(7);
-		// Nothing left to reveal: told so, no undo.
-		await controls[0].buttons[0].run();
-		expect(await controls[0].buttons[0].run()).toEqual([]);
+		// Nothing left to see: told so, no undo.
+		await button("1").run!();
+		expect(await button("Look").run!()).toEqual([]);
 		expect(s.notices.at(-1)).toMatch(/^Nothing new to reveal 1 ring around 2, 2\.$/);
 		// Not an explored map: no controls.
 		const plain = setup({ exploreWith: [] });
 		expect(explorePartyControls(plain.plugin as never, { map: "m", hex: "2_2", token: "p.md" })).toEqual([]);
+	});
+
+	it("the party's own hex clicked is a look (a step in place); every later step reveals the sight", async () => {
+		const s = setup();
+		await s.flowers.init();
+		await exploreStep(s.plugin as never, { map: "m", from: "2_1", to: "2_2" });
+		const click = { map: "m", token: "party.md", from: "2_2", to: "2_2", orientation: "flat" as const, stagger: "odd" as const };
+		expect(explorePartyClick(s.plugin as never, click)).toBe("look");
+		expect(explorePartyClick(s.plugin as never, { ...click, to: "2_3" })).toBe("none");
+		setSight(s.plugin as never, "m", 2);
+		const undo = await exploreLook(s.plugin as never, { map: "m", hex: "2_2", token: "party.md" });
+		expect(s.store.all("m").size).toBe(19);
+		expect(undo.some((u) => u.kind === "cells")).toBe(true);
+		// Sees 0: a step fills only the hex entered.
+		setSight(s.plugin as never, "m", 0);
+		expect(s.mapData.exploreReveal).toBeUndefined();
+		const plain = setup({ exploreWith: [] });
+		expect(explorePartyClick(plain.plugin as never, click)).toBe("none");
+	});
+
+	it("Roll this hex fills exactly that hex, even with Sees 2 (owner HF11); a brush stroke fills each hex crossed, one notice", async () => {
+		const s = setup({ exploreReveal: "2 rings" });
+		await s.flowers.init();
+		s.store.set("m", "0_0", { terrain: "forest" });
+		const menu = exploreHexMenu(s.plugin as never, "m", "4_4");
+		menu.find((m) => m.id === EXPLORE_MENU.roll.menuId)!.run();
+		await new Promise((r) => setTimeout(r, 20));
+		expect(s.store.all("m").size).toBe(2);
+		expect(s.store.get("m", "4_4")?.terrain).toBeTruthy();
+		expect(s.pushed.length).toBe(1);
+		// The brush: three hexes in one stroke, one undo's worth of entries, one notice.
+		const before = s.notices.length;
+		const undo = await revealBrush(s.plugin as never, "m").stroke(["1_1", "1_2", "4_4", "1_3"], false);
+		expect(s.store.all("m").size).toBe(5);
+		expect(undo.filter((u) => u.kind === "cells").length).toBe(3);
+		expect(s.notices.length).toBe(before + 1);
+		expect(s.notices.at(-1)).toBe("Filled 3 hexes.");
+		// Right-click on a map filled as it goes: nothing (a fill isn't taken back by a brush).
+		expect(await revealBrush(s.plugin as never, "m").stroke(["1_1"], true)).toEqual([]);
+		expect(s.store.get("m", "1_1")).toBeTruthy();
 	});
 
 	it("hex menu: Roll this hex on a blank hex, Reroll on the latest fill; the frontier marks blank neighbours", async () => {

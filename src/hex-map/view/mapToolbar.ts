@@ -329,6 +329,12 @@ export class MapToolbar extends ToolState {
     this.swapBtn?.toggleClass("is-active", this.drawingMode === "swap");
     this.tokenBtn?.toggleClass("is-active", this.drawingMode === "placeToken");
     this.biomeToolbarBtn?.toggleClass("is-active", this.drawingMode === "biome");
+    // A brush's button on the party controls (partyControls.ts) shows whether it's on.
+    this.host.controlsEl()?.querySelectorAll<HTMLElement>("button[data-brush]").forEach((b) => {
+      const on = b.dataset.brush === this.activeBrush();
+      b.toggleClass("is-active", on);
+      b.setAttr("aria-pressed", String(on));
+    });
     if (this.biomeBtnPreview) {
       const colour = this.drawingMode === "biome" && this.paintBiomeId ? this.host.wm()?.biomeNoteOf(this.paintBiomeId)?.color : undefined;
       if (colour) {
@@ -439,6 +445,7 @@ export class MapToolbar extends ToolState {
       factionPath: this.paintFactionPath,
       regionPath: this.paintRegionPath,
       biomeName: this.paintBiomeId ? this.host.wm()?.biomeInfo(this.paintBiomeId)?.label ?? this.paintBiomeId : null,
+      brushLabel: this.brush?.label ?? null,
     });
     this.renderRouteControls();
     const changed = this.modeBarTextEl.getText() !== (label ?? "");

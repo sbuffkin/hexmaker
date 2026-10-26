@@ -11,7 +11,7 @@ import { clearRevealed, markRevealed, REVEAL_BOUNCE_MS, revealedNow } from "../s
 import { drawPartyControls, PARTY_CONTROLS_CLS } from "../src/hex-map/view/partyControls";
 import { WorkModeButton } from "../src/hex-map/view/workModeButton";
 import { setExplore } from "../src/hexflower/context";
-import { REVEAL_CONTROL_ID } from "../src/hexflower/exploreHooks";
+import { SEES_CONTROL_ID } from "../src/hexflower/exploreHooks";
 import { ringOrder } from "../src/hexflower/exploreOrder";
 import { neighbourKeys } from "../src/hexKey";
 import type { UndoItem } from "../src/hex-map/undoItems";
@@ -128,19 +128,20 @@ describe("revealed hexes bounce in (HF3)", () => {
 	});
 });
 
-describe("the party controls (HF3)", () => {
+describe("the party controls (HF3, HF11: Sees 0 · 1 · 2 · 3 and Look)", () => {
 	function setup(explored: boolean) {
 		const { root, el } = fakeRoot();
-		const calls: [string, string, number][] = [];
+		const calls: [string, string, unknown][] = [];
 		const item: UndoItem = { kind: "map-field", mapName: "m", field: "hexFlowerAt", before: undefined, after: ["W: 3"] };
-		const map: Record<string, unknown> = { gridSize: { cols: 5, rows: 5 }, gridOffset: { x: 0, y: 0 }, workMode: "play" };
-		const plugin = { getMap: (n: string) => (n === "m" ? map : undefined) };
+		const map: Record<string, unknown> = { name: "m", gridSize: { cols: 5, rows: 5 }, gridOffset: { x: 0, y: 0 }, workMode: "play", ...(explored ? { exploreWith: ["[[W]] -> terrain"] } : {}) };
+		const plugin = { getMap: (n: string) => (n === "m" ? map : undefined), saveSettings: async () => {} };
 		setExplore(plugin as never, {
-			exploreMap: (m: string) => (explored && m === "m" ? {} : undefined),
-			reveal: async (m: string, hex: string, rings: number) => {
-				calls.push([m, hex, rings]);
-				// Revealing 3 rings from the middle grows the map (HF4).
-				if (rings === 3) { map.gridOffset = { x: -4, y: -4 }; map.gridSize = { cols: 13, rows: 13 }; }
+			exploreMap: (m: string) => (explored && m === "m" ? map : undefined),
+			peeking: () => false,
+			look: async (m: string, hex: string) => {
+				calls.push([m, hex, map.exploreReveal]);
+				// Looking 3 rings out from the middle grows the map (HF4).
+				if (map.exploreReveal === "3 rings") { map.gridOffset = { x: -4, y: -4 }; map.gridSize = { cols: 13, rows: 13 }; }
 				return [item];
 			},
 		} as never);
@@ -150,33 +151,45 @@ describe("the party controls (HF3)", () => {
 		const host = {
 			controlsEl: () => el, pushUndo: (it: UndoItem, m: string) => pushed.push([it, m]), renderGrid: () => { renders++; },
 			keepViewStill: (before: unknown, after: unknown) => still.push([before, after]),
+			activeBrush: () => null, toggleBrush: () => {},
 		};
 		const party = { map: "m", hex: "2_2", token: "world/tokens/Party.md", title: "Party" };
-		return { root, plugin, host, party, calls, pushed, item, still, renders: () => renders };
+		return { root, plugin, map, host, party, calls, pushed, item, still, renders: () => renders };
 	}
+	const sees = (s: ReturnType<typeof setup>) => s.root.find(PARTY_CONTROLS_CLS)!.all((e) => e.attrs["data-control"] === SEES_CONTROL_ID)[0];
 
-	it("on an explored map: the party's name and Reveal 1 · 2 · 3; a click reveals that far as one undo", async () => {
+	it("on an explored map: the party's name and Sees 0 · 1 · 2 · 3 (the current one selected) and Look", async () => {
 		const s = setup(true);
 		drawPartyControls(s.plugin as never, s.host, s.party);
 		const bar = s.root.find(PARTY_CONTROLS_CLS)!;
 		expect(bar.find("duckmage-party-controls-name")?.text).toBe("Party");
-		const reveal = bar.all((e) => e.attrs["data-control"] === REVEAL_CONTROL_ID)[0];
-		expect(reveal.find("duckmage-party-control-label")?.text).toBe("Reveal");
-		expect(reveal.buttons().map((b) => b.text)).toEqual(["1", "2", "3"]);
-		reveal.buttons()[1].fire("click");
+		const control = sees(s);
+		expect(control.find("duckmage-party-control-label")?.text).toBe("Sees");
+		expect(control.buttons().map((b) => b.text)).toEqual(["0", "1", "2", "3", "Look"]);
+		expect(control.buttons().map((b) => b.attrs["aria-pressed"])).toEqual(["true", "false", "false", "false", "false"]);
+		// Sees 2: stored as the map's Party sees, no undo of its own.
+		control.buttons()[2].fire("click");
 		await new Promise((r) => setTimeout(r, 0));
-		expect(s.calls).toEqual([["m", "2_2", 2]]);
+		expect(s.map.exploreReveal).toBe("2 rings");
+		expect(s.pushed).toEqual([]);
+		// Look: a step in place with that sight, one undo.
+		control.buttons()[4].fire("click");
+		await new Promise((r) => setTimeout(r, 0));
+		expect(s.calls).toEqual([["m", "2_2", "2 rings"]]);
 		expect(s.pushed).toEqual([[s.item, "m"]]);
-		expect(s.renders()).toBe(1);
+		expect(s.renders()).toBe(2);
 		// The map didn't grow: the view isn't moved.
 		expect(s.still).toEqual([]);
+		// Drawn again, Sees 2 is the selected one.
+		drawPartyControls(s.plugin as never, s.host, s.party);
+		expect(sees(s).buttons().map((b) => b.attrs["aria-pressed"])).toEqual(["false", "false", "true", "false", "false"]);
 	});
 
-	it("a Reveal that grew the map redraws and keeps the view still (HF4)", async () => {
+	it("a Look that grew the map redraws and keeps the view still (HF4)", async () => {
 		const s = setup(true);
+		s.map.exploreReveal = "3 rings";
 		drawPartyControls(s.plugin as never, s.host, s.party);
-		const reveal = s.root.find(PARTY_CONTROLS_CLS)!.all((e) => e.attrs["data-control"] === REVEAL_CONTROL_ID)[0];
-		reveal.buttons()[2].fire("click");
+		sees(s).buttons()[4].fire("click");
 		await new Promise((r) => setTimeout(r, 0));
 		expect(s.renders()).toBe(1);
 		expect(s.still).toEqual([[{ x: 0, y: 0, cols: 5, rows: 5 }, { x: -4, y: -4, cols: 13, rows: 13 }]]);
@@ -192,8 +205,7 @@ describe("the party controls (HF3)", () => {
 		const s = setup(true);
 		drawPartyControls(s.plugin as never, s.host, s.party);
 		(s.plugin.getMap("m") as Record<string, unknown>).workMode = "build";
-		const reveal = s.root.find(PARTY_CONTROLS_CLS)!.all((e) => e.attrs["data-control"] === REVEAL_CONTROL_ID)[0];
-		reveal.buttons()[0].fire("click");
+		sees(s).buttons()[4].fire("click");
 		await new Promise((r) => setTimeout(r, 0));
 		expect(s.calls).toEqual([]);
 		expect(s.pushed).toEqual([]);

@@ -22,6 +22,7 @@ import { TerrainPickerModal } from "../TerrainPickerModal";
 import { TokenModal } from "../TokenModal";
 import type { DrawingMode } from "../toolMode";
 import type { TokenSnap } from "../undoItems";
+import type { HexBrush } from "../../modules/types";
 import type { PathOverlay } from "./pathOverlay";
 import type { UndoController } from "./undoController";
 import { hexPair } from "../../hexKey";
@@ -42,6 +43,8 @@ export interface ToolHost {
   plugin: HexmakerPlugin;
   activeMapName(): string;
   viewportEl(): HTMLElement | null;
+  /** The overlay for buttons (the party controls show a brush's state). */
+  controlsEl(): HTMLElement | null;
   getActiveMap(): MapData;
   wm(): WorldMapsApi | undefined;
   owView(map: MapData): "regions" | "biomes" | null;
@@ -82,8 +85,33 @@ export abstract class ToolState {
   pendingTokenPlaceData: NonNullable<TokenSnap["look"]> | null = null;
   swapSource: { x: number; y: number } | null = null;
   swapDest: { x: number; y: number } | null = null;
+  /** A module's brush (the hexBrush tool), while it's on. */
+  brush: HexBrush | null = null;
 
   constructor(protected host: ToolHost) {}
+
+  /** The brush that's on (its id), if any. */
+  activeBrush(): string | null {
+    return this.drawingMode === "hexBrush" ? this.brush?.id ?? null : null;
+  }
+
+  /** Turn a module's brush on (another tool is put down first), or off when it's the one on. */
+  toggleBrush(brush: HexBrush): void {
+    if (this.activeBrush() === brush.id) { this.exitBrushMode(); return; }
+    if (!this.host.modeAllows(TOOL_ACTIONS.hexBrush)) return;
+    this.leaveOtherToolFor("hexBrush");
+    this.brush = brush;
+    this.drawingMode = "hexBrush";
+    this.isErasingMode = false;
+    this.updateToolbarButtonStates();
+  }
+
+  exitBrushMode(): void {
+    if (this.drawingMode !== "hexBrush") return;
+    this.drawingMode = null;
+    this.brush = null;
+    this.updateToolbarButtonStates();
+  }
 
   /** Refresh the buttons and the mode bar for the current tool. */
   abstract updateToolbarButtonStates(): void;
@@ -125,6 +153,7 @@ export abstract class ToolState {
     else if (this.drawingMode === "swap") this.exitSwapMode();
     else if (this.drawingMode === "placeToken") this.exitTokenMode();
     else if (this.drawingMode === "biome") this.exitBiomeMode();
+    else if (this.drawingMode === "hexBrush") this.exitBrushMode();
     else {
       if (this.drawingMode === "path") this.exitPathMode();
       this.drawingMode = null;

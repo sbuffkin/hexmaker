@@ -22,7 +22,9 @@ export type DrawingMode =
   | "swap"
   | "placeToken"
   /** The Biome painter (overworlds only). */
-  | "biome";
+  | "biome"
+  /** A module's brush in Play (PlayHooks: a HexBrush, e.g. revealing hexes one by one). */
+  | "hexBrush";
 
 export interface ToolModeState {
   mode: DrawingMode | null;
@@ -51,6 +53,8 @@ export interface ToolModeState {
   regionPath?: string | null;
   /** The Biome painter's biome (its label). */
   biomeName?: string | null;
+  /** A module brush's own mode bar text (HexBrush.label). */
+  brushLabel?: string | null;
 }
 
 /** "world/factions/Red Hand.md" → "Red Hand"; icon file → its name. */
@@ -112,5 +116,7 @@ export function toolModeLabel(s: ToolModeState): string | null {
       return "Placing token: click a hex";
     case "biome":
       return s.biomeName ? `Painting biome: ${s.biomeName} (click or drag over hexes)` : "Painting biome";
+    case "hexBrush":
+      return s.brushLabel ?? "Brush: click or drag over hexes";
   }
 }

@@ -28,7 +28,7 @@ import { revealedNow } from "../revealBounce";
 import { regionsViewTip } from "../hexHover";
 import { whenSized } from "../whenSized";
 import type { MapData } from "../../types";
-import { moduleGridDecorations, moduleHiddenTerrain, moduleUnchartedKeys } from "../../modules/runtime";
+import { moduleFog, moduleGridDecorations, moduleHiddenTerrain, moduleUnchartedKeys } from "../../modules/runtime";
 import { renderUnchartedLayer, unchartedKeys } from "../unchartedLayer";
 import { FrameThrottle } from "../../frameThrottle";
 import { terrainDiff } from "../terrainDiff";
@@ -359,6 +359,8 @@ export class GridRenderer {
     const decorate = moduleGridDecorations(this.plugin, region);
     // The GM's peek at an explored map's hidden land (Hex flower), asked once.
     const hidden = moduleHiddenTerrain(this.plugin, region);
+    // Fog over a map being explored by revealing it (Hex flower, HF11), asked once.
+    const fog = moduleFog(this.plugin, region);
     // Hexes exploring just filled bounce in (HF3; revealBounce.ts).
     const revealed = revealedNow(region.name);
     const addHex = (parent: HTMLElement, x: number, y: number) => {
@@ -391,7 +393,10 @@ export class GridRenderer {
       });
       hexEl.tabIndex = -1;
 
-      if (regionsView) {
+      // A hidden hex (fog) shows nothing of its own: dark, or (the GM's peek) faded.
+      const fogged = !!fog?.hidden(hexKey(x, y));
+      if (fogged) hexEl.addClass("duckmage-hex-fogged");
+      if (regionsView || (fogged && !fog?.peek)) {
         hexEl.addEventListener("click", (e) => {
           void this.onHexClick(x, y, e);
         });
@@ -399,7 +404,12 @@ export class GridRenderer {
         return;
       }
 
-      this.setHexColor(hexEl, terrainEntry?.color);
+      // Peeking under the fog: the terrain faintly, as the peek at a hidden world.
+      this.setHexColor(hexEl, fogged ? null : terrainEntry?.color);
+      if (fogged && terrainEntry?.color) {
+        hexEl.addClass("duckmage-hex-peek");
+        hexEl.setCssProps({ "--duckmage-peek-color": terrainEntry.color });
+      }
       const peek = !terrainEntry && hidden ? hidden(hexKey(x, y)) : undefined;
       const peekColor = peek ? paletteByName.get(peek)?.color : undefined;
       if (peekColor) {
@@ -431,7 +441,7 @@ export class GridRenderer {
           "duckmage-hex-icon duckmage-hex-override-icon",
         );
         // Tag the hex so the SVG overlay can elevate this icon above roads/rivers
-        hexEl.dataset.iconOverride = iconOverride;
+        if (!fogged) hexEl.dataset.iconOverride = iconOverride;
       } else if (terrainEntry?.icon) {
         createIconEl(
           hexEl,
@@ -452,7 +462,7 @@ export class GridRenderer {
       const gmIcons = gmIconsOverrides?.has(path)
         ? gmIconsOverrides.get(path)!
         : fromStore ? [...(stored?.gmIcons ?? [])] : gmIconsFromFm(fm);
-      if (gmIcons.length > 0) hexEl.dataset.gmIcons = JSON.stringify(gmIcons);
+      if (gmIcons.length > 0 && !fogged) hexEl.dataset.gmIcons = JSON.stringify(gmIcons);
 
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
         hexEl.addClass("is-selected");

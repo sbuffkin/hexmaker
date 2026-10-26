@@ -104,6 +104,16 @@ describe("e2e: map → PDF builder against sim-vault", () => {
     expect(md).toMatch(/Dense pine forest/);
   });
 
+  it("As the party has seen it (HF11 fog): a hidden hex gets no row, so its notes stay out of the handout", async () => {
+    const placeholderUri = "data:image/png;base64,AAA";
+    const layout = computeSubdivisions({ gridCols: 3, gridRows: 2, pageWidthPx: 950, pageHeightPx: 360, minHexPxOnPage: 60 });
+    const sections = enumerateSections(layout, { cols: 3, rows: 2 });
+    const md = await buildMapPdfMarkdown(plugin as never, "the-coast", placeholderUri, sections, sections.map(() => placeholderUri), undefined, (hex) => hex === "1_0");
+    expect(md).not.toMatch(/\| 1,0 \| forest/);
+    expect(md).not.toMatch(/Dense pine forest/);
+    expect(md).toMatch(/\| 0,0 \| shallows/);
+  });
+
   it("the palette duplicate 'ocean' regression: hex 0,1 (ocean) is still in the table", async () => {
     // This row would have been silently mis-rendered as `ocean = grey` in the
     // old code path. The MD builder doesn't render colors but it DOES look up

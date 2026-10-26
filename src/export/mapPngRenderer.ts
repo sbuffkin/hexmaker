@@ -114,11 +114,8 @@ export interface MapPngRenderOptions {
   showFactionOverlay?: boolean;
   /** Tint hexes by their region. Default false. */
   showRegionOverlay?: boolean;
-  /**
-   * Deprecated. Overlay opacity is now read per faction/region from
-   * frontmatter (faction-pattern-opacity / region-pattern-opacity).
-   */
-  overlayOpacity?: number;
+  /** Fog (HF11, "As the party has seen it"): hexes left blank, with no label, token or path. */
+  hidden?: (hex: string) => boolean;
 }
 
 /**
@@ -238,6 +235,7 @@ export async function renderMapToPngBlob(
     region?: { color: string; style: OverlayStyle };
     name?: string;
     badges: BadgeSection[];
+    hidden?: boolean;
   }
   const hexes: HexState[] = [];
   const iconsNeeded = new Set<string>();
@@ -255,6 +253,7 @@ export async function renderMapToPngBlob(
       const key = `${hx}_${hy}`;
       const c = shifted.get(key);
       if (!c) continue;
+      if (opts.hidden?.(key)) { hexes.push({ key, cx: c.cx, cy: c.cy, factions: [], badges: [], hidden: true }); continue; }
       const notePath = plugin.hexPath(hx, hy, mapName);
       const file = plugin.app.vault.getAbstractFileByPath(notePath);
 
@@ -327,7 +326,7 @@ export async function renderMapToPngBlob(
   if (showTokens) {
     for (const file of plugin.app.vault.getMarkdownFiles()) {
       const t = getTokenDataFromCache(plugin.app, file);
-      if (!t || t.map !== mapName || !t.visible || !shifted.has(t.hex)) continue;
+      if (!t || t.map !== mapName || !t.visible || !shifted.has(t.hex) || opts.hidden?.(t.hex)) continue;
       tokensByHex.set(t.hex, [...(tokensByHex.get(t.hex) ?? []), t]);
       if (t.icon) iconsNeeded.add(t.icon);
     }
@@ -447,7 +446,7 @@ export async function renderMapToPngBlob(
         ctx.drawImage(src, hex.cx - size / 2, hex.cy - size / 2, size, size);
       }
     }
-    if (showCoords) {
+    if (showCoords && !hex.hidden) {
       const [hxStr, hyStr] = hex.key.split("_");
       const custom = opts.coordLabel;
       const text = custom ? custom(Number(hxStr), Number(hyStr)) : `${hxStr},${hyStr}`;
@@ -510,7 +509,7 @@ export async function renderMapToPngBlob(
     // The same lattice polylines the map view draws (src/paths/pathGeometry.ts),
     // scaled by this image's hex radius: paths look the same as on screen,
     // only bolder when asked (decision 4 of the path-anchors design).
-    const strokes = plugin.paths.strokes(map.name, { laneScale: boldPaths ? PNG_PATH_BOLD : 1 });
+    const strokes = plugin.paths.strokes(map.name, { laneScale: boldPaths ? PNG_PATH_BOLD : 1, ...(opts.hidden ? { visible: (h: string) => !opts.hidden!(h) } : {}) });
     const affine = { sx: R, sy: R, tx: padding - minX, ty: padding - minY };
     // Module overlays (Space: moons tied to their planet, S11), under the
     // paths as on screen: the same overlay.segments the map view draws.
@@ -525,7 +524,7 @@ export async function renderMapToPngBlob(
         const style = overlay.style;
         ctx.save();
         ctx.globalAlpha = style.opacity;
-        for (const seg of overlay.segments(terrainAt, palette, lattice, (k) => centerMap.has(k))) {
+        for (const seg of overlay.segments(terrainAt, palette, lattice, (k) => centerMap.has(k) && !opts.hidden?.(k))) {
           drawPath(ctx, applyAffine(seg, affine), style.color, style.width * R, style.dash.map((d) => d * R), false);
         }
         ctx.restore();

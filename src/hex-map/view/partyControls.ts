@@ -1,14 +1,14 @@
 /**
  * The party controls (owner HF3, 2026-10-16): a small bar over the map
  * while a party token is selected in Play, with the modules' controls for
- * it (Hex flower: Reveal 1 · 2 · 3, fill the blank hexes that many rings
- * around the party, any time after a step). Each button's writes are one
- * undo. Nothing is shown when no module has a control for this map (no
- * nag).
+ * it (Hex flower: Sees 0 · 1 · 2 · 3, Peek, Reveal hexes). Each button's
+ * writes are one undo. A button can show the current choice (`selected`),
+ * or turn a module's brush on and off (the map view's hexBrush tool).
+ * Nothing is shown when no module has a control for this map (no nag).
  */
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { modulePartyControls } from "../../modules/runtime";
-import type { PartyAt } from "../../modules/types";
+import type { HexBrush, PartyAt } from "../../modules/types";
 import { logError } from "../../log";
 import type { UndoItem } from "../undoItems";
 import { gridBoxOf, sameGrid, type GridBox } from "../../maps/gridGrowth";
@@ -23,6 +23,10 @@ export interface PartyControlsHost {
   renderGrid(): void;
   /** After the grid went from `before` to `after` and was redrawn: keep the view still. */
   keepViewStill(before: GridBox, after: GridBox): void;
+  /** The brush that's on (the hexBrush tool), if any. */
+  activeBrush(): string | null;
+  /** Turn `brush` on, or off when it's on. */
+  toggleBrush(brush: HexBrush): void;
 }
 
 /** Draw (or clear) the party controls for `party` (undefined: none selected). */
@@ -40,12 +44,19 @@ export function drawPartyControls(plugin: HexmakerPlugin, host: PartyControlsHos
     const group = bar.createDiv({ cls: "duckmage-party-control", attr: { "data-control": c.id } });
     group.createSpan({ cls: "duckmage-party-control-label", text: c.label, attr: c.title ? { title: c.title } : {} });
     for (const b of c.buttons) {
-      const btn = group.createEl("button", { text: b.label, attr: { title: b.title, "aria-label": `${c.label} ${b.label}` } });
+      const selected = b.brush ? host.activeBrush() === b.brush.id : !!b.selected;
+      const btn = group.createEl("button", {
+        text: b.label,
+        cls: selected ? "is-active" : undefined,
+        attr: { title: b.title, "aria-label": `${c.label} ${b.label}`, "aria-pressed": String(selected), ...(b.brush ? { "data-brush": b.brush.id } : {}) },
+      });
       buttons.push(btn);
       btn.addEventListener("click", () => {
         const map = plugin.getMap(party.map);
         // The controls are Play's: a bar left over after a mode switch does nothing.
         if (workModeOf(map) !== "play") return;
+        if (b.brush) { host.toggleBrush(b.brush); return; }
+        if (!b.run) return;
         buttons.forEach((x) => (x.disabled = true));
         const before = map ? gridBoxOf(map) : undefined;
         void b.run()

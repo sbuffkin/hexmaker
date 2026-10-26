@@ -10083,3 +10083,51 @@ body.is-mobile .duckmage-hex-map-controls button {
 .duckmage-hex.duckmage-hex-peek:not(.duckmage-hex-painted) {
     background: color-mix(in srgb, var(--duckmage-peek-color, transparent) 35%, var(--background-secondary));
 }
+
+/* Fog of war over a finished map (Hex flower, HF11): a hidden hex is dark
+   and shows nothing of its own; with the GM's peek it's drawn faintly. */
+.duckmage-hex.duckmage-hex-fogged:not(.duckmage-hex-peek) {
+    background: color-mix(in srgb, var(--background-secondary) 30%, #0b0b10);
+}
+.duckmage-hex.duckmage-hex-fogged.duckmage-hex-peek > * {
+    opacity: 0.4;
+}
+/* A Reveal hexes stroke in progress (the hexes crossed so far). */
+.duckmage-hex.duckmage-hex-brushed {
+    outline: 2px dashed var(--interactive-accent);
+    outline-offset: -3px;
+}
+
+/* A party control's current choice (Sees 0 · 1 · 2 · 3, Peek, a brush that's on). */
+.duckmage-party-controls {
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.duckmage-party-control button.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+body.is-mobile .duckmage-party-controls {
+    border-radius: var(--radius-m);
+}
+body.is-mobile .duckmage-party-control button {
+    min-width: 2.6em;
+    min-height: 2.4em;
+}
+
+/* Start exploring: Party sees as one-tap buttons. */
+.duckmage-explore-sees {
+    display: flex;
+    gap: 0.3em;
+}
+.duckmage-explore-sees button {
+    min-width: 2.4em;
+}
+.duckmage-explore-sees button.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-explore-problem {
+    color: var(--text-error);
+    min-height: 1.2em;
+}

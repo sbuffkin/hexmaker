@@ -39,6 +39,8 @@ export interface ManualExportOptions {
   outputName?: string;
   /** Leave out hidden and secret text. */
   player?: boolean;
+  /** Fog (HF11, "As the party has seen it"): hexes the party hasn't seen are left out. */
+  hidden?: (hex: string) => boolean;
   pageSize?: "A4" | "Letter";
   /** Hex radius for the map images (print resolution). Default 60. */
   hexRadius?: number;
@@ -137,6 +139,8 @@ export async function collectManualData(
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const x = col + ox, y = row + oy;
+        // Fog ("As the party has seen it"): a hidden hex is neither counted nor keyed.
+        if (opts.hidden?.(hexKey(x, y))) continue;
         const path = plugin.hexPath(x, y, mapName);
         // Terrain and region are map data: count every hex, noted or not
         // (most painted hexes have no note). Only noted hexes have content.
@@ -222,6 +226,7 @@ export async function collectManualData(
     showHexNames: opts.showHexNames ?? true,
     showTokens: opts.showTokens ?? false,
     showCoords: true,
+    hidden: opts.hidden,
     coordLabel: (x: number, y: number) => numbering.number(x, y),
     coordColor: "#1f1c17",
     coordHalo: "rgba(255,255,255,0.85)",

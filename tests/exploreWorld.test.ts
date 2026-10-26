@@ -205,7 +205,7 @@ describe("the GM's peek", () => {
     const peek = () => explorePartyControls(s.plugin as never, { map: "m", hex: "20_6", token: "party.md" }).find((c) => c.id === PEEK_CONTROL_ID)!;
     expect(peek().buttons[0].label).toBe("Show");
     expect(exploreHiddenTerrain(s.plugin as never, s.mapData as never)).toBeUndefined();
-    await peek().buttons[0].run();
+    await peek().buttons[0].run!();
     expect(s.mapData.explorePeek).toBe("on");
     expect(peek().buttons[0].label).toBe("Hide");
     // First ask: reads the realms, then asks for a redraw.
@@ -217,7 +217,7 @@ describe("the GM's peek", () => {
     expect(NAMES).toContain(hidden("30_6"));
     // West of the coast: sea, as the generator made it.
     expect(hidden("2_6")).toBe("sea");
-    await peek().buttons[0].run();
+    await peek().buttons[0].run!();
     expect(s.mapData.explorePeek).toBeUndefined();
   });
 

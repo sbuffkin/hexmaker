@@ -14,7 +14,7 @@ import {
 } from "./exportNames";
 import { Disclosure, Fold } from "../ui/disclosure";
 import { uniqueMapsByName } from "../maps/mapTree";
-import { moduleExportForm } from "../modules/runtime";
+import { moduleExportForm, moduleFog } from "../modules/runtime";
 import { inlineCheck } from "./exportFormControls";
 import { pdfAvailable, PDF_UNAVAILABLE_MESSAGE } from "../platform";
 
@@ -87,6 +87,18 @@ export function renderMapExportForm(
   // The overlay suffix the files get, right after the box, so what's typed
   // plus this reads as the "Writes:" names (fresh-eyes r5).
   const suffixEl = nameRow.createSpan({ cls: "duckmage-export-name-suffix" });
+
+  // A map under fog (being explored by revealing it, HF11): the whole map, or only what the party has seen.
+  const fog = map ? moduleFog(plugin, map) : undefined;
+  let asSeen: HTMLSelectElement | undefined;
+  if (fog) {
+    const fogRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
+    const fogId = `duckmage-export-field-${nextFieldId++}`;
+    fogRow.createEl("label", { text: "Show", cls: "duckmage-export-tab-label", attr: { for: fogId } });
+    asSeen = fogRow.createEl("select", { cls: "duckmage-export-tab-select duckmage-export-fog", attr: { id: fogId } });
+    asSeen.createEl("option", { value: "seen", text: "As the party has seen it (a player handout)" });
+    asSeen.createEl("option", { value: "whole", text: "Whole map" });
+  }
 
   // What goes on the map images: one compact group of toggles (X1).
   const layers = optsForm.createDiv({ cls: "duckmage-export-group" });
@@ -209,6 +221,8 @@ export function renderMapExportForm(
     showLinkBadges: showLinkBadges.checked,
     showLegend: showLegend.checked,
     columns: columnChecks.filter((c) => c.cb.checked).map((c) => c.key),
+    // As seen: hidden hexes are blank on the images and left out of the tables.
+    ...(fog && asSeen?.value === "seen" ? { hidden: (hex: string) => fog.hidden(hex) } : {}),
   });
 
   const actions = el.createDiv({ cls: "duckmage-export-tab-actions" });

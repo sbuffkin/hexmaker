@@ -7,7 +7,7 @@
  */
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { WorldMapsApi } from "../../modules/world-maps/api";
-import { moduleOverlays } from "../../modules/runtime";
+import { moduleFog, moduleOverlays } from "../../modules/runtime";
 import {
   applyAffine,
   calibrateAffine,
@@ -192,9 +192,12 @@ export class PathOverlay {
     const calib = this.calibratePathLayer(gridContainer, region);
     // The same strokes the PNG export draws (plugin.paths.strokes); only
     // the seam stubs are the view's own.
+    // Fog (PlayHooks.fog): a path shows only between hexes the party has seen.
+    const fog = moduleFog(this.host.plugin, region);
     const strokes = calib
       ? this.host.plugin.paths.strokes(region.name, {
           seamEnd: (typeName, hex) => joins.find((j) => j.typeName === typeName && j.own === hex)?.other,
+          ...(fog ? { visible: (hex: string) => !fog.hidden(hex) } : {}),
         })
       : [];
     const em = (pts: { cx: number; cy: number }[]) =>
