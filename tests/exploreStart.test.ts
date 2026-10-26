@@ -7,7 +7,7 @@ import { ExploreService } from "../src/hexflower/ExploreService";
 import { FlowerStore } from "../src/hexflower/FlowerStore";
 import { setExplore, setFlowerStore } from "../src/hexflower/context";
 import { hexFlowerGenerator } from "../src/hexflower/flowerGenerator";
-import { START_GRID_MAX, onSeam, renderExploreSetup } from "../src/hexflower/exploreSetupForm";
+import { countTerrains, describeLand, START_GRID_MAX, onSeam, renderExploreSetup } from "../src/hexflower/exploreSetupForm";
 import { parseAreas } from "../src/hexflower/exploreSetup";
 import type { TerrainGeneratorKind } from "../src/worldgen/registry";
 import type { NewMapModeContext } from "../src/modules/types";
@@ -130,10 +130,10 @@ describe("Powered by: the areas", () => {
   }
   const chips = (root: FakeEl) => root.all((e) => e.classes.has("duckmage-explore-area")).map((e) => e.text);
 
-  it("home, then Add another area: far, in an open direction, picked with the list; the mix it rolls on is said", () => {
+  it("home, then Add another area: far, in an open direction, picked with the list; what its land holds is said", () => {
     const { root, options } = draw({});
     expect(chips(root)).toEqual(["Home: woods"]);
-    expect(root.find("duckmage-explore-mix")?.text).toBe("Rolls on: forest 100%.");
+    expect(root.find("duckmage-explore-mix")?.text).toBe("Land: all forest.");
     root.find("duckmage-explore-area-add")!.fire("click");
     expect(parseAreas(options.areas)).toEqual([{ id: "x:woods", dir: "north", reach: "far" }]);
     expect(chips(root)).toEqual(["Home: woods", "North, far: woods"]);
@@ -155,5 +155,21 @@ describe("Powered by: the areas", () => {
     expect(chips(root)).toEqual(["Home: woods", "South, near: lakes✕"].map((t) => t.replace("✕", "")));
     root.find("duckmage-explore-area-remove")!.fire("click", { stopPropagation: () => {} });
     expect(options.areas).toBe("");
+  });
+});
+
+describe("Powered by: what the land holds (HF10 hidden tile, not the flower's top six)", () => {
+  const T = ["grass", "hills", "mixed forest", "marsh", "desert rocky", "ocean", "snow", "swamp", "tundra", "cliffs"];
+  it("the biggest terrains up to about 60% are 'mostly' (three at most), the rest 'also', rare ones too", () => {
+    expect(describeLand(new Map([["grass", 50], ["hills", 30], ["mixed forest", 15], ["desert rocky", 4], ["marsh", 1]]), T))
+      .toBe("Land: mostly grass and hills; also mixed forest, desert rocky and marsh.");
+    expect(describeLand(new Map([["grass", 25], ["hills", 25], ["ocean", 21], ["marsh", 19], ["snow", 10]]), T))
+      .toBe("Land: mostly grass, hills and ocean; also marsh and snow.");
+    // Under half a percent: left out; past six: "…"; not in the palette: left out.
+    const many = new Map<string, number>([["grass", 900], ["hills", 30], ["mixed forest", 20], ["marsh", 15], ["desert rocky", 10], ["ocean", 9], ["snow", 8], ["swamp", 7], ["tundra", 1], ["lava", 50]]);
+    expect(describeLand(many, T)).toBe("Land: mostly grass; also hills, mixed forest, marsh, desert rocky, ocean, snow….");
+    expect(describeLand(new Map([["forest", 3]]), ["forest"])).toBe("Land: all forest.");
+    expect(describeLand(new Map([["lava", 3]]), T)).toBe("Land: nothing of this palette.");
+    expect(countTerrains(["a", "b", "a"])).toEqual(new Map([["a", 2], ["b", 1]]));
   });
 });

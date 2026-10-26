@@ -205,7 +205,9 @@ export async function exploreAsYouGo(id) {
   if (!visible(sizeSet) || !/^Starts 3 × 3/.test(sizeSet.textContent)) fail(`size line: ${sizeSet?.textContent} (shown ${visible(sizeSet)})`);
   if (visible(q(".duckmage-setup-size-custom input"))) fail("the size fields still show");
   // The home generator: the first row of the list (the default), its mix said under it.
-  const mixOf = () => (q(".duckmage-explore-mix")?.textContent ?? "").replace(/^Rolls on: |\.$/g, "").split(", ").map((t) => t.replace(/ \d+%$/, "")).filter(Boolean);
+  // "Land: mostly grass, hills and mixed forest; also marsh and desert rocky." (HF10: the hidden tile's land) → the terrains named.
+  const mixOf = () => (q(".duckmage-explore-mix")?.textContent ?? "").replace(/^Land: (?:mostly |all )?/, "").replace(/\.$/, "").replace(/…/g, "")
+    .split(/; also |, | and /).map((t) => t.trim()).filter(Boolean);
   const homeMix = mixOf();
   const homeName = q(".duckmage-explore-area.is-active")?.textContent?.replace(/^Home: /, "");
   if (!homeMix.length) fail(`no mix for home: ${q(".duckmage-explore-mix")?.textContent}`);
@@ -248,6 +250,8 @@ export async function exploreAsYouGo(id) {
   // Not out at sea: the start is the biggest terrain the party can walk on.
   const startColor = p.getPaletteOrPresetTerrains(map.paletteName).find((t) => t.name === startTerrain);
   if (startColor && (startColor.impassable ?? /water/.test(startColor.type ?? ""))) fail(`the party starts on ${startTerrain} (impassable)`);
+  // The start is land the home area holds (its hidden tile, as New map's Land line says).
+  if (startTerrain && !homeMix.includes(startTerrain)) fail(`the start's ${startTerrain} isn't in the home land the form named (${homeMix.join(", ")})`);
   const note = await app.vault.adapter.read(store.notePath(made.name));
   if (!/^explore-realms:/m.test(note)) fail("the map note has no explore-realms");
   // HF10: hexes reveal the areas' hidden generated land (every terrain the

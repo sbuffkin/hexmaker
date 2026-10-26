@@ -5,8 +5,8 @@
  * second generator's area near, far or really far in one of the six hex
  * directions (plan-hf6-generator-realms). A direction where another area
  * already holds the land is off, its tooltip saying which. Each area is
- * picked with New map's generator list; under it, the terrain mix its flower
- * will roll on. Then where the party starts (HF8 B4): a small grid of the
+ * picked with New map's generator list; under it, what its land holds (a
+ * sample of its hidden tile, world.ts: "Land: mostly …; also …"). Then where the party starts (HF8 B4): a small grid of the
  * map's hexes, the middle by default, sized by the map (as big as the party
  * can see); next to a map, its seam edge is marked. Everything is written
  * into the Hex flower generator's options (exploreSetup.ts), so the preview
@@ -206,16 +206,53 @@ export function renderExploreSetup(el: HTMLElement, ctx: NewMapModeContext): voi
     ctx.changed({ options: true });
   });
 
-  // What its flower rolls on (the palette gap check: nothing of this palette, said here).
+  // What the land holds (HF10: the area's hidden tile, the land the party will find, rare terrains
+  // too; the palette gap check: nothing of this palette, said here).
   const kind = kinds.find((k) => k.id === current);
   const mix = control.createDiv({ cls: "setting-item-description duckmage-explore-mix" });
   if (kind && ex) {
-    const s = ex.realmFlowers.sharesOf(kind, ctx.paletteName, ctx.terrains, hashSeed(ctx.seed() >>> 0, "realm-sample"), g.orientation);
-    if ("error" in s) mix.setText(`⚠ ${s.error}`);
+    const realms = setupRealms(o, start, ctx.seed(), g, label);
+    const realm = realms[ui.selected] ?? realms[0];
+    const tile = realm ? ex.worlds.tileOf(realm, kind, { kinds, palette: ctx.paletteName, terrains: ctx.terrains, mapSeed: ctx.seed(), geometry: g }) : undefined;
+    const names = ctx.terrains.map((t) => t.name);
+    if (tile && !("error" in tile)) mix.setText(describeLand(countTerrains(tile.cells.values()), names));
     else {
-      const top = topShares(s, ctx.terrains.map((t) => t.name));
-      const sum = top.reduce((a, b) => a + b.weight, 0) || 1;
-      mix.setText(`Rolls on: ${top.map((t) => `${t.terrain} ${Math.round((t.weight / sum) * 100)}%`).join(", ")}.`);
+      // No tile (the generator can't run here): the sample its flower is made from.
+      const s = ex.realmFlowers.sharesOf(kind, ctx.paletteName, ctx.terrains, hashSeed(ctx.seed() >>> 0, "realm-sample"), g.orientation);
+      if ("error" in s) mix.setText(`⚠ ${s.error}`);
+      else mix.setText(describeLand(s, names));
     }
   }
+}
+
+/** How many of each terrain. */
+export function countTerrains(cells: Iterable<string>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const t of cells) out.set(t, (out.get(t) ?? 0) + 1);
+  return out;
+}
+
+const joinAnd = (list: readonly string[]) => (list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0] ?? "");
+
+/**
+ * "Land: mostly grass, hills and mixed forest; also marsh and desert rocky."
+ * The biggest terrains up to about 60% of the land (three at most) are
+ * "mostly"; the rest that make up at least half a percent are "also" (six
+ * at most, then "…"). Palette terrains only. Pure.
+ */
+export function describeLand(counts: ReadonlyMap<string, number>, terrains: readonly string[], maxAlso = 6): string {
+  const shares = topShares(counts, terrains, Infinity);
+  const total = shares.reduce((a, b) => a + b.weight, 0);
+  if (!total) return "Land: nothing of this palette.";
+  const mostly: string[] = [];
+  let sum = 0;
+  for (const s of shares) {
+    if (mostly.length && (sum / total >= 0.6 || mostly.length >= 3)) break;
+    mostly.push(s.terrain);
+    sum += s.weight;
+  }
+  const rest = shares.slice(mostly.length).filter((s) => s.weight / total >= 0.005).map((s) => s.terrain);
+  const also = rest.length > maxAlso ? [...rest.slice(0, maxAlso), "…"] : rest;
+  const head = shares.length === 1 ? `Land: all ${mostly[0]}` : `Land: mostly ${joinAnd(mostly)}`;
+  return `${head}${also.length ? `; also ${also[also.length - 1] === "…" ? `${also.slice(0, -1).join(", ")}…` : joinAnd(also)}` : ""}.`;
 }
