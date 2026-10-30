@@ -1,5 +1,7 @@
 import { App, TFile, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { dragGrip } from "../ui/pickers";
+import { renderSaveStatusLine } from "../ui/saveStatusLine";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
 import { WorkflowExportModal } from "./WorkflowExportModal";
@@ -11,8 +13,14 @@ import {
   stepPlaceholder,
   stepVarName,
   isDiceFormula,
+  reconcileTemplate,
+  unfilledTokens,
   type WorkflowStep,
 } from "./workflow";
+import { isWritableTemplate, newTemplatePath, resolveWorkflowTemplate, saveWorkflowTemplate, stepDieLabels, templateRoots } from "./workflowFiles";
+import { noteLink } from "../noteFormats";
+import { groupTableFiles } from "./tablePickerGroups";
+import { MAP_MADE_GROUP_LABEL } from "./resolve";
 import { escapeRegex, placeholderPattern } from "../textUtils";
 
 /** Convert a table basename to a default label: spaces → underscores. */
@@ -29,7 +37,8 @@ export class WorkflowEditorModal extends HexmakerModal {
     private plugin: HexmakerPlugin,
     private file: TFile,
     private onSaved?: () => void,
-    private preloaded?: { content: string; templateContent: string },
+    /** The workflow note's text when the caller already read it (the template is always read here). */
+    private preloaded?: { content: string },
   ) {
     super(app);
   }
@@ -49,19 +58,30 @@ export class WorkflowEditorModal extends HexmakerModal {
     let description = workflow.description ?? "";
     let templateContent = "";
 
-    // Load template file if it exists
-    if (this.preloaded !== undefined) {
-      templateContent = this.preloaded.templateContent;
-    } else if (workflow.templateFile) {
-      const tmplFile = this.app.vault.getAbstractFileByPath(
-        workflow.templateFile,
-      );
-      if (tmplFile instanceof TFile) {
-        templateContent = await this.app.vault.read(tmplFile);
-      }
-    }
+    // The template note (however its path was typed). It's written on
+    // close only when it's a note under the workflows or world folder:
+    // `template-file` is note text, and may come from someone else's pack.
+    const roots = templateRoots(this.plugin.settings);
+    const handSet = workflow.templateFile;
+    const tmplFile = handSet ? resolveWorkflowTemplate(this.app, handSet, this.file.path) : null;
+    const wfFolder = normalizeFolder(this.plugin.settings.workflowsFolder);
+    const templatePath = tmplFile?.path
+      ?? newTemplatePath(handSet)
+      ?? `${wfFolder}/templates/${this.file.basename}.md`;
+    const templateWritable = isWritableTemplate(templatePath, roots);
+    /** The template's text as read now (null: no note yet), to tell a later edit elsewhere from ours. */
+    const templateAtOpen = tmplFile ? await this.app.vault.read(tmplFile) : null;
+    templateContent = templateAtOpen ?? "";
     if (!templateContent) {
       templateContent = generateDefaultTemplate(steps);
+    }
+    // Steps whose placeholders the template lacks get them (saved on close).
+    if (templateWritable) {
+      const reconciled = reconcileTemplate(templateContent, steps);
+      templateContent = reconciled.template;
+      if (reconciled.added.length) {
+        new Notice(`Added ${reconciled.added.join(", ")} to the template: no part of it showed those steps' results.`);
+      }
     }
 
     // All table files in the tables folder for the picker
@@ -71,6 +91,22 @@ export class WorkflowEditorModal extends HexmakerModal {
       .filter((f) => !tablesFolder || f.path.startsWith(tablesFolder + "/"))
       .filter((f) => !f.basename.startsWith("_"))
       .sort((a, b) => a.path.localeCompare(b.path));
+    // The user's tables first; the terrain and region tables the map made
+    // in a "Made by the map" group at the end of each table dropdown.
+    const tableGroups = groupTableFiles(this.app, tableFiles);
+    const addTableOptions = (select: HTMLSelectElement, selected?: string) => {
+      const add = (parent: HTMLElement, tf: TFile) => {
+        const val = tf.path.slice(0, -3);
+        const text = tablesFolder ? tf.path.slice(tablesFolder.length + 1, -3) : val;
+        const opt = parent.createEl("option", { value: val, text });
+        if (val === selected) opt.selected = true;
+      };
+      for (const tf of tableGroups.own) add(select, tf);
+      if (tableGroups.mapMade.length) {
+        const group = select.createEl("optgroup", { attr: { label: MAP_MADE_GROUP_LABEL } });
+        for (const tf of tableGroups.mapMade) add(group, tf);
+      }
+    };
 
     // ── Name row ─────────────────────────────────────────────────────
     const nameRow = contentEl.createDiv({
@@ -141,6 +177,13 @@ export class WorkflowEditorModal extends HexmakerModal {
       cls: "duckmage-wf-template-area",
     });
     templateArea.value = templateContent;
+    if (!templateWritable) {
+      templateArea.readOnly = true;
+      templateSectionWrap.createEl("p", {
+        text: `The template (${templatePath}) is outside the world and workflows folders, so it isn't changed here.`,
+        cls: "duckmage-table-editor-warning",
+      });
+    }
     templateArea.addEventListener("input", () => {
       templateContent = templateArea.value;
       updateValidation();
@@ -208,15 +251,18 @@ export class WorkflowEditorModal extends HexmakerModal {
     const updateValidation = () => {
       const required = requiredPlaceholders(steps);
       const missing = required.filter((p) => !templateContent.includes(p));
-      if (missing.length === 0) {
+      const unfilled = unfilledTokens(templateContent, steps);
+      validationEl.empty();
+      if (missing.length === 0 && unfilled.length === 0) {
         validationEl.className = "duckmage-wf-validation-ok";
         validationEl.setText(
           required.length > 0 ? "✓ All placeholders present" : "",
         );
-      } else {
-        validationEl.className = "duckmage-wf-validation-err";
-        validationEl.setText(`Missing: ${missing.join(", ")}`);
+        return;
       }
+      validationEl.className = "duckmage-wf-validation-err";
+      if (missing.length) validationEl.createDiv({ text: `Missing: ${missing.join(", ")}` });
+      if (unfilled.length) validationEl.createDiv({ text: `No step fills: ${unfilled.join(", ")}` });
     };
 
     const getTemplateLabel = (step: WorkflowStep): string => {
@@ -332,10 +378,7 @@ export class WorkflowEditorModal extends HexmakerModal {
         const row = stepsEl.createDiv({ cls: "duckmage-wf-editor-step-row" });
         row.draggable = true;
 
-        const handle = row.createSpan({
-          cls: "duckmage-table-editor-drag-handle",
-          text: "⠿",
-        });
+        const handle = dragGrip(row, "duckmage-table-editor-drag-handle");
         handle.title = "Drag to reorder";
 
         // Kind badge
@@ -373,17 +416,7 @@ export class WorkflowEditorModal extends HexmakerModal {
             value: "",
             text: "— select table —",
           });
-          for (const tf of tableFiles) {
-            const val = tf.path.slice(0, -3);
-            const optLabel = tablesFolder
-              ? tf.path.slice(tablesFolder.length + 1, -3)
-              : val;
-            const opt = tableSelect.createEl("option", {
-              value: val,
-              text: optLabel,
-            });
-            if (val === step.tablePath) opt.selected = true;
-          }
+          addTableOptions(tableSelect, step.tablePath);
           if (
             step.tablePath &&
             !tableFiles.some((tf) => tf.path.slice(0, -3) === step.tablePath)
@@ -537,13 +570,7 @@ export class WorkflowEditorModal extends HexmakerModal {
           value: "",
           text: "— select table —",
         });
-        for (const tf of tableFiles) {
-          const val = tf.path.slice(0, -3);
-          const optLabel = tablesFolder
-            ? tf.path.slice(tablesFolder.length + 1, -3)
-            : val;
-          addTableSelect.createEl("option", { value: val, text: optLabel });
-        }
+        addTableOptions(addTableSelect);
         addTableSelect.addEventListener("change", () => {
           if (!addLabelInput.value.trim() && addTableSelect!.value) {
             const basename =
@@ -627,58 +654,49 @@ export class WorkflowEditorModal extends HexmakerModal {
     renderSteps();
     updateValidation();
 
-    // ── Footer ────────────────────────────────────────────────────────
-    const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
 
     this.flushAndSave = async () => {
-      const wfFolder = normalizeFolder(this.plugin.settings.workflowsFolder);
-      const templatePath = `${wfFolder}/templates/${this.file.basename}.md`;
-
       const updatedWorkflow = {
         name: this.file.basename,
         description: description || undefined,
         resultsFolder: resultsFolder || undefined,
-        templateFile: templatePath,
+        // A template-file set by hand is kept; one without gets the default
+        // beside its workflows, written as a link so renaming it keeps it (NF3).
+        templateFile: handSet || JSON.stringify(noteLink(templatePath)),
         steps,
       };
 
       try {
-        await this.app.vault.process(this.file, () =>
-          buildWorkflowContent(updatedWorkflow),
+        const dies = await stepDieLabels(this.app, steps, this.file.path);
+        await this.app.vault.process(this.file, (current) =>
+          buildWorkflowContent(updatedWorkflow, {
+            existing: current,
+            dieFor: (step) => dies.get(step.tablePath),
+          }),
         );
-
-        const templateDir = `${wfFolder}/templates`;
-        if (!this.app.vault.getAbstractFileByPath(templateDir)) {
-          try {
-            await this.app.vault.createFolder(templateDir);
-          } catch {
-            /* may exist */
-          }
-        }
-        const tmplFile = this.app.vault.getAbstractFileByPath(templatePath);
-        if (tmplFile instanceof TFile) {
-          await this.app.vault.process(tmplFile, () => templateContent);
-        } else {
-          await this.app.vault.create(templatePath, templateContent);
-        }
-
+        if (templateWritable) await this.saveTemplate(tmplFile ?? templatePath, templateAtOpen, templateContent);
         this.onSaved?.();
       } catch (err) {
         new Notice(`Could not save workflow: ${String(err)}`);
       }
     };
 
-    footer
-      .createEl("button", { text: "Export…", cls: "mod-cta" })
-      .addEventListener("click", () => {
-        new WorkflowExportModal(this.app, this.plugin, this.file).open();
-      });
-
-    footer
-      .createEl("button", { text: "Close", cls: "mod-cta" })
-      .addEventListener("click", () => this.close());
+    // Footer: Export… only (owner Q5: no Close; × closes and saves), with the autosave line.
+    const foot = this.footer({
+      secondary: [{ text: "Export…", onClick: () => new WorkflowExportModal(this.app, this.plugin, this.file).open() }],
+    });
+    foot.el.prepend(renderSaveStatusLine(foot.el, { title: "Saves when you close this (×). There is no Save button." }).el);
 
     this.makeDraggable();
+  }
+
+  /** Write the template on close (workflowFiles.saveWorkflowTemplate); say so when it was changed elsewhere. */
+  private async saveTemplate(target: TFile | string, atOpen: string | null, text: string): Promise<void> {
+    const verdict = await saveWorkflowTemplate(this.app, target, atOpen, text);
+    if (verdict === "stale") {
+      const path = target instanceof TFile ? target.path : target;
+      new Notice(`${path} was changed elsewhere while this workflow was open, so your template changes weren't saved.`);
+    }
   }
 
   onClose(): void {

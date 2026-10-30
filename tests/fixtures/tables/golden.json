@@ -1,0 +1,1534 @@
+{
+ "tests/fixtures/tables/broken-ranges.md": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "x",
+     "weight": 3,
+     "isLink": false,
+     "range": "1-3"
+    },
+    {
+     "result": "y",
+     "weight": 2,
+     "isLink": false,
+     "range": "3-5"
+    },
+    {
+     "result": "z",
+     "weight": 1,
+     "isLink": false,
+     "range": "9"
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "range-overlap",
+    "row": 2
+   },
+   {
+    "code": "range-out-of-die",
+    "row": 3
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\ndice: 6\n---\n| d6 | Result | Weight |\n|---|---|---|\n| 1-3 | x | 3 |\n| 3-5 | y | 2 |\n| 9 | z | 1 |\n"
+ },
+ "tests/fixtures/tables/d100-zeros.md": {
+  "table": {
+   "dice": 100,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "rain",
+     "weight": 50,
+     "isLink": false,
+     "range": "01–50"
+    },
+    {
+     "result": "wind",
+     "weight": 40,
+     "isLink": false,
+     "range": "51–90"
+    },
+    {
+     "result": "snow",
+     "weight": 10,
+     "isLink": false,
+     "range": "91–00"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\ndice: 100\n---\n| d100 | Result |\n| --- | --- |\n| 01–50 | rain |\n| 51–90 | wind |\n| 91–00 | snow |\n"
+ },
+ "tests/fixtures/tables/d20-ranges.md": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": "Forest encounters.",
+   "entries": [
+    {
+     "result": "deer",
+     "weight": 10,
+     "isLink": false,
+     "range": "1–10"
+    },
+    {
+     "result": "bandits",
+     "weight": 5,
+     "isLink": false,
+     "range": "11-15"
+    },
+    {
+     "result": "owlbear",
+     "weight": 5,
+     "isLink": false,
+     "range": "16+"
+    },
+    {
+     "result": "dragon",
+     "weight": 0,
+     "isLink": false,
+     "range": "—"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   2,
+   2
+  ],
+  "rewrite": "---\ndice: 20\ntable-type: encounters\n---\nForest encounters.\n\n| d20 | Result | Weight |\n| --- | --- | ---: |\n| 1–10 | deer | 10 |\n| 11-15 | bandits | 5 |\n| 16+ | owlbear | 5 |\n| — | dragon | 0 |\n"
+ },
+ "tests/fixtures/tables/d66.md": {
+  "table": {
+   "dice": 66,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "a",
+     "weight": 6,
+     "isLink": false,
+     "range": "11–16"
+    },
+    {
+     "result": "b",
+     "weight": 12,
+     "isLink": false,
+     "range": "21–36"
+    },
+    {
+     "result": "c",
+     "weight": 18,
+     "isLink": false,
+     "range": "41–66"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   1,
+   1,
+   2,
+   2,
+   2,
+   2
+  ],
+  "rewrite": "---\ndice: 66\n---\n| d66 | Result | Weight |\n|---|---|---|\n| 11–16 | a | 6 |\n| 21–36 | b | 12 |\n| 41–66 | c | 18 |\n"
+ },
+ "tests/fixtures/tables/extra-columns.md": {
+  "table": {
+   "dice": 8,
+   "linkedFolder": null,
+   "description": "# Loot",
+   "entries": [
+    {
+     "result": "coins",
+     "weight": 4,
+     "isLink": false,
+     "range": "1–4"
+    },
+    {
+     "result": "Gem",
+     "weight": 3,
+     "isLink": true,
+     "range": "5–7"
+    },
+    {
+     "result": "tables/Relics",
+     "weight": 1,
+     "isLink": true,
+     "range": "8"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\ndice: 8\nroll-filter: true\n---\n# Loot\n\n| d8 | Result | Weight | Value | Notes |\n|----|--------|--------|-------|-------|\n| 1–4 | coins | 4 | 10 gp | common |\n| 5–7 | [[Gem\\|a gem]] | 3 | 50 gp | |\n| 8 | [[tables/Relics]] | 1 | priceless | rolls again |\n"
+ },
+ "tests/fixtures/tables/linked-folder-quoted.md": {
+  "table": {
+   "dice": 4,
+   "linkedFolder": "world/towns",
+   "description": null,
+   "entries": [
+    {
+     "result": "Saltwatch",
+     "weight": 2,
+     "isLink": false,
+     "range": "1–2"
+    },
+    {
+     "result": "Rivermeet",
+     "weight": 2,
+     "isLink": false,
+     "range": "3–4"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   1
+  ],
+  "rewrite": "---\ndice: 4\nlinkedFolder: \"[[world/towns]]\"\n---\n| d4 | Result | Weight |\n|---|---|---|\n| 1–2 | [[Saltwatch]] | 2 |\n| 3–4 | [[Rivermeet]] | 2 |\n"
+ },
+ "tests/fixtures/tables/no-table.md": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": null,
+   "entries": []
+  },
+  "issues": [
+   {
+    "code": "no-table",
+    "row": null
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "rewrite": "---\ndice: 6\n---\nNothing here yet.\n\n| d6 | Result | Weight |\n|----|--------|--------|\n"
+ },
+ "tests/fixtures/tables/old-no-frontmatter.md": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "alpha",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "beta",
+     "weight": 0,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "gamma",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "weight-unreadable",
+    "row": 3
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   2,
+   2,
+   2,
+   2
+  ],
+  "rewrite": "| Result | Weight |\n|---|---|\n| alpha | 1 |\n| beta | 0 |\n| gamma | x |\n"
+ },
+ "tests/fixtures/tables/old-result-weight.md": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "goblins",
+     "weight": 2,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "wolves",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "nothing",
+     "weight": 3,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   1,
+   2,
+   2,
+   2,
+   2
+  ],
+  "rewrite": "---\ndice: 6\n---\n\n| d6 | Result | Weight |\n|-----|--------|--------|\n| 1–2 | goblins | 2 |\n| 3 | wolves | 1 |\n| 4–6 | nothing | 3 |\n"
+ },
+ "tests/fixtures/tables/roller-block.md": {
+  "table": {
+   "dice": 10,
+   "linkedFolder": null,
+   "description": "Weather by day.",
+   "entries": [
+    {
+     "result": "clear",
+     "weight": 5,
+     "isLink": false,
+     "range": "1–5"
+    },
+    {
+     "result": "cloudy",
+     "weight": 4,
+     "isLink": false,
+     "range": "6–9"
+    },
+    {
+     "result": "storm",
+     "weight": 1,
+     "isLink": false,
+     "range": "10"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\ndice: 10\n---\n\n```duckmage-roller\n```\n\nWeather by day.\n\n| d10 | Result | Weight |\n|---|---|---|\n| 1–5 | clear | 5 |\n| 6–9 | cloudy | 4 |\n| 10 | storm | 1 |\n"
+ },
+ "tests/fixtures/tables/too-many-rows.md": {
+  "table": {
+   "dice": 4,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "a",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "b",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "c",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "d",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "e",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "too-many-rows",
+    "row": null
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   0,
+   1,
+   1,
+   2,
+   3,
+   4,
+   4
+  ],
+  "rewrite": "---\ndice: 4\n---\n| d4 | Result | Weight |\n|---|---|---|\n|  | a | 1 |\n|  | b | 1 |\n|  | c | 1 |\n|  | d | 1 |\n|  | e | 1 |\n"
+ },
+ "tests/fixtures/tables/two-tables.md": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": null,
+   "description": "| Name | Age |\n|---|---|\n| Bob | 3 |\n\n## Roll",
+   "entries": [
+    {
+     "result": "left",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "right",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   1
+  ],
+  "rewrite": "| Name | Age |\n|---|---|\n| Bob | 3 |\n\n## Roll\n\n| Result | Weight |\n|---|---|\n| left | 1 |\n| right | 1 |\n"
+ },
+ "tests/fixtures/tables/unknown-header.md": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": null,
+   "description": "Some prose.",
+   "entries": [
+    {
+     "result": "sword",
+     "weight": 2,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "shield",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   1,
+   1
+  ],
+  "rewrite": "Some prose.\n\n| Thing | Odds |\n|---|---|\n| sword | 2 |\n| shield | 1 |\n"
+ },
+ "tests/fixtures/sim-vault/tables/forest-encounters.md": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": "Weighted forest encounter table.",
+   "entries": [
+    {
+     "result": "Pack of wolves",
+     "weight": 2,
+     "isLink": false,
+     "range": "1–2"
+    },
+    {
+     "result": "Lost merchant",
+     "weight": 1,
+     "isLink": false,
+     "range": "3"
+    },
+    {
+     "result": "Bandit ambush",
+     "weight": 2,
+     "isLink": false,
+     "range": "4–5"
+    },
+    {
+     "result": "Druid circle",
+     "weight": 1,
+     "isLink": false,
+     "range": "6"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   1,
+   2,
+   2,
+   2,
+   3
+  ],
+  "rewrite": "---\ndice: 6\n---\n\nWeighted forest encounter table.\n\n| d6 | Result | Weight |\n|-----|--------|--------|\n| 1–2 | Pack of wolves | 2 |\n| 3 | Lost merchant | 1 |\n| 4–5 | Bandit ambush | 2 |\n| 6 | Druid circle | 1 |\n"
+ },
+ "tests/fixtures/sim-vault/tables/npc-names.md": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "Bromund",
+     "weight": 1,
+     "isLink": false,
+     "range": "1–4"
+    },
+    {
+     "result": "Lirel",
+     "weight": 1,
+     "isLink": false,
+     "range": "5–8"
+    },
+    {
+     "result": "Vargax",
+     "weight": 1,
+     "isLink": false,
+     "range": "9–12"
+    },
+    {
+     "result": "Saskia",
+     "weight": 1,
+     "isLink": false,
+     "range": "13–16"
+    },
+    {
+     "result": "Olwen",
+     "weight": 1,
+     "isLink": false,
+     "range": "17–20"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   1,
+   1,
+   2,
+   3,
+   4,
+   4
+  ],
+  "rewrite": "---\ndice: 20\n---\n\n| d20 | Result | Weight |\n|-----|--------|--------|\n| 1–4 | Bromund | 1 |\n| 5–8 | Lirel | 1 |\n| 9–12 | Vargax | 1 |\n| 13–16 | Saskia | 1 |\n| 17–20 | Olwen | 1 |\n"
+ },
+ "tests/fixtures/sim-vault/tables/treasure.md": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": "tables/treasure",
+   "description": "Auto-synced from the treasure folder.",
+   "entries": [
+    {
+     "result": "gold pile",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "silver ring",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "cursed amulet",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   1,
+   1,
+   1,
+   2,
+   2
+  ],
+  "rewrite": "---\nlinkedFolder: tables/treasure\n---\n\nAuto-synced from the treasure folder.\n\n| Result | Weight |\n|--------|--------|\n| [[gold pile]] | 1 |\n| [[silver ring]] | 1 |\n| [[cursed amulet]] | 1 |\n"
+ },
+ "tests/fixtures/sample-random-table.md": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": "A small fixture table used by the integration test. **Wandering monsters** for a forest hex.",
+   "entries": [
+    {
+     "result": "Pack of wolves",
+     "weight": 4,
+     "isLink": false,
+     "range": "1–4"
+    },
+    {
+     "result": "Lost merchant",
+     "weight": 2,
+     "isLink": false,
+     "range": "5–6"
+    },
+    {
+     "result": "Bandit ambush",
+     "weight": 3,
+     "isLink": false,
+     "range": "7–9"
+    },
+    {
+     "result": "Druid circle",
+     "weight": 1,
+     "isLink": false,
+     "range": "10"
+    },
+    {
+     "result": "Wild boar",
+     "weight": 5,
+     "isLink": false,
+     "range": "11–15"
+    },
+    {
+     "result": "Travelling minstrel",
+     "weight": 2,
+     "isLink": false,
+     "range": "16–17"
+    },
+    {
+     "result": "Goblin scouts",
+     "weight": 3,
+     "isLink": false,
+     "range": "18–20"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   1,
+   2,
+   4,
+   4,
+   5,
+   6
+  ],
+  "rewrite": "---\ndice: 20\n---\n\nA small fixture table used by the integration test. **Wandering monsters** for a forest hex.\n\n| d20 | Result | Weight |\n|-----|--------|--------|\n| 1–4 | Pack of wolves | 4 |\n| 5–6 | Lost merchant | 2 |\n| 7–9 | Bandit ambush | 3 |\n| 10 | Druid circle | 1 |\n| 11–15 | Wild boar | 5 |\n| 16–17 | Travelling minstrel | 2 |\n| 18–20 | Goblin scouts | 3 |\n"
+ },
+ "tests/fixtures/compat/legacy-table-1.5.6.md": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": "Beach encounters. Roll when the party camps on the shore.",
+   "entries": [
+    {
+     "result": "crabmen",
+     "weight": 4,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "Sea Hag",
+     "weight": 1,
+     "isLink": true,
+     "range": null
+    },
+    {
+     "result": "fishmen",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "smugglers",
+     "weight": 2,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "kraken",
+     "weight": 0,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "legacy-roller-link",
+    "row": null
+   }
+  ],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   2,
+   3,
+   3
+  ],
+  "rewrite": "---\ndice: 20\ntable-type: encounters\n---\n\n[🎲 Open in Duckmage Roller](obsidian://duckmage-roll?vault=journal&file=RPG%2Fduckmage%2Ftables%2Fbeach.md)\n\nBeach encounters. Roll when the party camps on the shore.\n\n| d20 | Result | Weight | Notes |\n|-----|--------|--------|-------|\n| 1–10 | crabmen | 4 | 2d4, at low tide |\n| 11–13 | [[Sea Hag\\|the hag]] | 1 |  |\n| 14–15 | fishmen | 1 | |\n| 16–20 | smugglers | 2 | see [[Smugglers' Cove]] |\n| — | kraken | 0 | only in the epilogue |\n\n## GM notes\nKeep the kraken for later.\n"
+ },
+ "tests/fixtures/tables/broken-ranges.md (crlf)": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "x",
+     "weight": 3,
+     "isLink": false,
+     "range": "1-3"
+    },
+    {
+     "result": "y",
+     "weight": 2,
+     "isLink": false,
+     "range": "3-5"
+    },
+    {
+     "result": "z",
+     "weight": 1,
+     "isLink": false,
+     "range": "9"
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "range-overlap",
+    "row": 2
+   },
+   {
+    "code": "range-out-of-die",
+    "row": 3
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\r\ndice: 6\r\n---\r\n| d6 | Result | Weight |\r\n|---|---|---|\r\n| 1-3 | x | 3 |\r\n| 3-5 | y | 2 |\r\n| 9 | z | 1 |\r\n"
+ },
+ "tests/fixtures/tables/d100-zeros.md (crlf)": {
+  "table": {
+   "dice": 100,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "rain",
+     "weight": 50,
+     "isLink": false,
+     "range": "01–50"
+    },
+    {
+     "result": "wind",
+     "weight": 40,
+     "isLink": false,
+     "range": "51–90"
+    },
+    {
+     "result": "snow",
+     "weight": 10,
+     "isLink": false,
+     "range": "91–00"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\r\ndice: 100\r\n---\r\n| d100 | Result |\r\n| --- | --- |\r\n| 01–50 | rain |\r\n| 51–90 | wind |\r\n| 91–00 | snow |\r\n"
+ },
+ "tests/fixtures/tables/d20-ranges.md (crlf)": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": "Forest encounters.",
+   "entries": [
+    {
+     "result": "deer",
+     "weight": 10,
+     "isLink": false,
+     "range": "1–10"
+    },
+    {
+     "result": "bandits",
+     "weight": 5,
+     "isLink": false,
+     "range": "11-15"
+    },
+    {
+     "result": "owlbear",
+     "weight": 5,
+     "isLink": false,
+     "range": "16+"
+    },
+    {
+     "result": "dragon",
+     "weight": 0,
+     "isLink": false,
+     "range": "—"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   2,
+   2
+  ],
+  "rewrite": "---\r\ndice: 20\r\ntable-type: encounters\r\n---\r\nForest encounters.\r\n\r\n| d20 | Result | Weight |\r\n| --- | --- | ---: |\r\n| 1–10 | deer | 10 |\r\n| 11-15 | bandits | 5 |\r\n| 16+ | owlbear | 5 |\r\n| — | dragon | 0 |\r\n"
+ },
+ "tests/fixtures/tables/d66.md (crlf)": {
+  "table": {
+   "dice": 66,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "a",
+     "weight": 6,
+     "isLink": false,
+     "range": "11–16"
+    },
+    {
+     "result": "b",
+     "weight": 12,
+     "isLink": false,
+     "range": "21–36"
+    },
+    {
+     "result": "c",
+     "weight": 18,
+     "isLink": false,
+     "range": "41–66"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   1,
+   1,
+   2,
+   2,
+   2,
+   2
+  ],
+  "rewrite": "---\r\ndice: 66\r\n---\r\n| d66 | Result | Weight |\r\n|---|---|---|\r\n| 11–16 | a | 6 |\r\n| 21–36 | b | 12 |\r\n| 41–66 | c | 18 |\r\n"
+ },
+ "tests/fixtures/tables/extra-columns.md (crlf)": {
+  "table": {
+   "dice": 8,
+   "linkedFolder": null,
+   "description": "# Loot",
+   "entries": [
+    {
+     "result": "coins",
+     "weight": 4,
+     "isLink": false,
+     "range": "1–4"
+    },
+    {
+     "result": "Gem",
+     "weight": 3,
+     "isLink": true,
+     "range": "5–7"
+    },
+    {
+     "result": "tables/Relics",
+     "weight": 1,
+     "isLink": true,
+     "range": "8"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\r\ndice: 8\r\nroll-filter: true\r\n---\r\n# Loot\r\n\r\n| d8 | Result | Weight | Value | Notes |\r\n|----|--------|--------|-------|-------|\r\n| 1–4 | coins | 4 | 10 gp | common |\r\n| 5–7 | [[Gem\\|a gem]] | 3 | 50 gp | |\r\n| 8 | [[tables/Relics]] | 1 | priceless | rolls again |\r\n"
+ },
+ "tests/fixtures/tables/linked-folder-quoted.md (crlf)": {
+  "table": {
+   "dice": 4,
+   "linkedFolder": "world/towns",
+   "description": null,
+   "entries": [
+    {
+     "result": "Saltwatch",
+     "weight": 2,
+     "isLink": false,
+     "range": "1–2"
+    },
+    {
+     "result": "Rivermeet",
+     "weight": 2,
+     "isLink": false,
+     "range": "3–4"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   1
+  ],
+  "rewrite": "---\r\ndice: 4\r\nlinkedFolder: \"[[world/towns]]\"\r\n---\r\n| d4 | Result | Weight |\r\n|---|---|---|\r\n| 1–2 | [[Saltwatch]] | 2 |\r\n| 3–4 | [[Rivermeet]] | 2 |\r\n"
+ },
+ "tests/fixtures/tables/no-table.md (crlf)": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": null,
+   "entries": []
+  },
+  "issues": [
+   {
+    "code": "no-table",
+    "row": null
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "rewrite": "---\r\ndice: 6\r\n---\r\nNothing here yet.\r\n\r\n| d6 | Result | Weight |\r\n|----|--------|--------|\r\n"
+ },
+ "tests/fixtures/tables/old-no-frontmatter.md (crlf)": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "alpha",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "beta",
+     "weight": 0,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "gamma",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "weight-unreadable",
+    "row": 3
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   2,
+   2,
+   2,
+   2
+  ],
+  "rewrite": "| Result | Weight |\r\n|---|---|\r\n| alpha | 1 |\r\n| beta | 0 |\r\n| gamma | x |\r\n"
+ },
+ "tests/fixtures/tables/old-result-weight.md (crlf)": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "goblins",
+     "weight": 2,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "wolves",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "nothing",
+     "weight": 3,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   1,
+   2,
+   2,
+   2,
+   2
+  ],
+  "rewrite": "---\r\ndice: 6\r\n---\r\n\r\n| d6 | Result | Weight |\r\n|-----|--------|--------|\r\n| 1–2 | goblins | 2 |\r\n| 3 | wolves | 1 |\r\n| 4–6 | nothing | 3 |\r\n"
+ },
+ "tests/fixtures/tables/roller-block.md (crlf)": {
+  "table": {
+   "dice": 10,
+   "linkedFolder": null,
+   "description": "Weather by day.",
+   "entries": [
+    {
+     "result": "clear",
+     "weight": 5,
+     "isLink": false,
+     "range": "1–5"
+    },
+    {
+     "result": "cloudy",
+     "weight": 4,
+     "isLink": false,
+     "range": "6–9"
+    },
+    {
+     "result": "storm",
+     "weight": 1,
+     "isLink": false,
+     "range": "10"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   2
+  ],
+  "rewrite": "---\r\ndice: 10\r\n---\r\n\r\n```duckmage-roller\r\n```\r\n\r\nWeather by day.\r\n\r\n| d10 | Result | Weight |\r\n|---|---|---|\r\n| 1–5 | clear | 5 |\r\n| 6–9 | cloudy | 4 |\r\n| 10 | storm | 1 |\r\n"
+ },
+ "tests/fixtures/tables/too-many-rows.md (crlf)": {
+  "table": {
+   "dice": 4,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "a",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "b",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "c",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "d",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "e",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "too-many-rows",
+    "row": null
+   }
+  ],
+  "mode": "weight",
+  "rolls": [
+   0,
+   1,
+   1,
+   2,
+   3,
+   4,
+   4
+  ],
+  "rewrite": "---\r\ndice: 4\r\n---\r\n| d4 | Result | Weight |\r\n|---|---|---|\r\n|  | a | 1 |\r\n|  | b | 1 |\r\n|  | c | 1 |\r\n|  | d | 1 |\r\n|  | e | 1 |\r\n"
+ },
+ "tests/fixtures/tables/two-tables.md (crlf)": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": null,
+   "description": "| Name | Age |\n|---|---|\n| Bob | 3 |\n\n## Roll",
+   "entries": [
+    {
+     "result": "left",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "right",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   1
+  ],
+  "rewrite": "| Name | Age |\r\n|---|---|\r\n| Bob | 3 |\r\n\r\n## Roll\r\n\r\n| Result | Weight |\r\n|---|---|\r\n| left | 1 |\r\n| right | 1 |\r\n"
+ },
+ "tests/fixtures/tables/unknown-header.md (crlf)": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": null,
+   "description": "Some prose.",
+   "entries": [
+    {
+     "result": "sword",
+     "weight": 2,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "shield",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   1,
+   1
+  ],
+  "rewrite": "Some prose.\r\n\r\n| Thing | Odds |\r\n|---|---|\r\n| sword | 2 |\r\n| shield | 1 |\r\n"
+ },
+ "tests/fixtures/sim-vault/tables/forest-encounters.md (crlf)": {
+  "table": {
+   "dice": 6,
+   "linkedFolder": null,
+   "description": "Weighted forest encounter table.",
+   "entries": [
+    {
+     "result": "Pack of wolves",
+     "weight": 2,
+     "isLink": false,
+     "range": "1–2"
+    },
+    {
+     "result": "Lost merchant",
+     "weight": 1,
+     "isLink": false,
+     "range": "3"
+    },
+    {
+     "result": "Bandit ambush",
+     "weight": 2,
+     "isLink": false,
+     "range": "4–5"
+    },
+    {
+     "result": "Druid circle",
+     "weight": 1,
+     "isLink": false,
+     "range": "6"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   1,
+   2,
+   2,
+   2,
+   3
+  ],
+  "rewrite": "---\r\ndice: 6\r\n---\r\n\r\nWeighted forest encounter table.\r\n\r\n| d6 | Result | Weight |\r\n|-----|--------|--------|\r\n| 1–2 | Pack of wolves | 2 |\r\n| 3 | Lost merchant | 1 |\r\n| 4–5 | Bandit ambush | 2 |\r\n| 6 | Druid circle | 1 |\r\n"
+ },
+ "tests/fixtures/sim-vault/tables/npc-names.md (crlf)": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": null,
+   "entries": [
+    {
+     "result": "Bromund",
+     "weight": 1,
+     "isLink": false,
+     "range": "1–4"
+    },
+    {
+     "result": "Lirel",
+     "weight": 1,
+     "isLink": false,
+     "range": "5–8"
+    },
+    {
+     "result": "Vargax",
+     "weight": 1,
+     "isLink": false,
+     "range": "9–12"
+    },
+    {
+     "result": "Saskia",
+     "weight": 1,
+     "isLink": false,
+     "range": "13–16"
+    },
+    {
+     "result": "Olwen",
+     "weight": 1,
+     "isLink": false,
+     "range": "17–20"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   1,
+   1,
+   2,
+   3,
+   4,
+   4
+  ],
+  "rewrite": "---\r\ndice: 20\r\n---\r\n\r\n| d20 | Result | Weight |\r\n|-----|--------|--------|\r\n| 1–4 | Bromund | 1 |\r\n| 5–8 | Lirel | 1 |\r\n| 9–12 | Vargax | 1 |\r\n| 13–16 | Saskia | 1 |\r\n| 17–20 | Olwen | 1 |\r\n"
+ },
+ "tests/fixtures/sim-vault/tables/treasure.md (crlf)": {
+  "table": {
+   "dice": 0,
+   "linkedFolder": "tables/treasure",
+   "description": "Auto-synced from the treasure folder.",
+   "entries": [
+    {
+     "result": "gold pile",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "silver ring",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "cursed amulet",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "weight",
+  "rolls": [
+   0,
+   0,
+   1,
+   1,
+   1,
+   2,
+   2
+  ],
+  "rewrite": "---\r\nlinkedFolder: tables/treasure\r\n---\r\n\r\nAuto-synced from the treasure folder.\r\n\r\n| Result | Weight |\r\n|--------|--------|\r\n| [[gold pile]] | 1 |\r\n| [[silver ring]] | 1 |\r\n| [[cursed amulet]] | 1 |\r\n"
+ },
+ "tests/fixtures/sample-random-table.md (crlf)": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": "A small fixture table used by the integration test. **Wandering monsters** for a forest hex.",
+   "entries": [
+    {
+     "result": "Pack of wolves",
+     "weight": 4,
+     "isLink": false,
+     "range": "1–4"
+    },
+    {
+     "result": "Lost merchant",
+     "weight": 2,
+     "isLink": false,
+     "range": "5–6"
+    },
+    {
+     "result": "Bandit ambush",
+     "weight": 3,
+     "isLink": false,
+     "range": "7–9"
+    },
+    {
+     "result": "Druid circle",
+     "weight": 1,
+     "isLink": false,
+     "range": "10"
+    },
+    {
+     "result": "Wild boar",
+     "weight": 5,
+     "isLink": false,
+     "range": "11–15"
+    },
+    {
+     "result": "Travelling minstrel",
+     "weight": 2,
+     "isLink": false,
+     "range": "16–17"
+    },
+    {
+     "result": "Goblin scouts",
+     "weight": 3,
+     "isLink": false,
+     "range": "18–20"
+    }
+   ]
+  },
+  "issues": [],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   1,
+   2,
+   4,
+   4,
+   5,
+   6
+  ],
+  "rewrite": "---\r\ndice: 20\r\n---\r\n\r\nA small fixture table used by the integration test. **Wandering monsters** for a forest hex.\r\n\r\n| d20 | Result | Weight |\r\n|-----|--------|--------|\r\n| 1–4 | Pack of wolves | 4 |\r\n| 5–6 | Lost merchant | 2 |\r\n| 7–9 | Bandit ambush | 3 |\r\n| 10 | Druid circle | 1 |\r\n| 11–15 | Wild boar | 5 |\r\n| 16–17 | Travelling minstrel | 2 |\r\n| 18–20 | Goblin scouts | 3 |\r\n"
+ },
+ "tests/fixtures/compat/legacy-table-1.5.6.md (crlf)": {
+  "table": {
+   "dice": 20,
+   "linkedFolder": null,
+   "description": "Beach encounters. Roll when the party camps on the shore.",
+   "entries": [
+    {
+     "result": "crabmen",
+     "weight": 4,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "Sea Hag",
+     "weight": 1,
+     "isLink": true,
+     "range": null
+    },
+    {
+     "result": "fishmen",
+     "weight": 1,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "smugglers",
+     "weight": 2,
+     "isLink": false,
+     "range": null
+    },
+    {
+     "result": "kraken",
+     "weight": 0,
+     "isLink": false,
+     "range": null
+    }
+   ]
+  },
+  "issues": [
+   {
+    "code": "legacy-roller-link",
+    "row": null
+   }
+  ],
+  "mode": "ranges",
+  "rolls": [
+   0,
+   0,
+   0,
+   1,
+   2,
+   3,
+   3
+  ],
+  "rewrite": "---\r\ndice: 20\r\ntable-type: encounters\r\n---\r\n\r\n[🎲 Open in Duckmage Roller](obsidian://duckmage-roll?vault=journal&file=RPG%2Fduckmage%2Ftables%2Fbeach.md)\r\n\r\nBeach encounters. Roll when the party camps on the shore.\r\n\r\n| d20 | Result | Weight | Notes |\r\n|-----|--------|--------|-------|\r\n| 1–10 | crabmen | 4 | 2d4, at low tide |\r\n| 11–13 | [[Sea Hag\\|the hag]] | 1 |  |\r\n| 14–15 | fishmen | 1 | |\r\n| 16–20 | smugglers | 2 | see [[Smugglers' Cove]] |\r\n| — | kraken | 0 | only in the epilogue |\r\n\r\n## GM notes\r\nKeep the kraken for later.\r\n"
+ }
+}

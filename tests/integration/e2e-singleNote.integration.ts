@@ -32,10 +32,13 @@ describe("e2e: single-note exporter against sim-vault", () => {
     expect(file).toBeTruthy();
     await exportSingleNoteAsMarkdown(plugin as never, file as MockTFile as never);
 
-    const out = await fs.readFile(
+    const written = await fs.readFile(
       path.join(tmpDir, "exports/Saltwatch.md"),
       "utf8",
     );
+    // Provenance frontmatter (X1), then the note.
+    expect(written).toMatch(/^---\nexported-from: "\[\[towns\/Saltwatch\]\]"\nexported: \d{4}-\d\d-\d\dT[\d:]+\nhexmaker-export: note\n---\n/);
+    const out = written.replace(/^---\n[\s\S]*?\n---\n/, "");
     // Title prepended since the source had no leading H1
     expect(out.startsWith("# Saltwatch\n")).toBe(true);
     // Frontmatter stripped
@@ -52,10 +55,10 @@ describe("e2e: single-note exporter against sim-vault", () => {
     expect(file).toBeTruthy();
     await exportSingleNoteAsMarkdown(plugin as never, file as MockTFile as never);
 
-    const out = await fs.readFile(
+    const out = (await fs.readFile(
       path.join(tmpDir, "exports/gold pile.md"),
       "utf8",
-    );
+    )).replace(/^---\n[\s\S]*?\n---\n/, "");
     // gold pile.md has no H1 → title is prepended
     expect(out.startsWith("# gold pile\n")).toBe(true);
     // Single h1 only

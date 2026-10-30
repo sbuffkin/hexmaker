@@ -14,7 +14,7 @@
  *                       breakdown table + the template filled with those values
  */
 
-import { Notice, TFile, type App } from "obsidian";
+import { Notice, TFile } from "obsidian";
 import { exportToPdfBytes } from "../pdfExporter";
 import { renderMarkdownToHtml } from "../htmlRenderer";
 import { ensureExportFolder } from "../exportFolder";
@@ -32,7 +32,11 @@ import {
 } from "../../random-tables/randomTable";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { resolveWorkflowTemplate } from "../../random-tables/workflowFiles";
 import { fillPlaceholders, escapeTableCell } from "../../textUtils";
+import { withExportProvenance } from "../exportFolder";
+import { sanitiseFilename } from "../exportNames";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
 
 export interface WorkflowExportOptions {
   /** Filename stem (no extension). Defaults to workflow basename. */
@@ -69,12 +73,9 @@ export async function exportWorkflowAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    await writeBinaryToVault(plugin.app, outPath, pdfBytes);
-    new Notice(`Exported to ${outPath}`);
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, pdfBytes));
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -92,12 +93,10 @@ export async function exportWorkflowAsMarkdown(
   try {
     const md = await buildWorkflowMarkdown(plugin, workflowFile, opts);
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
-    await writeTextToVault(plugin.app, outPath, finalMd);
-    new Notice(`Exported to ${outPath}`);
-    void openInVault(plugin.app, outPath);
+    // Where it came from, in its frontmatter (X1).
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, withExportProvenance(finalMd, workflowFile.path, "workflow")));
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   }
 }
 
@@ -237,16 +236,9 @@ async function loadTemplate(
   workflowFile: TFile,
 ): Promise<string> {
   if (!workflow.templateFile) return "";
-  // Template may be stored as a vault-relative path (with or without .md) or
-  // an Obsidian link target — try both.
-  const tf =
-    plugin.app.vault.getAbstractFileByPath(workflow.templateFile + ".md") ??
-    plugin.app.vault.getAbstractFileByPath(workflow.templateFile) ??
-    plugin.app.metadataCache.getFirstLinkpathDest(
-      workflow.templateFile,
-      workflowFile.path,
-    );
-  if (!(tf instanceof TFile)) return "";
+  // A wikilink (NF3) or, in older workflows, a vault path (with or without .md).
+  const tf = resolveWorkflowTemplate(plugin.app, workflow.templateFile, workflowFile.path);
+  if (!tf) return "";
   return await plugin.app.vault.read(tf);
 }
 
@@ -304,44 +296,6 @@ export function formatRollsBreakdown(
 }
 
 
-function sanitiseFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, "_");
-}
-
-async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<void> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-  } else {
-    await app.vault.createBinary(path, buf);
-  }
-}
-
-async function writeTextToVault(
-  app: App,
-  path: string,
-  data: string,
-): Promise<void> {
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modify(existing, data);
-  } else {
-    await app.vault.create(path, data);
-  }
-}
-
-async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
-}
 
 // `normalizeFolder` is imported even though we don't use it yet — keeping the
 // import keeps the file aligned with other exporters and ready to expand.

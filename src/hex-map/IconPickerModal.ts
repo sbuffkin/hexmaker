@@ -1,7 +1,8 @@
 import { App, TFile, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { dragGrip, editToggle } from "../ui/pickers";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { getIconUrl, normalizeFolder } from "../utils";
+import { getIconUrl, iconLabel, normalizeFolder } from "../utils";
 
 export class IconPickerModal extends HexmakerModal {
   private manageMode = false;
@@ -12,6 +13,8 @@ export class IconPickerModal extends HexmakerModal {
     private plugin: HexmakerPlugin,
     private onSelect: (iconName: string | null, gmOnly: boolean) => void,
     initialGmOnly = false,
+    /** Picking an icon for something other than painting: its title, and no GM-layer switch. */
+    private opts: { title?: string; gmToggle?: boolean; removeLabel?: string } = {},
   ) {
     super(app);
     this.gmOnly = initialGmOnly;
@@ -36,12 +39,13 @@ export class IconPickerModal extends HexmakerModal {
 
     // ── Header ────────────────────────────────────────────────────────────
     const header = contentEl.createDiv({ cls: "duckmage-icon-picker-header" });
-    header.createEl("h2", { text: "Paint icon" });
+    header.createEl("h2", { text: this.opts.title ?? "Paint icon" });
 
     const headerRight = header.createDiv({ cls: "duckmage-icon-picker-header-right" });
 
     // GM layer only toggle
     const gmRow = headerRight.createDiv({ cls: "duckmage-icon-gm-toggle-row" });
+    if (this.opts.gmToggle === false) gmRow.hide();
     const gmCb = gmRow.createEl("input", { type: "checkbox" });
     gmCb.checked = this.gmOnly;
     const gmLabel = gmRow.createSpan({ text: "GM layer only", cls: "duckmage-icon-gm-toggle-label" });
@@ -54,14 +58,10 @@ export class IconPickerModal extends HexmakerModal {
       applyGm();
     });
 
-    const manageBtn = headerRight.createEl("button", {
-      cls: "duckmage-icon-manage-btn",
-      text: this.manageMode ? "← pick icons" : "Manage icons",
-    });
-    manageBtn.addEventListener("click", () => {
+    editToggle(headerRight, this.manageMode, () => {
       this.manageMode = !this.manageMode;
       this.render();
-    });
+    }, "duckmage-icon-manage-btn");
 
     // ── Add section (manage mode only) ────────────────────────────────────
     if (this.manageMode) {
@@ -70,7 +70,8 @@ export class IconPickerModal extends HexmakerModal {
 
     // ── Icon grid ─────────────────────────────────────────────────────────
     const section = contentEl.createDiv({ cls: "duckmage-editor-section" });
-    const grid = section.createDiv({ cls: "duckmage-icon-picker" });
+    // Whole tiles only, names wrapped, not cut (fresh-eyes F6; CSS).
+    const grid = section.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-full" });
 
     const hidden = new Set(this.plugin.settings.hiddenIcons ?? []);
 
@@ -80,7 +81,7 @@ export class IconPickerModal extends HexmakerModal {
       clearBtn.createDiv({
         cls: "duckmage-icon-preview duckmage-icon-preview-clear",
       });
-      clearBtn.createSpan({ text: "Remove", cls: "duckmage-icon-option-name" });
+      clearBtn.createSpan({ text: this.opts.removeLabel ?? "Remove", cls: "duckmage-icon-option-name" });
       clearBtn.addEventListener("click", () => {
         this.onSelect(null, this.gmOnly);
         this.close();
@@ -88,11 +89,9 @@ export class IconPickerModal extends HexmakerModal {
 
       const icons = this.plugin.availableIcons.filter((i) => !hidden.has(i));
       for (const icon of icons) {
-        const label = icon
-          .replace(/^bw-/, "")
-          .replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
-          .replace(/-/g, " ");
+        const label = iconLabel(icon);
         const btn = grid.createDiv({ cls: "duckmage-icon-option" });
+        btn.dataset["icon"] = icon;
         const preview = btn.createDiv({ cls: "duckmage-icon-preview" });
         const img = preview.createEl("img", { cls: "duckmage-icon-preview-img" });
         img.src = getIconUrl(this.plugin, icon);
@@ -106,7 +105,11 @@ export class IconPickerModal extends HexmakerModal {
     } else {
       this.renderManageGrid(grid, hidden);
     }
+    this.reapplyIconFilter = this.addIconFilter(grid, this.plugin.vaultIconsSet);
   }
+
+  /** Re-applies the search/pack filter after the manage grid re-renders. */
+  private reapplyIconFilter: () => void = () => {};
 
   private renderManageGrid(grid: HTMLElement, hidden: Set<string>): void {
     grid.empty();
@@ -116,18 +119,16 @@ export class IconPickerModal extends HexmakerModal {
     for (let i = 0; i < icons.length; i++) {
       const icon = icons[i];
       const isHidden = hidden.has(icon);
-      const label = icon
-        .replace(/^bw-/, "")
-        .replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
-        .replace(/-/g, " ");
+      const label = iconLabel(icon);
 
       const btn = grid.createDiv({
         cls: `duckmage-icon-option${isHidden ? " duckmage-icon-hidden" : ""}`,
       });
+      btn.dataset["icon"] = icon;
       btn.draggable = true;
 
       // Grip handle
-      btn.createSpan({ cls: "duckmage-terrain-edit-grip", text: "⠿" });
+      dragGrip(btn, "duckmage-terrain-edit-grip");
 
       const preview = btn.createDiv({ cls: "duckmage-icon-preview" });
       const img = preview.createEl("img", { cls: "duckmage-icon-preview-img" });
@@ -149,6 +150,7 @@ export class IconPickerModal extends HexmakerModal {
         void this.plugin.saveSettings().then(() => {
           this.plugin.loadAvailableIcons();
           this.renderManageGrid(grid, new Set(this.plugin.settings.hiddenIcons ?? []));
+          this.reapplyIconFilter();
         });
       });
 
@@ -182,6 +184,7 @@ export class IconPickerModal extends HexmakerModal {
         void this.plugin.saveSettings().then(() => {
           this.plugin.loadAvailableIcons();
           this.renderManageGrid(grid, new Set(this.plugin.settings.hiddenIcons ?? []));
+          this.reapplyIconFilter();
         });
       });
     }

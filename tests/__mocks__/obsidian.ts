@@ -1,5 +1,7 @@
 /** Minimal Obsidian API stubs for unit tests. */
 
+import { parseMiniYaml } from "../helpers/miniYaml";
+
 export class TAbstractFile {
 	path = "";
 	name = "";
@@ -18,94 +20,53 @@ export class TFolder extends TAbstractFile {
 }
 
 export class App {}
+export class MarkdownView {}
 export class Modal { app: App; contentEl = { empty() {}, addClass() {}, createDiv() { return this; }, createEl() { return this; }, createSpan() { return this; }, setText() { return this; }, style: {} } as any; constructor(app: App) { this.app = app; } }
 export class SuggestModal<T> { constructor(_app: App) {} getSuggestions(_q: string): T[] { return []; } renderSuggestion(_v: T, _el: HTMLElement): void {} onChooseSuggestion(_v: T, _e: MouseEvent | KeyboardEvent): void {} }
-/** Records every notice shown (tests read and clear `Notice.shown`). */
+export const Platform = { isMobile: false, isMobileApp: false, isDesktop: true, isDesktopApp: true, isPhone: false, isTablet: false };
+
 export class Notice {
-	static shown: { message: string; timeout?: number }[] = [];
-	constructor(msg: string, timeout?: number) { Notice.shown.push({ message: msg, timeout }); }
-	hide() {}
+	/** Every notice shown, for tests to check (clear it yourself). */
+	static shown: { msg: string; timeout?: number; hidden: boolean }[] = [];
+	private rec: { msg: string; timeout?: number; hidden: boolean };
+	constructor(msg: string, timeout?: number) { this.rec = { msg, timeout, hidden: false }; Notice.shown.push(this.rec); }
+	setMessage(_msg: string) { return this; }
+	hide() { this.rec.hidden = true; }
 }
-
-/** A fake element: records text and children, enough for views and settings to render. */
-export function fakeEl(tag = "div"): any {
-	const el: any = {
-		tag, text: "", children: [] as any[], classes: new Set<string>(), style: {},
-		empty() { el.children = []; el.text = ""; },
-		addClass(c: string) { el.classes.add(c); }, removeClass(c: string) { el.classes.delete(c); },
-		toggleClass() {}, setText(t: string) { el.text = t; return el; },
-		createEl(t: string, o?: { text?: string; cls?: string }) { const c = fakeEl(t); if (o?.text) c.text = o.text; el.children.push(c); return c; },
-		createDiv(o?: { text?: string; cls?: string }) { return el.createEl("div", o); },
-		createSpan(o?: { text?: string; cls?: string }) { return el.createEl("span", o); },
-		addEventListener() {}, setAttr() {}, show() {}, hide() {},
-		/** All text in this element and below. */
-		allText(): string { return [el.text, ...el.children.map((c: any) => c.allText())].join(" "); },
-	};
-	return el;
+/** A built menu item (title, icon, disabled, checked, click), for tests to read. */
+export class MenuItem {
+	title = ""; icon: string | null = null; disabled = false; checked: boolean | null = null; click: (() => void) | null = null;
+	setTitle(t: string) { this.title = String(t); return this; }
+	setIcon(i: string | null) { this.icon = i; return this; }
+	setDisabled(d: boolean) { this.disabled = d; return this; }
+	setChecked(c: boolean | null) { this.checked = c; return this; }
+	onClick(cb: () => void) { this.click = cb; return this; }
+	setSection(_s: string) { return this; }
+	setWarning(_w: boolean) { return this; }
+	setIsLabel(_l: boolean) { return this; }
 }
-
-export class Component {
-	load() {} unload() {}
-	register(_cb: () => void) {}
-	registerEvent(_ref: unknown) {}
-	registerDomEvent() {}
-	registerInterval(id: number) { return id; }
+export class Menu {
+	/** Every menu shown, for tests to check (clear it yourself). */
+	static shown: Menu[] = [];
+	items: (MenuItem | "separator")[] = [];
+	addItem(cb: (item: MenuItem) => unknown) { const i = new MenuItem(); cb(i); this.items.push(i); return this; }
+	addSeparator() { this.items.push("separator"); return this; }
+	showAtMouseEvent(_e: unknown) { Menu.shown.push(this); return this; }
+	showAtPosition(_p: unknown) { Menu.shown.push(this); return this; }
+	hide() { return this; }
 }
-
-export class WorkspaceLeaf { app: any; view: any; constructor(app?: any) { this.app = app; } }
-export class View extends Component {
-	app: any; leaf: WorkspaceLeaf; containerEl = fakeEl(); contentEl = fakeEl();
-	constructor(leaf: WorkspaceLeaf) { super(); this.leaf = leaf; this.app = leaf?.app; }
-}
-export class ItemView extends View {}
-export class MarkdownView extends View { file: TFile | null = null; }
-export class Menu { addItem() { return this; } addSeparator() { return this; } showAtMouseEvent() {} }
-export class Scope { register() {} unregister() {} }
-export class MarkdownRenderer { static render() { return Promise.resolve(); } }
-export function setIcon() {}
-
-export class Setting {
-	settingEl = fakeEl(); controlEl = fakeEl(); nameEl = fakeEl(); descEl = fakeEl();
-	constructor(containerEl: any) { containerEl?.children?.push?.(this.settingEl); this.settingEl.children.push(this.nameEl, this.descEl); }
-	setName(n: string) { this.nameEl.text = n; return this; }
-	setDesc(d: string) { this.descEl.text = d; return this; }
-	setHeading() { return this; } setClass() { return this; }
-	addText() { return this; } addToggle() { return this; } addDropdown() { return this; }
-	addButton() { return this; } addSlider() { return this; } addColorPicker() { return this; }
-	addExtraButton() { return this; } addTextArea() { return this; }
-}
-
-export class PluginSettingTab {
-	app: App; plugin: unknown; containerEl = fakeEl();
-	constructor(app: App, plugin: unknown) { this.app = app; this.plugin = plugin; }
-}
-
-/**
- * Plugin: records what it registers. `loadData` returns `__data` (set it
- * before onload); `saveData` records into `__saves`.
- */
-export class Plugin extends Component {
-	app: any; manifest: any;
-	__data: unknown = null;
-	__saves: unknown[] = [];
-	views = new Map<string, (leaf: WorkspaceLeaf) => View>();
-	commands: any[] = [];
-	events: unknown[] = [];
-	protocolHandlers = new Map<string, (params: Record<string, string>) => void>();
-	settingTabs: PluginSettingTab[] = [];
-	codeBlocks: string[] = [];
-	constructor(app: App, manifest: any) { super(); this.app = app; this.manifest = manifest; }
-	loadData(): Promise<unknown> { return Promise.resolve(this.__data === null ? null : JSON.parse(JSON.stringify(this.__data))); }
-	saveData(data: unknown): Promise<void> { this.__saves.push(JSON.parse(JSON.stringify(data))); return Promise.resolve(); }
-	registerView(type: string, factory: (leaf: WorkspaceLeaf) => View) { this.views.set(type, factory); }
-	addCommand(cmd: any) { this.commands.push(cmd); return cmd; }
-	addRibbonIcon() { return fakeEl(); }
-	addSettingTab(tab: PluginSettingTab) { this.settingTabs.push(tab); }
-	registerEvent(ref: unknown) { this.events.push(ref); }
-	registerObsidianProtocolHandler(action: string, handler: (params: Record<string, string>) => void) { this.protocolHandlers.set(action, handler); }
-	registerMarkdownCodeBlockProcessor(lang: string) { this.codeBlocks.push(lang); }
-}
+export class Plugin { constructor(_app: App, _manifest: any) {} }
+/** A workspace view: just enough for a module's view class to load (and to be made with a fake contentEl in tests). */
+export class ItemView { leaf: any; app: App; contentEl: any = {}; containerEl: any = {}; constructor(leaf: any) { this.leaf = leaf; this.app = leaf?.app ?? new App(); } getViewType(): string { return ""; } getDisplayText(): string { return ""; } register(_cb: () => unknown): void {} registerEvent(_ref: unknown): void {} }
+export class PluginSettingTab { app: App; containerEl: any = {}; constructor(app: App, _plugin: unknown) { this.app = app; } display(): void {} hide(): void {} }
+export class Setting { constructor(_el: unknown) {} }
+export function setIcon(_el: HTMLElement, _icon: string): void {}
+export function getIcon(_icon: string): SVGSVGElement | null { return null; }
 
 export function normalizePath(path: string): string {
 	return path.replace(/[\\/]+/g, "/").replace(/\u00A0/g, " ").normalize().replace(/^\/+|\/+$/g, "");
+}
+
+export function parseYaml(src: string): unknown {
+	return parseMiniYaml(src);
 }

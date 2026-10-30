@@ -1,0 +1,29 @@
+{
+  "page": "inputs-tags",
+  "prefix": "hexmaker",
+  "title": "Hexmaker: tag every input and picker (round 6, SP3, tree view)",
+  "lead": "Every user-facing input, picker, button, command and menu item on `feat/region-notes`, as a tree: **screen › section › item**. Pick once for a whole screen or section, or open it and pick items one by one. Your 65 picks so far are kept as they were. Submit any time.",
+  "suggestionName": "suggestion",
+  "tiers": [
+    { "v": "keep", "short": "Keep", "label": "Keep (as today)", "desc": "Whatever it does today, unchanged, including its feature switch or greyed-out rules. Feature switches that ramp Simple users up are keep.", "color": "#1f4d33" },
+    { "v": "simple", "short": "Simple", "label": "Simple (show to everyone)", "desc": "Shown at every level. **Simple stays customizable**: palettes and palette management, look and feel, and defaults lean here.", "color": "#2f6b3e" },
+    { "v": "advanced", "short": "Adv.", "label": "Advanced (hide from Simple)", "desc": "A real extra feature, or an option of one. When unsure between Advanced and Overkill, pick Advanced.", "color": "#1f4f6b" },
+    { "v": "overkill", "short": "Overkill", "label": "Overkill (\"All\" level only)", "desc": "Backend-fiddler stuff: engine tuning, raw seeds and ids, maintenance and diagnostics. Shown only at the new All level.", "color": "#6b4f12" },
+    { "v": "drop", "short": "Drop", "label": "Drop entirely", "desc": "Redundant or dead; removed at every level.", "color": "#6b1f1f" }
+  ],
+  "levels": {
+    "columns": ["Simple", "Advanced", "All (new)"],
+    "rows": {
+      "keep": ["as today", "as today", "shown"],
+      "simple": ["shown", "shown", "shown"],
+      "advanced": ["hidden", "shown", "shown"],
+      "overkill": ["hidden", "hidden", "shown, with a \"you probably don't need these\" caveat"],
+      "drop": ["removed", "removed", "removed"]
+    }
+  },
+  "facts": [
+    "**Legacy (pre-1.13)** items in Settings are the fallback copies of the same settings. Each follows its twin; you tagged them before twins existed, so they show as overrides. Use \"Follow twin\" on a row, or the filter \"Twins picked differently\", to line them up.",
+    "Blue chip: when the item shows today. Red **mixed list** chip: a picker that lists unrelated kinds of note.",
+    "Full inventory with reasons and line numbers: KB note `projects/duckmage-plugin/notes/impl/audit-inputs-2026-10-11`."
+  ]
+}

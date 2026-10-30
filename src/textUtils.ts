@@ -7,41 +7,8 @@ export function escapeRegex(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Split a Markdown table row into trimmed cells.
- * - `\|` is a literal pipe inside a cell (Obsidian's escape), returned as `|`.
- * - A `|` inside `[[...]]` (a wiki-link alias) doesn't split the cell.
- * Returns null if the line isn't a table row.
- */
-export function splitTableRow(line: string): string[] | null {
-	const s = line.trim();
-	if (!s.startsWith("|")) return null;
-	const cells: string[] = [];
-	let cur = "";
-	let linkDepth = 0;
-	for (let i = 1; i < s.length; i++) {
-		const ch = s[i];
-		if (ch === "\\" && s[i + 1] === "|") {
-			cur += "|";
-			i++;
-		} else if (ch === "[" && s[i + 1] === "[") {
-			linkDepth++;
-			cur += "[[";
-			i++;
-		} else if (ch === "]" && s[i + 1] === "]" && linkDepth > 0) {
-			linkDepth--;
-			cur += "]]";
-			i++;
-		} else if (ch === "|" && linkDepth === 0) {
-			cells.push(cur.trim());
-			cur = "";
-		} else {
-			cur += ch;
-		}
-	}
-	if (cur.trim()) cells.push(cur.trim());
-	return cells;
-}
+/** The table-row splitter workflows read (md/tableRow.ts is its one home). */
+export { splitPipedRow as splitTableRow } from "./md/tableRow";
 
 /** Escape pipes so text can sit in a Markdown table cell. */
 export function escapeTableCell(s: string): string {

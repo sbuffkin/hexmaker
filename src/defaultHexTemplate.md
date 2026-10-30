@@ -1,53 +1,55 @@
 ---
-terrain:
 ---
 
 # Hex {{x}}, {{y}}
 
-**Region:**
-**Terrain:**
+> [!hexmaker] Map data
+> Filled in from the map by Hexmaker.
 
 ---
-What the party sees and feels. Terrain, atmosphere, any obvious features.
-
-### description
-
-
----
-The visible standout feature — spire, ruin, lighthouse, statue, village — that can be spotted or used for navigation.
-
-### landmark
+### Description
+*What is here at first sight.*
 
 
 ---
+### Landmark
+*What stands out from a distance.*
 
+
+---
+### Hidden
+*What is found by looking closely.*
+
+
+---
+### Secret
+*What is only learned some other way.*
+
+
+---
+### Weather
+*The usual weather, or anything unusual.*
+
+
+---
+### Hooks & Rumors
+*Leads and talk about this hex.*
+
+
+---
+### Encounters Table
+
+---
 ### Towns
 
 ---
 ### Dungeons
 
 ---
+### Quests
+
+---
+### Factions
+
+---
 ### Features
-
----
-Discoverable with exploration, tracking, or clues. Hidden lairs, ruins, tombs, camps, shortcuts.
-
-### hidden
-
-
----
-Revealed only through specific actions, NPCs, or investigation.
-
-### secret
-
-
----
-Normal for region, or special (e.g. always pleasant, sandstorms, magic zone effect).
-
-### weather
-
-
----
-Seeds for adventures, things locals might mention, or what finding this hex could lead to.
-
-### hooks & rumors

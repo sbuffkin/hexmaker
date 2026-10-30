@@ -6,8 +6,21 @@
  *
  * Strategy: create a hidden <webview>, inject the rendered HTML + CSS, force
  * light theme (dark backgrounds print badly), then call printToPDF and clean up.
+ *
+ * The webview is locked down (security review #2): the HTML comes from
+ * notes, so it gets no Node access (no `nodeintegration`) and a
+ * Content-Security-Policy, set before the HTML goes in, that allows no
+ * scripts and no network: images, fonts and styles only from data:, blob:
+ * and the app's own app:// files. executeJavaScript and printToPDF are
+ * driven from outside the page, so neither needs Node.
+ *
+ * No `partition` of its own: Electron registers a protocol per session,
+ * and Obsidian serves app:// (this page, vault images, the theme's fonts)
+ * in its default session only, so in a session of its own the page
+ * wouldn't load. A partition would need every resource inlined first.
  */
 
+import { pdfAvailable, PDF_UNAVAILABLE_MESSAGE } from "../platform";
 // Minimal local types — avoids adding `electron` as a dependency just for typings.
 interface PrintToPDFOptions {
   landscape?: boolean;
@@ -60,14 +73,13 @@ export async function exportToPdfBytes(
   doc: RenderedDoc,
   opts: PdfExportOptions = {},
 ): Promise<Uint8Array> {
+  // Mobile has no <webview>: say so instead of failing on a tag that never loads.
+  if (!pdfAvailable()) throw new Error(PDF_UNAVAILABLE_MESSAGE);
   // "webview" is an Electron tag not present in HTMLElementTagNameMap, so the
   // tag name (and the resulting element) need casts.
   const webview = createEl("webview" as keyof HTMLElementTagNameMap, {
     cls: "duckmage-export-webview",
-    attr: {
-      src: "app://obsidian.md/help.html",
-      nodeintegration: "true",
-    },
+    attr: WEBVIEW_ATTRS,
   }) as HTMLElement as WebviewElement;
   activeDocument.body.appendChild(webview);
 
@@ -127,35 +139,75 @@ function waitForWebviewLoad(webview: HTMLElement): Promise<void> {
   });
 }
 
-function buildInjectScript(doc: RenderedDoc): string {
+/**
+ * The webview's attributes: the page to print into, and nothing else.
+ * Never `nodeintegration` (the page never needs Node) and no `partition`
+ * (see the header: app:// only loads in the default session).
+ */
+export const WEBVIEW_ATTRS: Readonly<Record<string, string>> = {
+  src: "app://obsidian.md/help.html",
+};
+
+/**
+ * The policy the print page runs under: no scripts, no network, no
+ * frames, objects or forms. Images, fonts and styles may come only from
+ * the document itself (inline), data:/blob: URIs or the app's own app://
+ * files (vault images in a rendered note).
+ */
+export const PRINT_PAGE_CSP = [
+  "default-src 'none'",
+  "script-src 'none'",
+  "img-src data: blob: app:",
+  "style-src 'unsafe-inline' data: app:",
+  "font-src data: app:",
+  "media-src 'none'",
+  "object-src 'none'",
+  "frame-src 'none'",
+  "connect-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join("; ");
+
+/** The script that puts the document into the webview (exported for tests). */
+export function buildInjectScript(doc: RenderedDoc): string {
   // Encode payloads as URI-component-encoded strings so backticks and ${} in
   // content can't break out of the template literal we're constructing below.
   const bodyEnc = encodeURIComponent(doc.bodyHtml);
   const cssEnc = encodeURIComponent(doc.css);
   const titleEnc = encodeURIComponent(doc.title);
+  const cspEnc = encodeURIComponent(PRINT_PAGE_CSP);
 
-  // Runs inside the webview's renderer process.
+  // Runs inside the webview's renderer process, which has none of
+  // Obsidian's globals: it uses the page's own document.
   return `
     (() => {
+      const d = globalThis.document;
       const body = decodeURIComponent("${bodyEnc}");
       const css = decodeURIComponent("${cssEnc}");
       const title = decodeURIComponent("${titleEnc}");
 
-      // Replace head with a single <style> block from captured CSS plus a
-      // minimal print reset. We don't try to preserve the original head — the
-      // host page is just a render context.
-      const styleEl = activeDocument.createElement("style");
+      // The policy goes in first, so it covers everything the HTML below
+      // asks for (scripts, remote images, fonts, frames).
+      d.head.innerHTML = "";
+      const csp = d.createElement("meta");
+      csp.setAttribute("http-equiv", "Content-Security-Policy");
+      csp.setAttribute("content", decodeURIComponent("${cspEnc}"));
+      d.head.appendChild(csp);
+
+      // Then a single <style> block from captured CSS plus a minimal print
+      // reset. We don't try to preserve the original head — the host page
+      // is just a render context.
+      const styleEl = d.createElement("style");
       styleEl.textContent = css;
-      activeDocument.head.innerHTML = "";
-      activeDocument.head.appendChild(styleEl);
+      d.head.appendChild(styleEl);
 
       // Force light theme — dark backgrounds print poorly. This matches the
       // better-export-pdf approach.
-      activeDocument.body.className = "theme-light";
-      activeDocument.body.removeAttribute("style");
-      activeDocument.body.innerHTML = body;
+      d.body.className = "theme-light";
+      d.body.removeAttribute("style");
+      d.body.innerHTML = body;
 
-      activeDocument.title = title;
+      d.title = title;
     })();
   `;
 }

@@ -1,0 +1,555 @@
+/**
+ * Making an overworld (plan-overworld-regions §4.4, §5.4; phase 3):
+ *
+ * - NewOverworldModal: "Generate overworld", the first pass (#50): a biome
+ *   pool laid out by World biomes (a hex's terrain is its biome, plus the
+ *   Biome column for a user's biome), rectangular or hex-shaped, previewed
+ *   the way the overworld preview page draws its minimap, then every
+ *   region made. Also regenerates an existing overworld (God only).
+ * - GenerateRegionsModal: "Make the missing regions": one per painted hex
+ *   that has none, centre-out, with progress and a Stop button.
+ */
+
+import { App, Notice, setIcon } from "obsidian";
+import { HexmakerModal } from "../HexmakerModal";
+import { renderLabeledSlider, renderMultiplierSlider, sliderFormat } from "../ui/sliders";
+import { numberField } from "../ui/scrub";
+import { Fold } from "../ui/disclosure";
+import type HexmakerPlugin from "../HexmakerPlugin";
+import { hexDistance } from "../../packages/hex-wfc/src/grid";
+import { biomeNoteOf, biomeShortLabel } from "./biomes";
+import { drawMiniOverworld, miniLayout, type MiniHex } from "./overworldRender";
+import { generateMissingRegions } from "./regionsVault";
+import { parseUnclimated, UNCLIMATED_CHOICES, type Climate, type LandShape, type NorthIs, type Unclimated, type WorldBiomesResult } from "./worldBiomes";
+import { pickBlankHexes } from "./overworldPass";
+import { RECT_SIDES } from "../maps/submaps";
+import { inferredKind } from "../mapKinds";
+import { ecotoneHexes } from "./regionWorld";
+import { ADD_REGION_LOCKED_HINT, canAdd, canReshape } from "../workMode";
+import { addGodOffer } from "../hex-map/godOffer";
+import { ALL_BIOMES_POOL, type BiomePoolRow } from "./biomePool";
+import {
+  NEW_OVERWORLD_DEFAULTS,
+  REGENERATE_LOCKED_HINT,
+  finishNewOverworld,
+  layOutBiomes,
+  listBiomePools,
+  overworldCells,
+  poolRowFor,
+  regenerateOverworld,
+  resolvePool,
+  saveBiomePool,
+  type PoolNote,
+} from "./overworldGen";
+import { hexKey } from "../hexKey";
+
+export class GenerateRegionsModal extends HexmakerModal {
+  private stop = false;
+  private running = false;
+
+  constructor(app: App, private plugin: HexmakerPlugin, private mapName: string, private onDone: () => void) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.makeDraggable();
+    this.titleEl.setText("Make the missing regions");
+    const { contentEl } = this;
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "One region per painted hex of this map that has none, starting in the middle. Each blends with the overworld around it and lines up with the regions already made.",
+    });
+    const status = contentEl.createEl("p", { cls: "duckmage-ow-progress", text: "Ready." });
+    // Primary first (the footer helper); Cancel turns into Stop while running.
+    let cancel!: HTMLButtonElement;
+    const foot = this.footer({
+      primary: { text: "Make them", onClick: () => {} },
+      cancel: { text: "Cancel", onClick: () => {
+        if (this.running) { this.stop = true; cancel.setText("Stopping…"); } else this.close();
+      } },
+    });
+    const go = foot.primary!;
+    cancel = foot.buttons.get("Cancel")!;
+    if (!canAdd(this.plugin.getMap(this.mapName))) {
+      go.disabled = true;
+      go.addClass("is-locked");
+      go.setAttr("title", ADD_REGION_LOCKED_HINT);
+      status.setText(ADD_REGION_LOCKED_HINT);
+      status.addClass("duckmage-locked-hint");
+    }
+    go.addEventListener("click", () => {
+      if (this.running) return;
+      go.disabled = true;
+      cancel.setText("Stop");
+      this.running = true;
+      const t0 = performance.now();
+      void generateMissingRegions(this.plugin, this.mapName, {
+        cancelled: () => this.stop,
+        onProgress: (done, total, name) => status.setText(`Made ${done} of ${total}${name ? `: ${this.plugin.mapLabel(name)}` : ""}`),
+      }).then(({ made, errors }) => {
+        this.running = false;
+        const secs = ((performance.now() - t0) / 1000).toFixed(1);
+        status.setText(`Made ${made.length} region${made.length === 1 ? "" : "s"} in ${secs} s.${errors.length ? ` ${errors.length} failed: ${errors.slice(0, 3).join("; ")}` : ""}${this.stop ? " Stopped." : ""}`);
+        cancel.setText("Close");
+        this.onDone();
+      });
+    });
+  }
+
+  onClose(): void {
+    this.stop = true;
+    this.contentEl.empty();
+  }
+}
+
+/** The hexes of an overworld shape: a rectangle, or a hex of radius r in its (2r+1)² box. */
+export function overworldShapeCells(shape: "rect" | "hex", cols: number, rows: number, radius: number, plugin: HexmakerPlugin): { cols: number; rows: number; cells: [number, number][] } {
+  if (shape === "rect") {
+    const cells: [number, number][] = [];
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.push([x, y]);
+    return { cols, rows, cells };
+  }
+  const n = 2 * radius + 1;
+  const o = plugin.settings.hexOrientation, s = plugin.settings.staggerOffset ?? "odd";
+  const cells: [number, number][] = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (hexDistance([x, y], [radius, radius], o, s) <= radius) cells.push([x, y]);
+  return { cols: n, rows: n, cells };
+}
+
+/**
+ * "Generate overworld" (#50), the first pass: a biome pool laid out by
+ * World biomes, previewed live, then every region made with its biome.
+ * New (the "New overworld…" command): name, shape, size, palette and
+ * region settings too. Regenerate (the map menu, `regenerate` = the map):
+ * God only; locked hexes and their regions stay, the other regions are
+ * remade in place.
+ */
+export class NewOverworldModal extends HexmakerModal {
+  private name = "Overworld";
+  private shape: "rect" | "hex" = "hex";
+  private cols = 7;
+  private rows = 6;
+  private radius = 2;
+  private palette = "";
+  private climate: Climate = "varied";
+  private water = 25;
+  private land: LandShape = "one";
+  private north: NorthIs = "colder";
+  private seed = Math.floor(Math.random() * 1e6);
+  private regionSize = NEW_OVERWORLD_DEFAULTS.regionSize;
+  private blend: "narrow" | "normal" | "wide" = NEW_OVERWORLD_DEFAULTS.blend;
+  private makeAll = NEW_OVERWORLD_DEFAULTS.makeAll;
+  /** BC2: what the pool's biomes without a climate do. */
+  private unclimated: Unclimated = NEW_OVERWORLD_DEFAULTS.unclimated;
+  /** "Blank hexes": how many hexes become a blank biome, and which one. */
+  private blankCount = 0;
+  private blankBiome = "";
+  private result: WorldBiomesResult | null = null;
+  private canvas!: HTMLCanvasElement;
+  /** The pool: its note (undefined = a new, unsaved one) and its rows as edited. */
+  private pools: PoolNote[] = [];
+  private poolPath: string | undefined;
+  private poolRows: BiomePoolRow[] = [];
+  private poolDirty = false;
+  private poolBox!: Fold;
+  private poolNote!: HTMLElement;
+
+  constructor(app: App, private plugin: HexmakerPlugin, private onCreated: (name: string) => void, private regenerate?: string) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.makeDraggable();
+    const regen = this.regenerate ? this.plugin.getMap(this.regenerate) : undefined;
+    // The overworld keeps its seed (`seed:` in its map note): start from it.
+    if (typeof regen?.seed === "number") this.seed = regen.seed;
+    this.titleEl.setText(regen ? `Generate overworld: ${this.plugin.mapLabel(regen.name)}` : "New overworld");
+    this.modalEl.addClass("duckmage-new-overworld-modal");
+    // Palettes of only shared (land and water) types: no other map type's terrains.
+    const world = this.plugin.settings.terrainPalettes.filter((p) => !inferredKind(p.terrains));
+    this.palette = regen?.paletteName ?? world[0]?.name ?? this.plugin.settings.terrainPalettes[0]?.name ?? "";
+    const { contentEl } = this;
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: regen
+        ? "A first pass over the whole map: biomes from the pool, laid out by climate, then every region remade. Locked hexes and their regions stay as they are; region notes are never touched."
+        : "A first pass: each hex is one biome from the pool, laid out by climate, and each opens into a region map that blends with its neighbours. Edit, reroll or swap any region afterwards.",
+    });
+    const form = contentEl.createDiv({ cls: "duckmage-region-gen-form" });
+    const field = (label: string, parent: HTMLElement = form) => {
+      const row = parent.createDiv({ cls: "duckmage-region-gen-row" });
+      row.createSpan({ cls: "duckmage-region-gen-label", text: label });
+      return row;
+    };
+    // The top: name, pool and what the pool's biomes without a climate do (BC2: hard to miss).
+    const top = form.createDiv({ cls: "duckmage-ow-top" });
+    const shapeBox = form.createDiv();
+    if (regen) this.unclimated = parseUnclimated(regen.biomeGaps);
+    if (!regen) {
+      const nameIn = field("Name", top).createEl("input", { type: "text", value: this.name, attr: { "aria-label": "Name" } });
+      nameIn.addEventListener("input", () => { this.name = nameIn.value; });
+
+      const shapeRow = field("Shape", shapeBox);
+      const shapeSel = shapeRow.createEl("select", { attr: { "aria-label": "Shape" } });
+      shapeSel.createEl("option", { value: "hex", text: "Hex-shaped" });
+      shapeSel.createEl("option", { value: "rect", text: "Rectangle" });
+      shapeSel.value = this.shape;
+      const sizeBox = shapeRow.createSpan({ cls: "duckmage-ow-shape-size" });
+      const drawSize = () => {
+        sizeBox.empty();
+        if (this.shape === "hex") {
+          const r = sizeBox.createEl("select", { attr: { "aria-label": "Hexes" } });
+          for (const n of [1, 2, 3, 4, 5, 6, 8, 10]) r.createEl("option", { value: String(n), text: `${3 * n * n + 3 * n + 1} hexes` });
+          r.value = String(this.radius);
+          r.addEventListener("change", () => { this.radius = Number(r.value); this.regen(); });
+        } else {
+          // Shared number fields: drag or scroll to change, clamped on commit.
+          numberField(sizeBox, { min: 2, max: 60, whole: true, value: this.cols, ariaLabel: "Columns", onChange: (v) => { this.cols = v ?? 2; this.regen(); } });
+          sizeBox.createSpan({ text: " × " });
+          numberField(sizeBox, { min: 2, max: 60, whole: true, value: this.rows, ariaLabel: "Rows", onChange: (v) => { this.rows = v ?? 2; this.regen(); } });
+        }
+      };
+      shapeSel.addEventListener("change", () => { this.shape = shapeSel.value as "rect" | "hex"; drawSize(); this.regen(); });
+      drawSize();
+
+      const pal = field("Palette", shapeBox).createEl("select", { attr: { "aria-label": "Palette" } });
+      for (const p of world) pal.createEl("option", { value: p.name, text: p.name });
+      pal.value = this.palette;
+      pal.addEventListener("change", () => { this.palette = pal.value; this.regen(); });
+    }
+
+    // The pool.
+    const poolRow = field("Biome pool", top);
+    const poolSel = poolRow.createEl("select", { attr: { "aria-label": "Biome pool" } });
+    const saveBtn = poolRow.createEl("button", { text: "Save", attr: { title: "Save the pool's biomes to its note" } });
+    const saveAs = poolRow.createEl("button", { text: "Save as…", attr: { title: "Save as a new pool note" } });
+    // BC2: biomes without a climate.
+    const gapsRow = field("Biomes without a climate", top);
+    gapsRow.addClass("duckmage-ow-gaps");
+    const gaps = gapsRow.createEl("select", { attr: { "aria-label": "Biomes without a climate" } });
+    for (const c of UNCLIMATED_CHOICES) gaps.createEl("option", { value: c.value, text: c.label });
+    gaps.value = this.unclimated;
+    const gapsNote = top.createEl("p", { cls: "setting-item-description" });
+    const showGaps = () => gapsNote.setText(this.unclimated === "fill"
+      ? "Pool biomes with no climate fill only the hexes no other pool biome fits."
+      : "Pool biomes with no climate are never placed here: set them by hand with the Biome tool.");
+    showGaps();
+    gaps.addEventListener("change", () => { this.unclimated = gaps.value as Unclimated; showGaps(); this.drawPool(); this.regen(); });
+    this.poolBox = new Fold(top, { title: "Biomes in the pool", key: "pool", open: false, store: this.app, surface: "NewOverworld", cls: "duckmage-ow-pool" });
+    this.poolNote = top.createEl("p", { cls: "setting-item-description" });
+    const fillPools = () => {
+      poolSel.empty();
+      for (const p of this.pools) poolSel.createEl("option", { value: p.path, text: p.name });
+      if (this.poolPath === undefined) poolSel.createEl("option", { value: "", text: "Unsaved pool" });
+      poolSel.value = this.poolPath ?? "";
+      saveBtn.disabled = !this.poolDirty || this.poolPath === undefined;
+    };
+    const pickPool = (path: string | undefined) => {
+      const p = this.pools.find((x) => x.path === path);
+      this.poolPath = p?.path;
+      this.poolRows = p ? p.rows.map((r) => ({ ...r })) : this.plugin.biomeStore.list().filter((b) => b.climate).map((b) => poolRowFor(this.plugin, b));
+      this.poolDirty = false;
+      fillPools();
+      this.drawPool();
+      this.regen();
+    };
+    poolSel.addEventListener("change", () => pickPool(poolSel.value || undefined));
+    saveBtn.addEventListener("click", () => {
+      if (!this.poolPath) return;
+      void saveBiomePool(this.plugin, { path: this.poolPath }, this.poolRows).then((res) => {
+        if ("error" in res) { new Notice(res.error); return; }
+        this.poolDirty = false;
+        fillPools();
+        new Notice("Pool saved.");
+      });
+    });
+    saveAs.addEventListener("click", () => {
+      new PoolNameModal(this.app, (name) => {
+        void saveBiomePool(this.plugin, { name }, this.poolRows).then(async (res) => {
+          if ("error" in res) { new Notice(res.error); return; }
+          this.pools = await listBiomePools(this.plugin);
+          this.poolPath = res.path;
+          this.poolDirty = false;
+          fillPools();
+        });
+      }).open();
+    });
+    this.onPoolChanged = () => { this.poolDirty = true; fillPools(); };
+    void listBiomePools(this.plugin).then((pools) => {
+      this.pools = pools;
+      const want = regen?.biomePool && pools.some((p) => p.path === regen.biomePool) ? regen.biomePool : pools.find((p) => p.name === ALL_BIOMES_POOL)?.path ?? pools[0]?.path;
+      pickPool(want);
+    });
+
+    // World biomes knobs.
+    const knobs = form.createDiv({ cls: "duckmage-biome-mix-grid" });
+    const sel = <T extends string>(label: string, opts: [T, string][], get: () => T, set: (v: T) => void) => {
+      const s = field(label, knobs).createEl("select", { attr: { "aria-label": label } });
+      for (const [v, t] of opts) s.createEl("option", { value: v, text: t });
+      s.value = get();
+      s.addEventListener("change", () => { set(s.value as T); this.regen(); });
+    };
+    sel<Climate>("Climate", [["varied", "Varied"], ["cold", "Cold"], ["temperate", "Temperate"], ["warm", "Warm"]], () => this.climate, (v) => { this.climate = v; });
+    sel<LandShape>("Land", [["one", "One continent"], ["two", "Two"], ["islands", "Islands"]], () => this.land, (v) => { this.land = v; });
+    sel<NorthIs>("North is", [["colder", "Colder"], ["warmer", "Warmer"], ["none", "No gradient"]], () => this.north, (v) => { this.north = v; });
+    renderLabeledSlider(field("Water", knobs), {
+      label: "", ariaLabel: "Water", min: 0, max: 60, step: 5, value: this.water, format: sliderFormat.percent,
+      onChange: (v) => { this.water = v; this.regen(); },
+    });
+    // Blank hexes (new overworlds): blank-biome hexes, regions painted by hand.
+    if (!regen) {
+      const blanks = this.plugin.biomeStore.list().filter((b) => b.blank);
+      const blankRow = field("Blank hexes");
+      const count = numberField(blankRow, {
+        min: 0, max: 999, whole: true, value: this.blankCount, ariaLabel: "Blank hexes",
+        onChange: (v) => { this.blankCount = v ?? 0; this.regen(); },
+      });
+      count.title = "Hexes left blank (a blank biome): their regions start empty, to paint by hand";
+      this.blankBiome = blanks[0]?.id ?? "";
+      if (blanks.length > 1) {
+        const which = blankRow.createEl("select", { attr: { "aria-label": "Blank biome" } });
+        for (const b of blanks) which.createEl("option", { value: b.id, text: b.label });
+        which.addEventListener("change", () => { this.blankBiome = which.value; this.regen(); });
+      }
+      if (!blanks.length) {
+        count.disabled = true;
+        blankRow.createSpan({ cls: "setting-item-description", text: "No blank biome: tick 'Regions start blank' on one in Biomes…" });
+      }
+    }
+    // Reroll stays in reach; the seed itself is Debug (placed below the buttons).
+    const seedRow = createDiv({ cls: "duckmage-region-gen-row" });
+    seedRow.createSpan({ cls: "duckmage-region-gen-label", text: "Seed" });
+    const seed = seedRow.createEl("input", { type: "number", value: String(this.seed), attr: { "aria-label": "Seed" } });
+    seed.addEventListener("change", () => { this.seed = Number(seed.value) >>> 0; this.regen(); });
+    form.createDiv({ cls: "duckmage-region-gen-row" }).createEl("button", { text: "Reroll" }).addEventListener("click", () => {
+      this.seed = Math.floor(Math.random() * 1e6);
+      seed.value = String(this.seed);
+      this.regen();
+    });
+
+    this.canvas = contentEl.createEl("canvas", { cls: "duckmage-ow-new-preview" });
+    this.canvas.width = 420;
+    this.canvas.height = 300;
+
+    if (!regen) {
+      form.createEl("h4", { text: "Regions" });
+      const regRow = field("Each hex opens into");
+      const size = regRow.createEl("select", { attr: { "aria-label": "Region size" } });
+      for (const n of RECT_SIDES) size.createEl("option", { value: String(n), text: `${n} × ${n} hexes` });
+      size.value = String(this.regionSize);
+      size.addEventListener("change", () => { this.regionSize = Number(size.value); });
+      const blend = field("Blend width").createEl("select", { attr: { "aria-label": "Blend width" } });
+      for (const b of ["narrow", "normal", "wide"]) blend.createEl("option", { value: b, text: b[0].toUpperCase() + b.slice(1) });
+      blend.value = this.blend;
+      blend.addEventListener("change", () => { this.blend = blend.value as typeof this.blend; });
+    }
+    const allRow = form.createEl("label", { cls: "duckmage-region-gen-row" });
+    const all = allRow.createEl("input", { type: "checkbox" });
+    all.checked = this.makeAll;
+    allRow.createSpan({ text: regen ? "Remake the regions too" : "Make every region now" });
+    all.addEventListener("change", () => { this.makeAll = all.checked; });
+
+    const status = contentEl.createEl("p", { cls: "duckmage-ow-progress" });
+    const create = this.footer({ primary: { text: regen ? "Regenerate" : "Create", onClick: () => {} }, cancel: () => this.close() }).primary!;
+    contentEl.appendChild(seedRow);
+    this.place("NewOverworld.seed", seedRow);
+    if (regen && !canReshape(regen)) {
+      create.disabled = true;
+      create.addClass("is-locked");
+      create.setAttr("title", REGENERATE_LOCKED_HINT);
+      status.setText(REGENERATE_LOCKED_HINT);
+      status.addClass("duckmage-locked-hint");
+      // Regenerating is God's: offer the switch right here (godOffer.ts).
+      addGodOffer(status, this.plugin, regen.name, REGENERATE_LOCKED_HINT, () => {
+        create.disabled = false;
+        create.removeClass("is-locked");
+        create.removeAttribute("title");
+        status.setText("");
+        status.removeClass("duckmage-locked-hint");
+      });
+    }
+    create.addEventListener("click", () => {
+      create.disabled = true;
+      void (regen ? this.regenerateMap(status) : this.create(status)).finally(() => { create.disabled = false; });
+    });
+    this.regen();
+  }
+
+  private onPoolChanged = (): void => {};
+
+  /** The pool's biomes: each row with its weight and remove button, then "Add". */
+  private drawPool(): void {
+    const box = this.poolBox.body;
+    box.empty();
+    const { biomes, unknown } = resolvePool(this.plugin, this.poolRows);
+    this.poolBox.setTitle(`Biomes in the pool (${biomes.length})`);
+    const list = box.createDiv({ cls: "duckmage-ow-pool-list" });
+    this.poolRows.forEach((r, i) => {
+      const b = this.plugin.biomeStore.get(r.biome) ?? this.plugin.biomeStore.get(r.biome.slice(r.biome.lastIndexOf("/") + 1));
+      const item = list.createDiv({ cls: "duckmage-ow-pool-item" });
+      if (b?.color) item.createSpan({ cls: "duckmage-ow-pool-swatch" }).setCssProps({ "--duckmage-swatch": b.color });
+      item.createSpan({ cls: "duckmage-ow-pool-name", text: b?.label ?? `${r.biome} (no such biome)` });
+      const tags: string[] = [];
+      if (b && !b.climate) tags.push(this.unclimated === "fill" ? "fills gaps" : "by hand only");
+      if (b?.generator) tags.push("generator");
+      if (tags.length) item.createSpan({ cls: "duckmage-ow-pool-tag", text: tags.join(", "), attr: { title: b && !b.climate ? (this.unclimated === "fill" ? "No climate: only placed where no other biome in the pool fits." : "No climate: never placed by the generator (see Biomes without a climate).") : "Its regions are made by its generator, joined to their neighbours." } });
+      // A multiplier like the generator's Bias (owner Q3): ×1 = as its note says.
+      renderMultiplierSlider(item, {
+        label: "",
+        ariaLabel: `${b?.label ?? r.biome} weight`,
+        title: "How often it's chosen where it fits (×1 = as its note says)",
+        cls: "duckmage-ow-pool-weight",
+        value: r.weight,
+        max: Math.max(3, Math.ceil(r.weight ?? 0)),
+        onChange: (v) => {
+          if (v === undefined) delete r.weight; else r.weight = v;
+          this.onPoolChanged();
+          this.regen();
+        },
+      });
+      const rm = item.createEl("button", { cls: "clickable-icon", attr: { "aria-label": `Remove ${b?.label ?? r.biome}` } });
+      setIcon(rm, "x");
+      rm.addEventListener("click", () => {
+        this.poolRows.splice(i, 1);
+        this.onPoolChanged();
+        this.drawPool();
+        this.regen();
+      });
+    });
+    const addRow = box.createDiv({ cls: "duckmage-region-gen-row" });
+    const inPool = new Set(biomes.map((b) => b.id));
+    const add = addRow.createEl("select", { attr: { "aria-label": "Add a biome" } });
+    add.createEl("option", { value: "", text: "Add a biome…" });
+    for (const b of this.plugin.biomeStore.list()) {
+      if (inPool.has(b.id) || b.blank) continue;
+      add.createEl("option", { value: b.id, text: `${b.label}${b.generator ? " (generator)" : ""}${b.climate ? "" : " (no climate)"}` });
+    }
+    add.addEventListener("change", () => {
+      const b = this.plugin.biomeStore.get(add.value);
+      if (!b) return;
+      this.poolRows.push(poolRowFor(this.plugin, b));
+      this.onPoolChanged();
+      this.drawPool();
+      this.regen();
+    });
+    const placeable = biomes.filter((b) => b.climate).length;
+    this.poolNote.setText([
+      unknown.length ? `Not found: ${unknown.join(", ")}.` : "",
+      placeable ? "" : "No biome in this pool has a climate: add one, or give one a climate in its biome note.",
+    ].filter(Boolean).join(" "));
+  }
+
+  private terrains() {
+    if (this.regenerate) return this.plugin.getMapPalette(this.regenerate);
+    return this.plugin.getPaletteOrPresetTerrains(this.palette);
+  }
+
+  private cells(): [number, number][] {
+    if (this.regenerate) return overworldCells(this.plugin, this.regenerate);
+    return overworldShapeCells(this.shape, this.cols, this.rows, this.radius, this.plugin).cells;
+  }
+
+  private poolBiomes() {
+    return resolvePool(this.plugin, this.poolRows).biomes;
+  }
+
+  private regen(): void {
+    if (!this.canvas) return;
+    const cells = this.cells();
+    const o = this.plugin.settings.hexOrientation;
+    const s = (this.regenerate ? this.plugin.getMap(this.regenerate)?.staggerOffset : undefined) ?? this.plugin.settings.staggerOffset ?? "odd";
+    // River: kept as biome data (a delta at its mouth), never a path (paths come later).
+    this.result = layOutBiomes(this.plugin, cells, this.terrains(), { seed: this.seed, climate: this.climate, water: this.water / 100, land: this.land, north: this.north, unclimated: this.unclimated }, this.poolBiomes(), s);
+    // Blank hexes: a blank biome, no terrain (painted by hand later).
+    if (!this.regenerate && this.blankCount > 0 && this.blankBiome && this.result.biomes.size) {
+      for (const k of pickBlankHexes([...this.result.biomes.keys()], this.result.sea, this.blankCount, this.seed, o, s)) {
+        this.result.biomes.set(k, this.blankBiome);
+        this.result.terrain.delete(k);
+      }
+    }
+    const ctx = this.canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const colour = new Map(this.terrains().map((t) => [t.name, t.color]));
+    const eco = ecotoneHexes(this.result.biomes, o, s);
+    const locked = (k: string) => (this.regenerate ? this.plugin.mapStore.get(this.regenerate, k)?.locked : false);
+    const hexes: MiniHex[] = cells.map(([x, y]) => {
+      const k = hexKey(x, y);
+      if (locked(k)) {
+        const t = this.plugin.mapStore.get(this.regenerate!, k)?.terrain;
+        return { x, y, color: colour.get(t ?? "") ?? "#333", label: "locked" };
+      }
+      const b = this.result!.biomes.get(k);
+      const t = this.result!.terrain.get(k);
+      return { x, y, color: (t ? colour.get(t) : b ? biomeNoteOf(b)?.color : undefined) ?? "#333", label: b ? biomeShortLabel(b) : undefined, ecotone: eco.has(k) };
+    });
+    drawMiniOverworld(ctx, miniLayout(hexes, o, s, this.canvas.width, this.canvas.height), hexes, this.result.river);
+  }
+
+  private async create(status: HTMLElement): Promise<void> {
+    if (!this.result) return;
+    if (!this.result.biomes.size) { status.setText("No biome in this pool can be placed: give some a climate."); return; }
+    const { cols, rows } = overworldShapeCells(this.shape, this.cols, this.rows, this.radius, this.plugin);
+    const stagger = this.plugin.settings.staggerOffset ?? "odd";
+    status.setText("Creating the overworld…");
+    const res = await this.plugin.createNewMap({ name: this.name.trim() || "Overworld", cols, rows, palette: this.palette, stagger, terrain: this.result.terrain, quiet: true });
+    if ("error" in res) { status.setText(res.error); return; }
+    // Region settings, river, pool, seed and the Biome column (blank hexes
+    // get no terrain); then every region when asked.
+    const t0 = performance.now();
+    const r = await finishNewOverworld(this.plugin, res.name, this.result, {
+      regionSize: this.regionSize, blend: this.blend, palette: this.palette, stagger, seed: this.seed,
+      unclimated: this.unclimated, poolPath: this.poolPath, makeAll: this.makeAll, cells: this.cells(),
+      onProgress: (done, total) => status.setText(`Making regions: ${done} of ${total}…`),
+    });
+    if (r) new Notice(`Made ${r.made.length} regions in ${((performance.now() - t0) / 1000).toFixed(1)} s.${r.errors.length ? ` ${r.errors.length} failed.` : ""}`);
+    this.close();
+    this.onCreated(res.name);
+  }
+
+  private async regenerateMap(status: HTMLElement): Promise<void> {
+    const name = this.regenerate!;
+    status.setText("Regenerating…");
+    const t0 = performance.now();
+    // regenerateOverworld saves the map, with the seed it used.
+    const target = this.plugin.getMap(name);
+    if (target) target.seed = this.seed;
+    const res = await regenerateOverworld(this.plugin, name, {
+      seed: this.seed, climate: this.climate, water: this.water / 100, land: this.land, north: this.north,
+      pool: this.poolBiomes(), poolPath: this.poolPath, regions: this.makeAll, unclimated: this.unclimated,
+    }, { onProgress: (done, total) => status.setText(`Regions: ${done} of ${total}…`) });
+    if ("error" in res) { status.setText(res.error); return; }
+    new Notice(`Overworld regenerated in ${((performance.now() - t0) / 1000).toFixed(1)} s: ${res.written} hexes, ${res.kept} locked kept, ${res.made} regions made, ${res.remade} remade.${res.errors.length ? ` ${res.errors.length} failed.` : ""}`);
+    this.close();
+    this.onCreated(name);
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/** Name for a new biome pool. */
+class PoolNameModal extends HexmakerModal {
+  constructor(app: App, private onName: (name: string) => void) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.makeDraggable();
+    this.titleEl.setText("Save pool as");
+    const input = this.contentEl.createEl("input", { type: "text", attr: { "aria-label": "Pool name", placeholder: "Cold north" } });
+    const go = () => {
+      if (!input.value.trim()) return;
+      this.onName(input.value.trim());
+      this.close();
+    };
+    this.footer({ primary: { text: "Save", onClick: go }, cancel: () => this.close() });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    input.focus();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}

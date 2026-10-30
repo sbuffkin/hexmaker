@@ -5,7 +5,6 @@ import {
 	getTokenDataFromCache,
 	removeTokenFrontmatter,
 	setTokenHex,
-	setTokenVisible,
 	applyTokenFrontmatter,
 } from "../src/frontmatter";
 
@@ -176,23 +175,8 @@ describe("setTokenHex", () => {
 		const { app, getContent } = makeApp("tokens/hero.md", "---\ntoken: true\n---\n");
 		await setTokenHex(app, "tokens/hero.md", "5_7", "overworld");
 		expect(getContent()).toContain("token-hex: 5_7");
-		expect(getContent()).toContain("token-map: overworld");
-	});
-});
-
-// ── setTokenVisible ───────────────────────────────────────────────────────────
-
-describe("setTokenVisible", () => {
-	it("sets token-visible to false", async () => {
-		const { app, getContent } = makeApp("tokens/hero.md", "---\ntoken: true\n---\n");
-		await setTokenVisible(app, "tokens/hero.md", false);
-		expect(getContent()).toContain("token-visible: false");
-	});
-
-	it("sets token-visible to true", async () => {
-		const { app, getContent } = makeApp("tokens/hero.md", "---\ntoken: true\ntoken-visible: false\n---\n");
-		await setTokenVisible(app, "tokens/hero.md", true);
-		expect(getContent()).toContain("token-visible: true");
+		// NF3: a link to the map note.
+		expect(getContent()).toContain("token-map: [[_overworld]]");
 	});
 });
 
@@ -252,7 +236,7 @@ describe("applyTokenFrontmatter", () => {
 		expect(content).toContain("token: true");
 		expect(content).toContain("token-icon: sword.png");
 		expect(content).toContain("token-hex: 2_3");
-		expect(content).toContain("token-map: overworld");
+		expect(content).toContain("token-map: [[_overworld]]");
 		expect(content).toContain("token-visible: true");
 		expect(content).toContain("token-shape: square");
 		expect(content).toContain("token-size: lg");

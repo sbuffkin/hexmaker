@@ -10,6 +10,7 @@
 import { App, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { pdfAvailable } from "../platform";
 import {
   exportWorkflowAsPdf,
   exportWorkflowAsMarkdown,
@@ -101,16 +102,17 @@ export class WorkflowExportModal extends HexmakerModal {
     });
 
     const actions = contentEl.createDiv({ cls: "duckmage-export-tab-actions" });
-    const pdfBtn = actions.createEl("button", {
-      cls: "mod-cta",
-      text: "Export PDF",
-    });
-    pdfBtn.addEventListener("click", () => {
-      void exportWorkflowAsPdf(this.plugin, this.workflowFile, collectOpts());
-      this.close();
-    });
+    // A list of export choices: plain buttons (audit B1).
+    if (pdfAvailable()) {
+      const pdfBtn = actions.createEl("button", {
+        text: "Export PDF",
+      });
+      pdfBtn.addEventListener("click", () => {
+        void exportWorkflowAsPdf(this.plugin, this.workflowFile, collectOpts());
+        this.close();
+      });
+    }
     const mdBtn = actions.createEl("button", {
-      cls: "mod-cta",
       text: "Export Markdown",
     });
     mdBtn.addEventListener("click", () => {

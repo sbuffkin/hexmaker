@@ -13,6 +13,7 @@ import {
 } from "../overlayPatterns";
 import type { OverlayStyle } from "../frontmatter";
 import { hexPolygonPoints } from "./hexGeometry";
+import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -146,35 +147,22 @@ export function addOverlayPatternControls(
     });
   });
 
-  new Setting(containerEl).setName("Pattern scale").addSlider((sl) =>
-    sl
-      .setLimits(MIN_PATTERN_SCALE, MAX_PATTERN_SCALE, 1)
-      .setValue(state.scale)
-      .onChange((v) => {
-        state.scale = v;
-        refreshPreview();
-      }),
-  );
-
-  new Setting(containerEl).setName("Opacity").addSlider((sl) =>
-    sl
-      .setLimits(MIN_PATTERN_OPACITY, MAX_PATTERN_OPACITY, 0.05)
-      .setValue(state.opacity)
-      .onChange((v) => {
-        state.opacity = v;
-        refreshPreview();
-      }),
-  );
-
-  new Setting(containerEl).setName("Outline width").addSlider((sl) =>
-    sl
-      .setLimits(MIN_OUTLINE_WIDTH, MAX_OUTLINE_WIDTH, 0.5)
-      .setValue(state.outlineWidth)
-      .onChange((v) => {
-        state.outlineWidth = v;
-        refreshPreview();
-      }),
-  );
+  // The shared slider (value always shown), in each setting row.
+  renderLabeledSlider(new Setting(containerEl).setName("Pattern scale").controlEl, {
+    label: "", ariaLabel: "Pattern scale", min: MIN_PATTERN_SCALE, max: MAX_PATTERN_SCALE, step: 1, value: state.scale,
+    format: sliderFormat.px,
+    onInput: (v) => { state.scale = v; refreshPreview(); },
+  });
+  renderLabeledSlider(new Setting(containerEl).setName("Opacity").controlEl, {
+    label: "", ariaLabel: "Opacity", min: MIN_PATTERN_OPACITY, max: MAX_PATTERN_OPACITY, step: 0.05, value: state.opacity,
+    format: sliderFormat.fraction,
+    onInput: (v) => { state.opacity = v; refreshPreview(); },
+  });
+  renderLabeledSlider(new Setting(containerEl).setName("Outline width").controlEl, {
+    label: "", ariaLabel: "Outline width", min: MIN_OUTLINE_WIDTH, max: MAX_OUTLINE_WIDTH, step: 0.5, value: state.outlineWidth,
+    format: sliderFormat.px,
+    onInput: (v) => { state.outlineWidth = v; refreshPreview(); },
+  });
 
   return { state, refreshPreview };
 }

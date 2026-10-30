@@ -1,6 +1,7 @@
-import { App, Modal } from "obsidian";
+import type { App } from "obsidian";
+import { HexmakerModal } from "../HexmakerModal";
 
-export class GotoHexModal extends Modal {
+export class GotoHexModal extends HexmakerModal {
   private xInput: HTMLInputElement | null = null;
   private yInput: HTMLInputElement | null = null;
 

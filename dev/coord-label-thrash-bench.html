@@ -105,6 +105,23 @@
       label.style.setProperty("--duckmage-coord-x", ((p.ox / gw) * 100).toFixed(3) + "%");
       label.style.setProperty("--duckmage-coord-y", ((p.oy / gh) * 100).toFixed(3) + "%");
     }
+    return { pos, gw, gh };
+  }
+
+  // ── batched + the uncharted marker layer (renderUnchartedLayer): it
+  //    reuses the positions just read and only writes (a third of hexes) ──
+  function batchedWithUncharted() {
+    const { pos, gw, gh } = batched();
+    grid.querySelector(".uncharted-layer")?.remove();
+    const layer = grid.appendChild(document.createElement("div"));
+    layer.className = "uncharted-layer";
+    pos.forEach((p, i) => {
+      if (i % 3) return;
+      const mark = layer.appendChild(document.createElement("span"));
+      mark.textContent = "?";
+      mark.style.setProperty("--duckmage-uncharted-x", ((p.ox / gw) * 100).toFixed(3) + "%");
+      mark.style.setProperty("--duckmage-uncharted-y", ((p.oy / gh) * 100).toFixed(3) + "%");
+    });
   }
 
   function time(fn, withBg, iters) {
@@ -124,7 +141,7 @@
   // One config per call so each puppeteer evaluate stays short (the thrash
   // path on a bg map can take seconds per iteration).
   window.__measure = (which, withBg, iters) =>
-    time(which === "thrash" ? thrashing : batched, withBg, iters);
+    time(which === "thrash" ? thrashing : which === "uncharted" ? batchedWithUncharted : batched, withBg, iters);
   document.title = "ready";
 </script>
 </body>

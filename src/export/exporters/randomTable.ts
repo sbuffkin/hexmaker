@@ -5,7 +5,7 @@
  *   # Table name
  *   *d100*
  *   description
- *   | # | Result | Weight | Odds |
+ *   | d20 | Result | Weight |   (| # | Result | … | with no die)
  *   ...
  *
  * Two output paths share the same generated markdown:
@@ -22,11 +22,15 @@ import {
   type RandomTable,
   type RandomTableEntry,
   parseRandomTable,
-  getDieRanges,
+  rangeCellTexts,
+  dieLabel,
 } from "../../random-tables/randomTable";
 import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { withExportProvenance } from "../exportFolder";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
+import { logWarn } from "../../log";
 
 /** A linked note resolved to its display name + content (frontmatter stripped). */
 export interface LinkedNote {
@@ -55,12 +59,9 @@ export async function exportRandomTableAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    await writeBinaryToVault(plugin.app, outPath, bytes);
-    new Notice(`Exported to ${outPath}`);
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, bytes));
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -76,12 +77,10 @@ export async function exportRandomTableAsMarkdown(
 
   try {
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
-    await writeTextToVault(plugin.app, outPath, finalMd);
-    new Notice(`Exported to ${outPath}`);
-    void openInVault(plugin.app, outPath);
+    // Where it came from, in its frontmatter (X1).
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, withExportProvenance(finalMd, file.path, "table")));
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   }
 }
 
@@ -113,7 +112,7 @@ async function loadLinkedNotesForTable(
       const raw = await app.vault.read(file);
       out.push({ name: file.basename, content: stripFrontmatter(raw) });
     } catch (err) {
-      console.warn(`Failed to read linked note ${file.path}:`, err);
+      logWarn("table export: couldn't read linked note", file.path, err);
     }
   }
   return out;
@@ -186,12 +185,15 @@ export function formatRandomTableMarkdown(name: string, table: RandomTable): str
     lines.push("");
   }
 
-  const ranges = table.dice > 0 ? getDieRanges(table) : null;
-  const hasWeights = table.entries.some((e) => e.weight !== 1);
+  // The ranges the table rolls (as stored in the note, blanks filled), so
+  // the export reads back as the same table (round trip).
+  const ranges = table.dice > 0 ? rangeCellTexts(table.dice, table.entries, "keep") : null;
+  // With a die the Weight column is always kept: ranges alone don't carry it.
+  const hasWeights = !!ranges || table.entries.some((e) => e.weight !== 1);
 
-  // Columns: # (row index) OR Roll (die range), Result, Weight (if any non-1).
+  // Columns: dN (die range) OR # (row index), Result, Weight.
   // Odds are intentionally omitted — readers can eyeball the ranges/weights.
-  const headerCells = ranges ? ["Roll", "Result"] : ["#", "Result"];
+  const headerCells = ranges ? [dieLabel(table.dice), "Result"] : ["#", "Result"];
   if (hasWeights) headerCells.push("Weight");
 
   lines.push(`| ${headerCells.join(" | ")} |`);
@@ -199,47 +201,10 @@ export function formatRandomTableMarkdown(name: string, table: RandomTable): str
 
   table.entries.forEach((entry, i) => {
     const firstCol = ranges ? ranges[i] : String(i + 1);
-    const cells = [firstCol, escapeTableCell(entry.result)];
+    const cells = [firstCol, escapeTableCell(entry.isLink ? `[[${entry.result}]]` : entry.result)];
     if (hasWeights) cells.push(String(entry.weight));
     lines.push(`| ${cells.join(" | ")} |`);
   });
 
   return lines.join("\n");
-}
-
-
-async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<void> {
-  // vault.createBinary / modifyBinary require a plain ArrayBuffer.
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-  } else {
-    await app.vault.createBinary(path, buf);
-  }
-}
-
-async function writeTextToVault(
-  app: App,
-  path: string,
-  data: string,
-): Promise<void> {
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modify(existing, data);
-  } else {
-    await app.vault.create(path, data);
-  }
-}
-
-async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
 }

@@ -1,7 +1,8 @@
-import { App, Component, MarkdownRenderer, Modal } from "obsidian";
+import { App, Component, MarkdownRenderer } from "obsidian";
+import { HexmakerModal } from "../HexmakerModal";
 import HELP_CONTENT from "./help.md";
 
-export class HexHelpModal extends Modal {
+export class HexHelpModal extends HexmakerModal {
   constructor(app: App) {
     super(app);
   }

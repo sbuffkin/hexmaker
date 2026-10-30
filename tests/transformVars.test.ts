@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 
 /**
  * Drift guard for the pan/zoom perf fix.
@@ -17,11 +18,12 @@ const root = process.cwd();
 const read = (...p: string[]) =>
   readFileSync(path.join(root, ...p), "utf8").replace(/\r\n/g, "\n");
 const stylesCss = read("styles.css");
-const viewSrc = read("src", "hex-map", "HexMapView.ts");
+const viewSrc = readSurface("map-view");
 
 /** Keys of the setCssProps({...}) object literal inside method `name`. */
 function varsWrittenBy(name: string): string[] {
-  const start = viewSrc.indexOf(`private ${name}(`);
+  // The declaration (private in the view, public on a controller it delegates to).
+  const start = viewSrc.search(new RegExp(`\\n  (?:private )?${name}\\(`));
   expect(start).toBeGreaterThan(-1);
   const body = viewSrc.slice(start, viewSrc.indexOf("\n  }\n", start));
   return [...body.matchAll(/"(--duckmage-[\w-]+)":/g)].map((m) => m[1]);

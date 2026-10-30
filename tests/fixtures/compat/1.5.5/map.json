@@ -1,0 +1,46 @@
+{
+  "name": "compat-example",
+  "createdWith": "1.5.5",
+  "paletteName": "Default",
+  "gridSize": {
+    "cols": 14,
+    "rows": 10
+  },
+  "gridOffset": {
+    "x": 0,
+    "y": 0
+  },
+  "pathChains": [
+    {
+      "typeName": "Road",
+      "hexes": [
+        "6_9",
+        "7_8",
+        "7_7",
+        "7_6",
+        "7_5",
+        "6_5",
+        "5_4",
+        "4_4",
+        "3_3",
+        "2_4",
+        "1_3",
+        "0_3"
+      ]
+    },
+    {
+      "typeName": "River",
+      "hexes": [
+        "5_0",
+        "6_1",
+        "7_1",
+        "8_2",
+        "9_1",
+        "10_1",
+        "11_0"
+      ]
+    }
+  ],
+  "staggerOffset": "odd",
+  "showCoords": true
+}

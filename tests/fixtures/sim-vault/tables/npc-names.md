@@ -2,10 +2,10 @@
 dice: 20
 ---
 
-| Result | Weight |
-|--------|--------|
-| Bromund | 1 |
-| Lirel | 1 |
-| Vargax | 1 |
-| Saskia | 1 |
-| Olwen | 1 |
+| d20 | Result | Weight |
+|-----|--------|--------|
+| 1–4 | Bromund | 1 |
+| 5–8 | Lirel | 1 |
+| 9–12 | Vargax | 1 |
+| 13–16 | Saskia | 1 |
+| 17–20 | Olwen | 1 |

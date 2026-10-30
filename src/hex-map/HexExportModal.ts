@@ -10,6 +10,7 @@
 
 import { App, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { pdfAvailable } from "../platform";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
   exportHexAsPdf,
@@ -87,19 +88,20 @@ export class HexExportModal extends HexmakerModal {
 
     // Action buttons
     const actions = contentEl.createDiv({ cls: "duckmage-export-tab-actions" });
-    const pdfBtn = actions.createEl("button", {
-      cls: "mod-cta",
-      text: "Export PDF",
-    });
-    pdfBtn.addEventListener("click", () => {
-      void exportHexAsPdf(this.plugin, this.hexFile, {
-        outputName: buildStem(),
-        includeGmSections: gmCb.checked,
+    // A list of export choices: plain buttons (audit B1).
+    if (pdfAvailable()) {
+      const pdfBtn = actions.createEl("button", {
+        text: "Export PDF",
       });
-      this.close();
-    });
+      pdfBtn.addEventListener("click", () => {
+        void exportHexAsPdf(this.plugin, this.hexFile, {
+          outputName: buildStem(),
+          includeGmSections: gmCb.checked,
+        });
+        this.close();
+      });
+    }
     const mdBtn = actions.createEl("button", {
-      cls: "mod-cta",
       text: "Export Markdown",
     });
     mdBtn.addEventListener("click", () => {

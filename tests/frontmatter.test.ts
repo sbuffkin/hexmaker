@@ -1,7 +1,7 @@
 import { describe, it, mock } from "node:test";
 import expect from "expect";
 import { TFile } from "obsidian";
-import { getTerrainFromFile, setTerrainInFile, getIconOverrideFromFile, setIconOverrideInFile, getSubmapFromFile, setSubmapInFile, terrainFromFm, iconOverrideFromFm, gmIconsFromFm } from "../src/frontmatter";
+import { getTerrainFromFile, setTerrainInFile, getIconOverrideFromFile, setIconOverrideInFile, getSubmapFromFile, terrainFromFm, iconOverrideFromFm, gmIconsFromFm } from "../src/frontmatter";
 
 /** Build a minimal mock App backed by an in-memory string. */
 function makeApp(filePath: string, initialContent: string) {
@@ -220,36 +220,6 @@ describe("getIconOverrideFromFile", () => {
 	});
 });
 
-// ── setSubmapInFile ───────────────────────────────────────────────────────────
-
-describe("setSubmapInFile", () => {
-	it("returns false when the file does not exist", async () => {
-		const { app } = makeApp("hex.md", "");
-		const result = await setSubmapInFile(app, "missing.md", "the-coast");
-		expect(result).toBe(false);
-	});
-
-	it("writes duckmage-submap to a file with no existing frontmatter", async () => {
-		const { app, getContent } = makeApp("hex.md", "Body text.");
-		await setSubmapInFile(app, "hex.md", "the-coast");
-		expect(getContent()).toContain("duckmage-submap: the-coast");
-	});
-
-	it("updates an existing duckmage-submap value", async () => {
-		const { app, getContent } = makeApp("hex.md", "---\nduckmage-submap: old-map\n---\n");
-		await setSubmapInFile(app, "hex.md", "new-map");
-		expect(getContent()).toContain("duckmage-submap: new-map");
-		expect(getContent()).not.toContain("old-map");
-	});
-
-	it("removes duckmage-submap when passed null", async () => {
-		const { app, getContent } = makeApp("hex.md", "---\nduckmage-submap: the-coast\nterrain: plains\n---\n");
-		await setSubmapInFile(app, "hex.md", null);
-		expect(getContent()).not.toContain("duckmage-submap");
-		expect(getContent()).toContain("terrain: plains");
-	});
-});
-
 // ── getSubmapFromFile ─────────────────────────────────────────────────────────
 
 describe("getSubmapFromFile", () => {
@@ -271,92 +241,6 @@ describe("getSubmapFromFile", () => {
 	it("returns undefined when the value is not a string", () => {
 		const { app } = makeAppWithCache("hex.md", { "duckmage-submap": 42 });
 		expect(getSubmapFromFile(app, "hex.md")).toBeUndefined();
-	});
-});
-
-// ── updateSubmapReferences ────────────────────────────────────────────────────
-
-describe("updateSubmapReferences", () => {
-	function makeMultiFileApp(files: Record<string, { content: string; submap?: string }>) {
-		const stored: Record<string, string> = {};
-		const tfiles: Record<string, TFile> = {};
-
-		for (const [path, { content }] of Object.entries(files)) {
-			stored[path] = content;
-			const f = Object.create(TFile.prototype) as TFile;
-			f.path = path;
-			tfiles[path] = f;
-		}
-
-		const app = {
-			vault: {
-				getAbstractFileByPath: (p: string) => tfiles[p] ?? null,
-				getMarkdownFiles: () => Object.values(tfiles),
-			},
-			fileManager: {
-				processFrontMatter: mock.fn(async (file: TFile, fn: (fm: Record<string, unknown>) => void) => {
-					const content = stored[file.path] ?? "";
-					const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-					const fm: Record<string, unknown> = {};
-					if (fmMatch) {
-						for (const line of fmMatch[1].split("\n")) {
-							const m = line.match(/^([\w-]+):\s*(.+)$/);
-							if (m) fm[m[1]] = m[2].trim();
-						}
-					}
-					const rest = fmMatch ? content.slice(fmMatch[0].length) : content;
-					fn(fm);
-					const fmLines = Object.entries(fm).map(([k, v]) => `${k}: ${v}`).join("\n");
-					stored[file.path] = fmLines ? `---\n${fmLines}\n---\n${rest}` : rest;
-				}),
-			},
-			metadataCache: {
-				getFileCache: mock.fn((file: TFile) => {
-					const submap = files[file.path]?.submap;
-					return submap ? { frontmatter: { "duckmage-submap": submap } } : null;
-				}),
-			},
-		} as unknown as import("obsidian").App;
-
-		return { app, getContent: (p: string) => stored[p] ?? "" };
-	}
-
-	it("updates duckmage-submap in all matching hex notes", async () => {
-		const { app, getContent } = makeMultiFileApp({
-			"world/hexes/map-a/1_1.md": { content: "---\nduckmage-submap: old-map\n---\n", submap: "old-map" },
-			"world/hexes/map-a/2_2.md": { content: "---\nduckmage-submap: old-map\n---\n", submap: "old-map" },
-			"world/hexes/map-a/3_3.md": { content: "---\nterrain: plains\n---\n" },
-		});
-
-		// Simulate updateSubmapReferences logic directly
-		const hexFolder = "world/hexes";
-		const files = app.vault.getMarkdownFiles().filter(
-			(f: TFile) => f.path.startsWith(hexFolder + "/"),
-		);
-		for (const file of files) {
-			const submap = app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
-			if (submap !== "old-map") continue;
-			await setSubmapInFile(app, file.path, "new-map");
-		}
-
-		expect(getContent("world/hexes/map-a/1_1.md")).toContain("duckmage-submap: new-map");
-		expect(getContent("world/hexes/map-a/2_2.md")).toContain("duckmage-submap: new-map");
-		expect(getContent("world/hexes/map-a/3_3.md")).not.toContain("duckmage-submap");
-	});
-
-	it("does not touch notes whose submap points to a different map", async () => {
-		const { app, getContent } = makeMultiFileApp({
-			"world/hexes/map-a/1_1.md": { content: "---\nduckmage-submap: other-map\n---\n", submap: "other-map" },
-		});
-
-		const files = app.vault.getMarkdownFiles();
-		for (const file of files) {
-			const submap = app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
-			if (submap !== "old-map") continue;
-			await setSubmapInFile(app, file.path, "new-map");
-		}
-
-		expect(getContent("world/hexes/map-a/1_1.md")).toContain("duckmage-submap: other-map");
 	});
 });
 

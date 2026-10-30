@@ -1,0 +1,51 @@
+/**
+ * The modules compiled into this build, in registry order, and the
+ * registry over them. The one place (with ./runtime.ts) that imports a
+ * module: the core asks `registry`, never a module directly
+ * (tests/moduleBoundary.test.ts).
+ *
+ * One module is one release slice (release-slices.json): a slice built
+ * off (its __SLICE_*__ flag false) is left out here, so nothing in the
+ * bundle reaches its code and esbuild drops it (npm run check:release).
+ *
+ * Data only (see ./types.ts): safe to import from anywhere in the core.
+ */
+
+import type { HexmakerModule } from "./types";
+import { ModuleRegistry } from "./registry";
+import { worldModule } from "./world";
+import { worldMapsModule } from "./world-maps";
+import { spaceModule } from "./space";
+import { genPageModule } from "./gen-page";
+import { playModule } from "./play";
+import { hexFlowerModule } from "./hex-flower";
+import { packsModule } from "./packs";
+import { manualModule } from "./manual";
+
+// Plain `if`s on the flags: esbuild drops a false branch (and so the
+// module) without minifying; a ternary inside an array isn't folded.
+const compiled: HexmakerModule[] = [worldModule];
+if (__SLICE_WORLDMAPS__) compiled.push(worldMapsModule);
+if (__SLICE_SPACE__) compiled.push(spaceModule);
+if (__SLICE_GENPAGE__) compiled.push(genPageModule);
+if (__SLICE_PLAY__) compiled.push(playModule);
+if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerModule);
+if (__SLICE_PACKS__) compiled.push(packsModule);
+if (__SLICE_MANUAL__) compiled.push(manualModule);
+
+export const MODULES: readonly HexmakerModule[] = compiled;
+
+export const registry = new ModuleRegistry(MODULES);
+
+/**
+ * The release slices this build has on (foundation not listed), as the
+ * build named them (esbuild's __HEXMAKER_SLICES__; tests/register.mjs in
+ * tests). For logs and the smoke runs: which features a bug report ran with.
+ */
+export function builtSlices(): string[] {
+  try {
+    return JSON.parse(__HEXMAKER_SLICES__) as string[];
+  } catch {
+    return [];
+  }
+}

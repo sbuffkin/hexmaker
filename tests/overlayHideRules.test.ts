@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 
 /**
  * Drift guard for the overlay-panel hide rules (issue #32).
@@ -22,10 +23,7 @@ import * as path from "node:path";
 
 const root = process.cwd();
 const stylesCss = readFileSync(path.join(root, "styles.css"), "utf8");
-const sidePanelSrc = readFileSync(
-  path.join(root, "src", "hex-map", "HexSidePanel.ts"),
-  "utf8",
-);
+const sidePanelSrc = readSurface("side-panel");
 
 function allSourceText(dir: string): string {
   let out = "";

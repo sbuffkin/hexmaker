@@ -4,8 +4,10 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
 import { getIconUrl, createIconEl } from "../utils";
 import { TerrainEntryEditorModal } from "./TerrainEntryEditorModal";
+import { addPickerFilter, dragGrip, editToggle, filterText } from "../ui/pickers";
 
 export class TerrainPickerModal extends HexmakerModal {
+  protected surfaceId = "TerrainPicker";
   private editMode = false;
   private editChanged = false;
   private selectionMade = false;
@@ -49,14 +51,19 @@ export class TerrainPickerModal extends HexmakerModal {
     header.createEl("h2", {
       text: this.editMode ? "Edit terrain palette" : "Paint terrain",
     });
-    const toggleBtn = header.createEl("button", {
-      cls: "duckmage-tpe-edit-btn",
-      text: this.editMode ? "← Done" : "✏ Edit",
-    });
-    toggleBtn.addEventListener("click", () => {
+    editToggle(header, this.editMode, () => {
       this.editMode = !this.editMode;
       this.render();
-    });
+    }, "duckmage-tpe-edit-btn");
+    if (this.editMode) {
+      // The full page: every field (type, tint…), reorder, submap defaults.
+      const owner = this.plugin.settings.terrainPalettes.find((p) => p.terrains === this.palette);
+      header.createEl("button", { cls: "duckmage-tpe-edit-btn", text: "Full editor…" })
+        .addEventListener("click", () => {
+          this.close();
+          void this.plugin.openPaletteEditor(owner?.name);
+        });
+    }
 
     if (this.editMode) {
       this.renderEditMode();
@@ -121,19 +128,22 @@ export class TerrainPickerModal extends HexmakerModal {
     });
 
     for (const entry of this.palette) {
-      const btn = grid.createDiv({ cls: "duckmage-terrain-option" });
+      const btn = grid.createDiv({ cls: "duckmage-terrain-option", attr: { title: entry.name } });
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
       preview.setCssProps({ '--duckmage-bg': entry.color });
       if (entry.icon) {
         createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
       }
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
+      filterText(btn, entry.name, entry.type, entry.category);
       btn.addEventListener("click", () => {
         this.selectionMade = true;
         this.onSelect(entry.name);
         this.close();
       });
     }
+    // The shared picker filter (src/ui/pickers.ts), once the palette is long.
+    addPickerFilter(grid, { things: "terrains", count: this.palette.length });
   }
 
   private renderEditMode(): void {
@@ -152,11 +162,12 @@ export class TerrainPickerModal extends HexmakerModal {
         const entry = palette[i];
         const tile = grid.createDiv({
           cls: "duckmage-terrain-option duckmage-terrain-option-editable",
+          attr: { title: `${entry.name} (click to edit, drag to reorder)` },
         });
         tile.draggable = true;
 
         // Grip handle — top-left
-        tile.createSpan({ cls: "duckmage-terrain-edit-grip", text: "⠿" });
+        dragGrip(tile, "duckmage-terrain-edit-grip");
 
         // Edit pencil — decorative indicator that the tile is clickable
         tile.createSpan({ cls: "duckmage-terrain-edit-pencil", text: "✏" });
@@ -276,6 +287,9 @@ export class TerrainPickerModal extends HexmakerModal {
         refreshBtn.setText("Done");
       })();
     });
+    // A repair tool: Debug (placement: TerrainPicker.refreshEncounterLinks).
+    this.place("TerrainPicker.refreshEncounterLinks", refreshBtn);
+    if (!footer.childElementCount) footer.remove();
   }
 }
 
@@ -318,15 +332,17 @@ class TerrainTemplatePickerModal extends HexmakerModal {
       });
       const list = contentEl.createDiv({ cls: "duckmage-terrain-template-list" });
       for (const { name: palName, terrains } of byPalette) {
-        list.createDiv({ cls: "duckmage-terrain-template-group", text: palName });
+        list.createDiv({ cls: "duckmage-terrain-template-group", text: palName, attr: { "data-filter-head": palName } });
         for (const t of terrains) {
-          const row = list.createDiv({ cls: "duckmage-terrain-template-row" });
+          const row = list.createDiv({ cls: "duckmage-terrain-template-row", attr: { "data-filter-group": palName } });
           const swatch = row.createSpan({ cls: "duckmage-terrain-template-swatch" });
           swatch.setCssProps({ background: t.color });
           row.createSpan({ text: t.name });
+          filterText(row, t.name, t.type, palName);
           row.addEventListener("click", () => { this.onPick(t); this.close(); });
         }
       }
+      addPickerFilter(list, { things: "terrains", count: byPalette.reduce((n, p) => n + p.terrains.length, 0) });
     }
 
     this.makeDraggable();

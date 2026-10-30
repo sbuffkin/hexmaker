@@ -1,6 +1,9 @@
 import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { openNoteFocused } from "../openNote";
 import type { TokenEntry } from "../types";
+import { hexKeyCoords } from "./hexHover";
+import { hexXY } from "../hexKey";
 
 export class TokenInfoModal extends HexmakerModal {
   private renderComp: Component | undefined;
@@ -32,7 +35,7 @@ export class TokenInfoModal extends HexmakerModal {
       attr: { title: "Jump to hex" },
     });
     jumpBtn.addEventListener("click", () => {
-      const [x, y] = this.token.hex.split("_").map(Number);
+      const { x, y } = hexXY(this.token.hex);
       this.close();
       this.onCenter(x, y);
     });
@@ -44,7 +47,7 @@ export class TokenInfoModal extends HexmakerModal {
         cls: "duckmage-editor-open-link",
       });
       openLink.addEventListener("click", () => {
-        void this.app.workspace.getLeaf("tab").openFile(noteFile);
+        void openNoteFocused(this.app, noteFile);
         this.close();
       });
     }
@@ -64,7 +67,7 @@ export class TokenInfoModal extends HexmakerModal {
 
     // Location
     body.createEl("p", {
-      text: `Hex ${this.token.hex}`,
+      text: `Hex ${hexKeyCoords(this.token.hex)}`,
       cls: "duckmage-token-info-loc",
     });
 

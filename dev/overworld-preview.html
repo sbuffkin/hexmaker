@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loading</title>
+<style>
+  body { font: 13px system-ui, sans-serif; background: #1e1e1e; color: #ddd; margin: 16px; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  p.note { color: #999; margin: 0 0 10px; max-width: 70em; }
+  .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 10px; }
+  button, select, input { font: inherit; background: #2b2b2b; color: #ddd; border: 1px solid #444; border-radius: 5px; padding: 3px 8px; }
+  input[type=number] { width: 6em; }
+  input[type=range] { width: 14em; padding: 0; }
+  #top { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  #wall { display: flex; flex-wrap: wrap; gap: 14px; }
+  figure { margin: 0; background: #151515; padding: 8px; border-radius: 8px; }
+  figcaption { color: #aaa; font-size: 12px; margin-top: 4px; max-width: 620px; }
+  #seams { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 12px; }
+  table { border-collapse: collapse; font-size: 12px; }
+  caption { text-align: left; color: #bbb; padding-bottom: 4px; }
+  th, td { padding: 2px 8px; border-bottom: 1px solid #333; text-align: left; }
+  #seams > table { max-height: 360px; display: block; overflow-y: auto; }
+  #legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; color: #aaa; font-size: 12px; }
+  #legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; }
+</style>
+<h1>Overworld preview (dev only): World biomes + regions, brick vs hex flower</h1>
+<p class="note">A 19-hex overworld from the World biomes generator (left; white outline = transition biome, blue = river). Every region is generated from the blend field in spiral order, each pinning the cells of the regions made before it. Seam lines are coloured by how often facing hexes share a terrain type (red low, green high).</p>
+<div class="bar">
+  <label>Seed <input id="seed" type="number"></label>
+  <button id="reroll">Re-roll</button>
+  <label>Blend <input id="k" type="range" min="1.5" max="8" step="0.25"></label><span id="kv"></span>
+  <label title="Pushes each hex by smooth noise before reading the blend, so biome edges wander across seams">Warp <input id="warp" type="range" min="0" max="0.5" step="0.05"></label><span id="wv"></span>
+  <label>Climate <select id="climate"><option value="varied">varied</option><option value="temperate">temperate</option><option value="cold">cold</option><option value="warm">warm</option></select></label>
+  <label>Water % <input id="water" type="number" min="0" max="80" step="5" value="25"></label>
+</div>
+<div class="bar">
+  <label>Show <select id="view"><option value="both">both side by side</option><option value="rect">brick 8×8</option><option value="hex">hex flower r=4</option></select></label>
+  <label><input id="owonly" type="checkbox"> Overworld only</label>
+  <label>Order <select id="order"><option value="spiral">spiral from centre</option><option value="shuffled">shuffled</option></select></label>
+  <label>Hexes <select id="orient"><option value="flat">flat-top</option><option value="pointy">pointy-top</option></select></label>
+  <label>Field heatmap <select id="heat"><option value="">none</option></select></label>
+</div>
+<div id="top">
+  <figure><canvas id="ow" width="260" height="250"></canvas><figcaption>Overworld</figcaption></figure>
+  <div id="wall"></div>
+</div>
+<div id="legend"></div>
+<div id="seams"></div>
+<script src="overworld-preview.js"></script>

@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loading</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  /* Minimal Obsidian theme variables so plugin CSS renders as in the app (dark theme). */
+  body {
+    --background-primary: #1e1e1e; --background-secondary: #262626;
+    --background-modifier-border: #3f3f3f; --interactive-accent: #7c3aed;
+    background: #1e1e1e; color: #ddd; font: 14px system-ui; margin: 16px;
+  }
+  .row { display: flex; gap: 40px; align-items: flex-start; }
+  h3 { font-size: 13px; color: #aaa; margin: 4px 0 8px; }
+  .grid { display: flex; flex-wrap: wrap; width: 260px; font-size: 16px; }
+  .zoom { font-size: 40px; width: 420px; }
+  .old .duckmage-hex { border: 2px solid var(--background-modifier-border); }
+</style>
+<div class="row">
+  <div><h3>Before (2px border + clip-path)</h3><div class="old"><div id="a" class="grid"></div><div id="az" class="grid zoom"></div></div></div>
+  <div><h3>After (current styles.css)</h3><div class="new"><div id="b" class="grid"></div><div id="bz" class="grid zoom"></div></div></div>
+</div>
+<script>
+  const colors = ["#69a168", "#2d9553", "#29507f", "#e0e8a1", "#a77649", "", "#ecdba2", "#60a5fa"];
+  for (const id of ["a", "b", "az", "bz"]) {
+    const g = document.getElementById(id);
+    const n = id.endsWith("z") ? 3 : 8;
+    for (let i = 0; i < n; i++) {
+      const h = document.createElement("div");
+      h.className = "duckmage-hex";
+      const c = colors[i % colors.length];
+      if (c) { h.style.backgroundColor = c; h.classList.add("duckmage-hex-painted"); }
+      g.append(h);
+    }
+  }
+  document.title = "ready";
+</script>

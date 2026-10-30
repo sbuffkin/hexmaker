@@ -4,7 +4,7 @@
  * actual exporter orchestrators end-to-end without spinning up Obsidian.
  *
  * The mocks implement only the surface area our orchestrators touch:
- *   vault.read / getAbstractFileByPath / getMarkdownFiles / createBinary /
+ *   vault.read / readBinary / getAbstractFileByPath / getMarkdownFiles / createBinary /
  *   modifyBinary / create / modify
  *   metadataCache.getFileCache / getFirstLinkpathDest
  *   workspace.getLeaf().openFile()  ← no-op
@@ -115,6 +115,11 @@ export class MockVault {
   async read(file: MockTFile): Promise<string> {
     const abs = this.resolvePath(file.path, false);
     return await fsp.readFile(abs, "utf8");
+  }
+
+  async readBinary(file: MockTFile): Promise<ArrayBuffer> {
+    const buf = await fsp.readFile(this.resolvePath(file.path, false));
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   }
 
   async cachedRead(file: MockTFile): Promise<string> {
@@ -249,6 +254,13 @@ export class MockWorkspace {
   getLeaf(_arg?: unknown): MockLeaf {
     return new MockLeaf();
   }
+  /** No open tabs (exports look for one showing the file first). */
+  iterateAllLeaves(_cb: (leaf: MockLeaf) => unknown): void {
+    /* no leaves */
+  }
+  async revealLeaf(_leaf: MockLeaf): Promise<void> {
+    /* no-op */
+  }
 }
 
 // ─── App ────────────────────────────────────────────────────────────────────
@@ -266,7 +278,9 @@ export class MockApp {
 
 // ─── Plugin ────────────────────────────────────────────────────────────────
 
-import { DEFAULT_SETTINGS } from "../../src/constants";
+import { DEFAULT_PATH_TYPES, DEFAULT_SETTINGS } from "../../src/constants";
+import { kindForChain, mapKindInfo, sectionWordsFor } from "../../src/mapKinds";
+import { PathsService } from "../../src/paths/PathsService";
 import type { HexmakerPluginSettings } from "../../src/types";
 
 export class MockHexmakerPlugin {
@@ -275,6 +289,16 @@ export class MockHexmakerPlugin {
   manifest = { dir: ".obsidian/plugins/duckmage-plugin", id: "duckmage" };
   // Field that real plugin uses for icon URL resolution.
   vaultIconsSet = new Set<string>();
+  /** The paths service, as the real plugin has it (always ready; terrain from hex frontmatter is not consulted). */
+  paths = new PathsService({
+    isMapReady: () => true,
+    getMap: (name) => this.getMap(name),
+    orientation: () => this.settings.hexOrientation,
+    stagger: (map) => map.staggerOffset ?? this.settings.staggerOffset ?? "odd",
+    pathTypes: (map) => this.getMapPathTypes(map),
+    palette: (map) => this.getMapPalette(map),
+    hexData: () => new Map(),
+  });
 
   constructor(outDir: string) {
     this.app = new MockApp(outDir);
@@ -292,12 +316,22 @@ export class MockHexmakerPlugin {
     return this.settings.maps.find((m) => m.name === mapName);
   }
 
+  getMapPathTypes(mapName: string) {
+    const map = this.getMap(mapName);
+    return this.settings.terrainPalettes.find((p) => p.name === map?.paletteName)?.pathTypes ?? DEFAULT_PATH_TYPES;
+  }
+
   getMapPalette(mapName: string) {
     const map = this.getMap(mapName);
     return (
       this.settings.terrainPalettes.find((p) => p.name === map?.paletteName)
         ?.terrains ?? this.settings.terrainPalettes[0]?.terrains ?? []
     );
+  }
+
+  /** Section display words by map type (G4b), from the map's own palette. */
+  sectionWordsFor(mapName: string | undefined) {
+    return sectionWordsFor(mapKindInfo(mapName ? kindForChain([{ terrains: this.getMapPalette(mapName) }]) : undefined));
   }
 }
 

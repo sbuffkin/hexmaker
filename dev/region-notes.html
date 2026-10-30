@@ -1,0 +1,167 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loading</title>
+<style>
+  body { font: 14px system-ui, sans-serif; background: #1e1e1e; color: #ddd; margin: 18px 18px 120px; max-width: 980px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  p.lead { color: #aaa; margin: 0 0 8px; }
+  .facts { background: #222; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; color: #bbb; font-size: 13px; margin-bottom: 16px; }
+  .facts li { margin: 2px 0; }
+  pre { background: #161616; border: 1px solid #333; border-radius: 6px; padding: 8px 10px; font-size: 12px; color: #cfcfcf; overflow-x: auto; margin: 6px 0 0; }
+  .card { background: #252525; border: 1px solid #333; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .card.done { border-color: #2f6b3e; }
+  .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; gap: 8px; align-items: baseline; }
+  .card h2 .n { color: #7c3aed; font-weight: 700; }
+  .card .why { color: #9a9a9a; font-size: 13px; margin: 0 0 10px; }
+  .opts { display: grid; gap: 8px; }
+  .opt { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; padding: 8px 10px; border: 1px solid #383838; border-radius: 8px; cursor: pointer; }
+  .opt:hover { border-color: #555; }
+  .opt.sel { border-color: #7c3aed; background: #2a2340; }
+  .opt input { margin-top: 3px; }
+  .opt b { color: #eee; }
+  .opt .rec { font-size: 11px; color: #a78bfa; border: 1px solid #5b3fc4; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+  .opt .d { color: #aaa; font-size: 13px; margin-top: 2px; }
+  textarea { width: 100%; box-sizing: border-box; margin-top: 10px; background: #1b1b1b; color: #ddd; border: 1px solid #383838; border-radius: 6px; padding: 6px 8px; font: 13px system-ui; min-height: 34px; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; background: #111; border-top: 1px solid #333; padding: 10px 18px; font-size: 13px; display: flex; align-items: center; gap: 14px; }
+  #bar b { color: #a78bfa; }
+  #submit { margin-left: auto; background: #7c3aed; color: #fff; border: 0; border-radius: 6px; padding: 8px 18px; font: 600 14px system-ui; cursor: pointer; }
+  #submit:disabled { background: #444; color: #999; cursor: default; }
+  #sent { color: #6ee7b7; }
+</style>
+<h1>Region notes — design choices</h1>
+<p class="lead">Your idea: one note per map holds the per-hex data; hex notes only appear when a hex gets real content. Pick one option per card, add notes, then <b>Submit</b> (Claude is watching for it).</p>
+<div class="facts">
+  <b>Where things stand in your vault:</b>
+  <ul>
+    <li>9,438 hex notes across 14 maps (chult 2,130 · aaaabab 1,374 · the-coast 960 …). In the-coast, only 686 of 960 differ from the template.</li>
+    <li>Per-hex data today lives in each hex note's frontmatter (terrain, icon, GM icons, region, submap) and 12 source files read it from there.</li>
+    <li>Map-level data (size, palette, paths, overlays, viewport…) lives in the plugin's data.json, not in notes.</li>
+  </ul>
+  Sketch of a region note (format is question 4):
+  <pre>---
+hexmaker-map: 1
+palette: Default
+size: 38x25
+base-terrain: ocean
+---
+# the-coast
+
+| Hex  | Terrain | Icon | Region | Submap |
+| ---- | ------- | ---- | ------ | ------ |
+| 3_4  | dunes   |      | Basin  |        |
+| 12_9 | forest  | bw-castle.png | Fellwood | the-coast-12-9 |</pre>
+</div>
+<div id="cards"></div>
+<div id="bar"><span id="status"></span><span id="sent"></span><button id="submit" disabled>Submit</button></div>
+<script>
+const PAGE = "region-notes";
+const DECISIONS = [
+  {
+    id: "source",
+    title: "Where per-hex map data lives",
+    why: "Terrain, icon override, GM icons, region, submap link. One source of truth avoids drift; but hex-note frontmatter is what Dataview queries (and you) can see.",
+    options: [
+      { v: "region-only", label: "Region note only", rec: true, d: "The region note is the single source. Hex notes hold prose and links only. Fastest (painting writes one note, batched), no drift. Dataview users query the region note's table instead." },
+      { v: "region-plus-mirror", label: "Region note, mirrored into existing hex notes", d: "Region note is the source; when a hex note exists its frontmatter gets a read-only copy (terrain etc.) so Dataview/search on hex notes keeps working. Costs an extra write per painted hex that has a note." },
+    ],
+  },
+  {
+    id: "migration",
+    title: "Existing maps (9,438 notes)",
+    why: "Every existing map needs its per-hex data copied into a region note. The question is what happens to the hex notes afterwards.",
+    options: [
+      { v: "keep-all", label: "Keep every hex note", rec: true, d: "Non-destructive: copy the data up, leave all notes in place (frontmatter becomes a stale/mirrored copy per Q1). Nothing is deleted." },
+      { v: "offer-cleanup", label: "Keep, plus an optional cleanup command", d: "As above, plus a command 'Remove untouched hex notes' that previews how many notes are pure template (no user text, links, tokens) per map and moves only those to Obsidian's trash after you confirm." },
+      { v: "auto-cleanup", label: "Clean up automatically during migration", d: "Untouched template notes go to trash as part of migration (with a backup + summary). Leanest result, least control." },
+    ],
+  },
+  {
+    id: "location",
+    title: "Where the region note lives",
+    why: "It must be easy to find and not show up as a hex in lists (the plugin hides notes starting with _).",
+    options: [
+      { v: "in-folder-underscore", label: "Inside the map folder: hexes/the-coast/_the-coast.md", rec: true, d: "Sits with its hexes; the leading _ keeps it out of hex lists/pickers (existing convention). You already have _Index_of_… files there." },
+      { v: "beside-folder", label: "Beside the folder: hexes/the-coast.md", d: "Same name as the folder — works as a 'folder note' with folder-note plugins, and is one click from the file tree." },
+      { v: "maps-folder", label: "In a separate maps folder: world/maps/the-coast.md", d: "All maps together, like the palettes folder; keeps the hex folders purely hexes." },
+    ],
+  },
+  {
+    id: "format",
+    title: "How hexes are written in the region note",
+    why: "Big maps get big: chult is 63×61 = 3,843 hexes. Readability vs size.",
+    options: [
+      { v: "table-sparse", label: "Table, only hexes that differ from the base", rec: true, d: "One row per hex that has terrain (or anything) different from the map's base terrain. Readable, editable, sortable by Dataview; chult ≈ 3,800 rows / ~150 KB, an ocean-heavy map far fewer." },
+      { v: "grid-plus-table", label: "Terrain grid + detail table", d: "Terrain drawn as a compact text grid (one character per hex + a legend) so the note looks like a map, plus a table only for hexes with icons/regions/submaps. Smallest; the grid isn't Dataview-friendly." },
+      { v: "codeblock", label: "Data in a code block (JSON/YAML)", d: "Machine-oriented: smallest and fastest to parse, rendered by the plugin as a map preview in reading view. Least hand-editable." },
+    ],
+  },
+  {
+    id: "settings",
+    title: "Move map settings from data.json into the region note too?",
+    why: "Like palettes-as-notes: size, palette, base terrain, offset/stagger, parent/world slot, overlay toggles, path chains. Viewport (zoom/pan) stays in data.json either way.",
+    options: [
+      { v: "yes-now", label: "Yes, as part of this", rec: true, d: "Maps become fully shareable/backed-up as notes (copy the folder to share a map). data.json keeps a cache for old versions, same pattern as palettes." },
+      { v: "later", label: "Later — hex data first", d: "Ship the hex-data move first; settings in a follow-up." },
+    ],
+  },
+  {
+    id: "trigger",
+    title: "When a hex note gets created",
+    why: "With notes on use, something has to decide 'this hex is now used'.",
+    options: [
+      { v: "content", label: "When it gets content", rec: true, d: "Looking (hover, select, opening the hex editor) creates nothing. A note appears the first time you add text, a link, a token, or click 'Open note'. Painting terrain/icons only updates the region note." },
+      { v: "open-editor", label: "When you open the hex editor", d: "Simpler mental model (opened = exists), but browsing creates notes." },
+    ],
+  },
+];
+const KEY = `hexmaker-${PAGE}-v1`;
+const picks = JSON.parse(localStorage.getItem(KEY) || "{}");
+const save = () => { localStorage.setItem(KEY, JSON.stringify(picks)); bar(); };
+const root = document.getElementById("cards");
+DECISIONS.forEach((d, i) => {
+  const card = document.createElement("div");
+  card.className = "card" + (picks[d.id]?.choice ? " done" : "");
+  card.innerHTML = `<h2><span class="n">${i + 1}</span>${d.title}</h2><p class="why">${d.why}</p>`;
+  const box = card.appendChild(Object.assign(document.createElement("div"), { className: "opts" }));
+  for (const o of d.options) {
+    const el = document.createElement("label");
+    el.className = "opt" + (picks[d.id]?.choice === o.v ? " sel" : "");
+    el.innerHTML = `<input type="radio" name="${d.id}" ${picks[d.id]?.choice === o.v ? "checked" : ""}><div><b>${o.label}</b>${o.rec ? '<span class="rec">recommended</span>' : ""}<div class="d">${o.d}</div></div>`;
+    el.querySelector("input").addEventListener("change", () => {
+      picks[d.id] = { ...(picks[d.id] || {}), choice: o.v };
+      box.querySelectorAll(".opt").forEach((x) => x.classList.remove("sel"));
+      el.classList.add("sel");
+      card.classList.add("done");
+      save();
+    });
+    box.appendChild(el);
+  }
+  const note = document.createElement("textarea");
+  note.placeholder = "Notes (optional)";
+  note.value = picks[d.id]?.note || "";
+  note.addEventListener("input", () => { picks[d.id] = { ...(picks[d.id] || {}), note: note.value }; save(); });
+  card.appendChild(note);
+  root.appendChild(card);
+});
+const btn = document.getElementById("submit");
+function bar() {
+  const done = DECISIONS.filter((d) => picks[d.id]?.choice).length;
+  document.getElementById("status").innerHTML = `<b>${done}/${DECISIONS.length}</b> decided`;
+  btn.disabled = done < DECISIONS.length;
+  btn.title = btn.disabled ? "Pick an option on every card first" : "";
+}
+btn.addEventListener("click", async () => {
+  btn.disabled = true;
+  const payload = { page: PAGE, submittedAt: new Date().toISOString(), picks };
+  try {
+    const r = await fetch(`/submit/${PAGE}`, { method: "POST", body: JSON.stringify(payload) });
+    document.getElementById("sent").textContent = r.ok ? "✓ Sent — Claude has it." : "Couldn't send — tell Claude you're done.";
+  } catch {
+    document.getElementById("sent").textContent = "Couldn't send — tell Claude you're done.";
+  }
+  btn.disabled = false;
+});
+window.__decisions = () => JSON.parse(JSON.stringify(picks));
+bar();
+document.title = "ready";
+</script>
