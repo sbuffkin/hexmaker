@@ -2,8 +2,8 @@
   "about": "Release slices (plan-release-slicing): one module is one slice. `npm run build` compiles the slices marked released; `npm run build:full` compiles every slice; HEXMAKER_SLICES / HEXMAKER_SLICES_ON / HEXMAKER_SLICES_OFF (or --slices) pick any set (dev/release/slices.mjs resolveSlices). A slice built off leaves no trace in main.js (npm run check:release). `mapMarks`: map-note keys that say a map was made with the slice; a build without it lists such a map marked and won't open it (src/maps/offSliceMaps.ts; only hashes reach the bundle). The foundation slice is always built. `docs`: README.md and help.md mark its text (<!-- slice:<id> -->), checked for every such slice. `requires`: slices that must be on whenever this one is (a build with this on and one of them off is an error; check:release turns dependents off with them).",
   "slices": {
     "foundation": { "define": null, "modules": ["world"], "released": true, "requires": [] },
-    "worldmaps": { "docs": true, "define": "__SLICE_WORLDMAPS__", "modules": ["world-maps"], "released": true, "requires": [], "mapMarks": ["world", "biome", "biome-from", "biome-river", "biome-pool", "no-climate-biomes", "overworld-view"] },
-    "space": { "docs": true, "define": "__SLICE_SPACE__", "modules": ["space"], "released": true, "requires": [] },
+    "worldmaps": { "docs": true, "define": "__SLICE_WORLDMAPS__", "modules": ["world-maps"], "released": false, "requires": [], "mapMarks": ["world", "biome", "biome-from", "biome-river", "biome-pool", "no-climate-biomes", "overworld-view"] },
+    "space": { "docs": true, "define": "__SLICE_SPACE__", "modules": ["space"], "released": false, "requires": [] },
     "genpage": { "docs": true, "define": "__SLICE_GENPAGE__", "modules": ["gen-page"], "released": true, "requires": [] },
     "manual": { "docs": true, "define": "__SLICE_MANUAL__", "modules": ["manual"], "released": true, "requires": [] },
     "play": { "docs": true, "define": "__SLICE_PLAY__", "modules": ["play"], "released": false, "requires": [], "mapMarks": ["visited", "show-visited"] },

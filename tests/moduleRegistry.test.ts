@@ -220,7 +220,7 @@ describe("generators, engines and table roles through modules (P3)", () => {
   itWith(EVERY, "path roles and When keys come from the modules", async () => {
     const { conditionKeys, parseWhen, formatWhen } = await import("../src/random-tables/tableConditions");
     expect(registry.pathRoles()).toEqual({ routes: "Path type for routes", orbits: "Path type for orbits" });
-    expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "from", "near", "type", "terrain"]);
+    expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "from", ...(sliceOn("fields") ? ["near"] : []), "type", "terrain"]);
     // Aliases read as the module's key.
     expect(formatWhen(parseWhen("orbit: outer; distance: 2-3; temp: cold"))).toBe("zone: outer; ring: 2–3; temperature: 0–0.2");
   });
