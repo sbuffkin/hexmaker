@@ -17,7 +17,16 @@
  * Pure: no Obsidian imports.
  */
 
+import { parseModelMarkdown, SETTING_KEYS } from "../../packages/hex-wfc/src";
+
 const GENERATOR_SECTIONS = ["terrains", "adjacency", "features", "paths", "layout"];
+
+/**
+ * The frontmatter keys a generator owns: a re-made model without one means
+ * the key is gone. Any other key the note has stays, whatever the model
+ * carries (a property the user added after the model was read).
+ */
+const OWN_KEYS = new Set<string>(["hex-wfc", "name", "example-hexes", "source-map", "source-maps", "source-influence", "source-direction", "blend-of", ...Object.values(SETTING_KEYS)]);
 
 const isTableLine = (l: string) => l.trim().startsWith("|");
 const heading = (l: string) => /^#{1,6}\s+(.*)$/.exec(l.trim())?.[1].trim().toLowerCase();
@@ -27,7 +36,7 @@ interface FmEntry {
   lines: string[];
 }
 
-/** Frontmatter lines grouped by key (a block list's `  - item` lines go with their key). */
+/** Frontmatter lines grouped by key (indented lines go with their key). */
 function frontmatter(lines: string[]): { entries: FmEntry[]; end: number } | null {
   if (lines[0]?.trim() !== "---") return null;
   const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
@@ -36,7 +45,8 @@ function frontmatter(lines: string[]): { entries: FmEntry[]; end: number } | nul
   for (let i = 1; i < end; i++) {
     const m = /^([^:#\s][^:]*):/.exec(lines[i]);
     if (m) entries.push({ key: m[1].trim(), lines: [lines[i]] });
-    else if (/^\s+-(\s|$)/.test(lines[i]) && entries.length && entries[entries.length - 1].key) entries[entries.length - 1].lines.push(lines[i]);
+    // A block list's items and a nested value's lines go with their key.
+    else if (/^\s+\S/.test(lines[i]) && entries.length && entries[entries.length - 1].key) entries[entries.length - 1].lines.push(lines[i]);
     else entries.push({ lines: [lines[i]] });
   }
   return { entries, end };
@@ -47,7 +57,9 @@ function sectionTables(lines: string[], from: number): Map<string, { head: numbe
   const out = new Map<string, { head: number; start: number; end: number }>();
   for (let i = from; i < lines.length; i++) {
     const h = heading(lines[i]);
-    if (h === undefined || !GENERATOR_SECTIONS.includes(h) || out.has(h)) continue;
+    // A heading of the user's with the same name and no table doesn't hide the real one.
+    const had = h === undefined ? undefined : out.get(h);
+    if (h === undefined || !GENERATOR_SECTIONS.includes(h) || (had && had.end > had.start)) continue;
     let s = i + 1;
     while (s < lines.length && !isTableLine(lines[s]) && heading(lines[s]) === undefined) s++;
     if (s >= lines.length || !isTableLine(lines[s])) { out.set(h, { head: i, start: i + 1, end: i + 1 }); continue; }
@@ -58,28 +70,41 @@ function sectionTables(lines: string[], from: number): Map<string, { head: numbe
   return out;
 }
 
+/** What a key's frontmatter lines mean to the reader (so `[a]` and a block list are the same). */
+function readKey(lines: string[]): string {
+  return JSON.stringify(parseModelMarkdown(["---", "hex-wfc: 1", ...lines, "---"].join("\n")).model);
+}
+
 /**
  * `old` with `fresh`'s frontmatter values and generator tables written in.
- * Keys only in `old` are dropped (the model carries every key it read), keys
+ * A key whose value didn't change keeps the lines it was written with; a
+ * key only in `old` goes only when the generator owns it (OWN_KEYS); keys
  * only in `fresh` are added; a section `fresh` doesn't have any more loses
- * its table (and its heading when nothing else is under it). Line endings
- * are kept; the same string when nothing changed.
+ * its table (and its heading when nothing else is under it). A note whose
+ * frontmatter can't be read (edited since it was listed) keeps all its text
+ * under `fresh`'s frontmatter. Line endings are kept; the same string when
+ * nothing changed.
  */
 export function updateGeneratorNote(old: string, fresh: string): string {
   const eol = old.includes("\r\n") ? "\r\n" : "\n";
   const a = old.replace(/\r\n?/g, "\n").split("\n");
   const b = fresh.replace(/\r\n?/g, "\n").split("\n");
   const fa = frontmatter(a), fb = frontmatter(b);
-  if (!fa || !fb) return fresh;
+  if (!fb) return old;
+  if (!fa) return [...b.slice(0, fb.end + 1), ...a].join(eol);
   const want = new Map(fb.entries.filter((e) => e.key).map((e) => [e.key!, e.lines]));
   const fm: string[] = [];
   const seen = new Set<string>();
   for (const e of fa.entries) {
     if (!e.key) { fm.push(...e.lines); continue; }
     const next = want.get(e.key);
-    if (!next || seen.has(e.key)) continue;
+    if (seen.has(e.key)) continue;
+    if (!next) {
+      if (!OWN_KEYS.has(e.key)) fm.push(...e.lines);
+      continue;
+    }
     seen.add(e.key);
-    fm.push(...next);
+    fm.push(...(readKey(e.lines) === readKey(next) ? e.lines : next));
   }
   for (const [k, lines] of want) if (!seen.has(k)) fm.push(...lines);
 
