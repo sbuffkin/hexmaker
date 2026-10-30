@@ -14,6 +14,8 @@ describe("telling a map made with a slice built off", () => {
     for (const k of ["world", "explore-fog", "hex-flower-at", "biome-pool"]) expect(markHash(k)).toBe(buildHash(k));
     const marks = resolveSlices({ spec: "none" }).offMapMarks;
     expect(marks).toContain(markHash("explore-fog"));
+    // Next to is the foundation's: a map placed beside another is an ordinary map.
+    expect(marks).not.toContain(markHash("world"));
     expect(marks.every((m) => typeof m === "number")).toBe(true);
     expect(resolveSlices({ spec: "all" }).offMapMarks).toEqual([]);
   });

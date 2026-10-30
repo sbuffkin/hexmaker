@@ -11,7 +11,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,4 +35,5 @@ const manifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
 writeFileSync(join(dir, "manifest.json"), `${JSON.stringify({ ...manifest, version }, null, "\t")}\n`);
 copyFileSync(join(ROOT, "styles.css"), join(dir, "styles.css"));
 renameSync(join(dir, "dist", "README.md"), join(dir, "README.md"));
+rmSync(join(dir, "dist"), { recursive: true });
 console.log(`${dir}: main.js, manifest.json (${version}), styles.css, README.md`);

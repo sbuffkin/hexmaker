@@ -72,8 +72,10 @@ the version it came from.
 
 ### Play
 
+<!-- slice:play -->
 - Any token can be the party: in Play it moves one hex at a time and marks the hexes it visits.
 - A play log keeps one note per day of play, linked from the hexes it mentions.
+<!-- /slice -->
 - Show on map sets a hex's icon from its linked notes (towns, dungeons…).
 
 ### Everything else

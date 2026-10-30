@@ -739,7 +739,7 @@ async function newerBuildExtra(ctx) {
 
 export const SETUPS = [
   {
-    id: "real-data", title: "Owner real-data copy (seedF + live data.json), migrates", slow: true, mayMarkOffSlice: true,
+    id: "real-data", title: "Owner real-data copy (seedF + live data.json), migrates", slow: true,
     // Private data on the owner's machine (SMOKE_REAL_SEED / SMOKE_REAL_DATA elsewhere): skipped, loudly, without it.
     unavailable: () => (!fs.existsSync(REAL_SEED) ? `real seed missing: ${REAL_SEED}` : !fs.existsSync(REAL_DATA) ? `live data.json missing: ${REAL_DATA}` : null),
     build(dir) {
@@ -758,7 +758,7 @@ export const SETUPS = [
   { id: "v155", title: "Synthetic 1.5.5 vault (hex-note frontmatter + data.json maps), migrates", build: buildV155, migration: true, expect: {} },
   { id: "space", title: "Space only (sector → system → planet)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSpace, expect: {}, extra: spaceExtra, slices: ["space"], needs: ["space"] },
   { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, prepHeld: true, expect: { openMs: 60_000 }, extra: overworldExtra, slices: ["worldmaps"], needs: ["worldmaps"] },
-  { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: {}, extra: neighboursExtra, needs: ["worldmaps"] },
+  { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: {}, extra: neighboursExtra },
   { id: "custom-palette", title: "One custom palette, no default names", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeCustomPalette, expect: {}, extra: customPaletteExtra },
   {
     id: "deleted", title: "Everything deleted (no palettes, path types or map folders)",

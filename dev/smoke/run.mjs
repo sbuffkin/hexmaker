@@ -279,7 +279,7 @@ async function runSetup(setup) {
       }
       // Only a map made with a slice built off is marked: never a map this build should open.
       const marked = state.maps.filter((m) => m.offSlice).map((m) => m.name);
-      if (marked.length && !setup.needsOff && !setup.mayMarkOffSlice) probs.push(`marked "made with a newer build": ${marked.join(", ")}`);
+      if (marked.length && !setup.needsOff) probs.push(`marked "made with a newer build": ${marked.join(", ")}`);
       const slow = opens.slice().sort((a, b) => b.ms - a.ms)[0];
       rec("C3-maps-open", probs.length === 0 && opens.length > 0, probs.join("; ") || `${opens.length} maps opened; slowest ${slow?.map} ${slow?.ms} ms`, { opens: opens.map((o) => [o.map, o.ms, o.hexes]) });
     }

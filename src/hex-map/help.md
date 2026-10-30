@@ -250,9 +250,9 @@ Every new terrain (from the terrain tool, the palette editor, a new palette or a
 
 If a map's folder and map note were deleted outside the plugin, the map isn't re-created empty. It shows with a ⚠ in the map list, and opening it shows **Restore** (puts its map note back from the last saved copy: hexes, paths and settings) and **Remove** (drops it from the list; no files are deleted).
 
-## Make a generator from a region
+<!-- slice:worldmaps -->## Make a generator from a region
 
-<!-- slice:worldmaps -->**Edit region… → Make generator…** (or right-click a map in **Maps**) learns a generator from the region as you painted it. Choose **New generator** or **Overwrite existing**; the list puts the region's own biome's generator and its parent biomes' first. Overwriting keeps a backup. A new generator gets a biome that copies the region's biome (climate, islands, transitions, shore, mix).
+**Edit region… → Make generator…** (or right-click a map in **Maps**) learns a generator from the region as you painted it. Choose **New generator** or **Overwrite existing**; the list puts the region's own biome's generator and its parent biomes' first. Overwriting keeps a backup. A new generator gets a biome that copies the region's biome (climate, islands, transitions, shore, mix).
 
 **Blend into <biome>…** (in Edit region's and the Maps right-click menu's Advanced) folds a region you edited by hand back into the biome it was made from. Set how much the map counts (25% this map, 75% the rest, by default) and check the preview of a fresh region. With a generator linked, the map is learned and merged into that generator; without one, its terrain mix, terrain split, land share and smoothing are blended into the biome's own settings (or choose **Make a generator instead…**). The old note is backed up first, only its tables and settings change, and a **Blend of** table records the map, its weight and the date. Needs Build or God.
 
