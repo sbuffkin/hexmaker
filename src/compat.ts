@@ -31,18 +31,28 @@ export function pluginVersion(plugin: { manifest?: { version?: string } }): stri
 }
 
 /**
- * Compare dotted versions ("1.5.10" > "1.5.9"). Unknown or malformed
- * versions sort first, so they're treated as the oldest.
+ * Compare dotted versions ("1.5.10" > "1.5.9"), a pre-release below its
+ * release ("2.0.0-rc.1" < "2.0.0"). Unknown or malformed versions sort
+ * first, so they're treated as the oldest.
  */
 export function compareVersions(a: string | undefined, b: string | undefined): number {
-  const parts = (v: string | undefined) => (v && /^\d+(\.\d+)*$/.test(v) ? v.split(".").map(Number) : null);
-  const pa = parts(a), pb = parts(b);
-  if (!pa || !pb) return pa ? 1 : pb ? -1 : 0;
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+  const read = (v: string | undefined) => {
+    const m = v ? /^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?$/.exec(v) : null;
+    return m ? { parts: m[1].split(".").map(Number), pre: m[2] } : null;
+  };
+  const pa = read(a), pb = read(b);
+  if (!pa && !pb) return 0;
+  if (!pa) return -1;
+  if (!pb) return 1;
+  const len = Math.max(pa.parts.length, pb.parts.length);
+  for (let i = 0; i < len; i++) {
+    const d = (pa.parts[i] ?? 0) - (pb.parts[i] ?? 0);
     if (d) return d;
   }
-  return 0;
+  if (pa.pre === pb.pre) return 0;
+  if (pa.pre === undefined) return 1;
+  if (pb.pre === undefined) return -1;
+  return pa.pre.localeCompare(pb.pre, undefined, { numeric: true });
 }
 
 /** Default palette for maps saved before maps had one. */

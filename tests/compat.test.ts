@@ -253,6 +253,10 @@ describe("compareVersions", () => {
     expect(compareVersions("1.5.10", "1.5.9")).toBeGreaterThan(0);
     expect(compareVersions("1.5.5", "1.5.5")).toBe(0);
     expect(compareVersions("unknown", "1.0.0")).toBeLessThan(0);
+    expect(compareVersions("2.0.0-rc.1", "2.0.0")).toBeLessThan(0);
+    expect(compareVersions("2.0.0-rc.1", "1.5.8")).toBeGreaterThan(0);
+    expect(compareVersions("2.0.0-rc.2", "2.0.0-rc.10")).toBeLessThan(0);
+    expect(compareVersions("2.0.0-rc.1", "2.0.0-rc.1")).toBe(0);
   });
 });
 

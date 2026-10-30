@@ -84,7 +84,7 @@ const context = await esbuild.context({
 	// manifest.json at build time: Obsidian keeps the manifest it read at startup,
 	// so plugin.manifest.version can be stale after an update without a restart.
 	define: {
-		__HEXMAKER_VERSION__: JSON.stringify(manifest.version),
+		__HEXMAKER_VERSION__: JSON.stringify(process.env.HEXMAKER_VERSION || manifest.version),
 		// The slice flags, and __HEXMAKER_SLICES__: the slices built on, as JSON text.
 		...sliceDefines(resolved),
 	},
