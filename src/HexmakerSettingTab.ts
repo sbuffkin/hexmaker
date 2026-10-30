@@ -17,7 +17,6 @@ import { noteTemplateEntries } from "./noteTemplates";
 import { renderLabeledSlider } from "./ui/sliders";
 import { DEBUG_CONFIRM_TEXT, debugModeConfirmed, isDebugMode, markDebugModeConfirmed, onDebugModeChange, setDebugMode } from "./ui/debugMode";
 import { hexPropsSettingItem } from "./settings/hexPropsSetting";
-import { addHexFieldSettings } from "./settings/hexFieldsSetting";
 import { ensureFolder } from "./vault/ensureFolder";
 
 /** The settings tab's surface id (placement ids are `Settings.<control>`). */
@@ -510,9 +509,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
         ],
       },
     ];
-    // Each module's settings (its folders and the rest), in the sections they name; then Hex fields (#52).
+    // Each module's settings (its folders and the rest), in the sections they name.
     addModuleSettings(sections, (c) => moduleSettingRow(c, this.plugin));
-    addHexFieldSettings(sections, (r) => r, this.plugin);
     this.watchDebugMode(() => this.refresh());
     return this.layoutDefinitions(sections);
   }

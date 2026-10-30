@@ -68,7 +68,7 @@ describe("contribution points: nothing contributed, nothing changes", () => {
     hideReal(["play"]);
     const plugin = {} as never;
     // The modules' folder settings come through as folder rows (World maps, Space, Hex flower).
-    for (const s of moduleSettings()) expect(s.control.type).toBe("folder");
+    for (const s of moduleSettings()) expect(["folder", "custom"]).toContain(s.control.type);
     withoutRealModules();
     expect(moduleViews()).toEqual([]);
     // With the real modules out (content packs included), nothing adds to the export form or the wizard.

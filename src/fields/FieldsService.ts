@@ -6,7 +6,7 @@
  *
  * - The world's declarations: `store` (the fields note, FieldStore).
  * - Filling: a hex that gets terrain has its blank fields worked out in the
- *   same write (MapStore → maps/fieldFill.ts, bound in ports.ts).
+ *   same write (MapStore → maps/fieldFill.ts, bound by the module runtime).
  * - Editing: `setValue` (the hex editor), gated `edit-fields` (Build).
  * - Recalculate fields: every hex with terrain on a map, keeping rolls or
  *   rolling again.
@@ -19,17 +19,18 @@
 import { TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexData } from "../maps/mapNote";
-import { FieldStore } from "../fields/FieldStore";
-import { typedOnHex, workOutHex, workOutMap, type MapFieldsInput } from "../fields/mapFields";
-import { linksUnderHeading, notePlaceType, placeTypes, terrainPlaces } from "../fields/places";
-import type { FieldDef } from "../fields/fieldTypes";
-import type { Place } from "../fields/influence";
-import type { FieldPass } from "../fields/hexFields";
+import { FieldStore } from "./FieldStore";
+import { typedOnHex, workOutHex, workOutMap, type MapFieldsInput } from "./mapFields";
+import { linksUnderHeading, notePlaceType, placeTypes, terrainPlaces } from "./places";
+import type { FieldDef } from "./fieldTypes";
+import type { Place } from "./influence";
+import type { FieldPass } from "./hexFields";
 import { rollForHex } from "../random-tables/hexRoll";
 import { hexDistance } from "../paths/router";
 import { hexPair } from "../hexKey";
 import { canonicalSection } from "../sections";
 import { guardWrite } from "../modeGate";
+import type { ModuleStore } from "../modules/types";
 
 const HEX_NOTE = /^(-?\d+)_(-?\d+)$/;
 
@@ -46,6 +47,20 @@ export class FieldsService {
   constructor(private plugin: HexmakerPlugin) {
     this.store = new FieldStore(plugin);
     this.store.onChange(() => this.placeCache.clear());
+  }
+
+  /** What the plugin's vault events reach (the store's own start is `init`, once the map store is in). */
+  moduleStore(): ModuleStore & { service: FieldsService } {
+    return {
+      id: "hex-fields",
+      service: this,
+      init: () => Promise.resolve(),
+      onCreate: (f) => this.store.onModify(f),
+      onModify: (f) => this.store.onModify(f),
+      onDelete: (f) => this.store.onDelete(f),
+      onRename: (f, oldPath) => this.store.onRename(f, oldPath),
+      onMetadataChanged: () => this.onMetadataChanged(),
+    };
   }
 
   /** Start: read the fields note; forget a map's places whenever it changes. */

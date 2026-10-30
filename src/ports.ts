@@ -25,7 +25,7 @@ import { setNumberBoxDebug } from "./ui/numberBoxes";
 import { defaultIconPack } from "./utils";
 
 /** What the ports read from the plugin. */
-export type PortsHost = Pick<HexmakerPlugin, "settings" | "app" | "mapStore" | "arrival" | "getMap" | "getPaletteOrPresetTerrains"> & { fields?: Pick<HexmakerPlugin["fields"], "fillFor"> };
+export type PortsHost = Pick<HexmakerPlugin, "settings" | "app" | "mapStore" | "arrival" | "getMap" | "getPaletteOrPresetTerrains">;
 
 /** Point every plugin-fed port at `plugin`. */
 export function bindPorts(plugin: PortsHost): void {
@@ -40,9 +40,6 @@ export function bindPorts(plugin: PortsHost): void {
 	setModeMapLookup((name) => plugin.getMap(name));
 	// The first hand edit of a new (open) place locks it (ArrivalService.lockOnHandEdit).
 	setHandEditListener((name) => plugin.arrival.lockOnHandEdit(name));
-	// A hex that gets terrain has its blank hex fields worked out in the same write (#52).
-	const fields = plugin.fields;
-	setFieldFiller(fields ? (map, key, h) => fields.fillFor(map, key, h) : null);
 }
 
 /** Every port back to its module default (nothing bound). */

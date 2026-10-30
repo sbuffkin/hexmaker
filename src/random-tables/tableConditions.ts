@@ -10,10 +10,9 @@
  *
  * - Conditions are `key: value`, separated by `;`. A comma lists choices
  *   (any of them fits). Every condition must fit.
- * - Keys: type (terrain types), terrain (the parent hex's terrain) and
- *   near (`near: town 2`: a place of that type within 2 hexes; hex fields,
- *   src/fields/places.ts) are the core's; modules add theirs (Space: zone,
- *   ring, star; World maps: temperature), see TableConditionDef.
+ * - Keys: type (terrain types) and terrain (the parent hex's terrain) are
+ *   the core's; modules add theirs (Space: zone, ring, star; World maps:
+ *   temperature; Hex fields: near), see TableConditionDef.
  * - A key the roller doesn't know about here (no star, say) lets the row
  *   through, so a hand roll and the Tables view roll every row.
  * - An unknown key, or a value that can't be read, is reported and that
@@ -61,38 +60,14 @@ const list = (raw: string) => raw.split(/\s*,\s*/).map(lc).filter((s) => s !== "
 /** The core's list keys. */
 const CORE_LIST_KEYS = ["type", "terrain"] as const;
 
-/** `near: town 2` (also `near: town, city 3`; no number = 1): a place of one of the types within that many hexes. */
-export const NEAR_CONDITION: TableConditionDef = {
-  key: "near",
-  aliases: ["within"],
-  read(value) {
-    const m = /^(.*?)(?:\s+(\d+))?$/.exec(value.trim());
-    const types = list(m?.[1] ?? "");
-    if (!types.length) return undefined;
-    return { types, radius: m?.[2] ? Number(m[2]) : 1 };
-  },
-  fits(read, known) {
-    const { types, radius } = read as { types: string[]; radius: number };
-    if (!Array.isArray(known)) return true;
-    return (known as { type: string; distance: number }[]).some((p) => types.includes(lc(p.type)) && p.distance <= radius);
-  },
-  format(read) {
-    const { types, radius } = read as { types: string[]; radius: number };
-    return `${types.join(", ")} ${radius}`;
-  },
-};
-
-/** The core's own keys with a reading (the list keys aside). */
-const CORE_DEFS: readonly TableConditionDef[] = [NEAR_CONDITION];
-
 /** A condition (the core's or a module's) for a key or one of its aliases (singular, lower case). */
 function conditionDef(key: string): TableConditionDef | undefined {
-  return [...CORE_DEFS, ...registry.tableConditions()].find((d) => d.key === key || (d.aliases ?? []).includes(key));
+  return registry.tableConditions().find((d) => d.key === key || (d.aliases ?? []).includes(key));
 }
 
 /** Every key a When cell may use: the core's and each module's, in module order. */
 export function conditionKeys(): string[] {
-  return [...registry.tableConditions().map((d) => d.key), ...CORE_LIST_KEYS, ...CORE_DEFS.map((d) => d.key)];
+  return [...registry.tableConditions().map((d) => d.key), ...CORE_LIST_KEYS];
 }
 
 /** One `key: value` → a condition (key "unknown" when it can't be read). */

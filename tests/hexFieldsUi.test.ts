@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { compareFieldValues, filtersLabel, matchesFieldFilters, nextSort, rowValues, sortField, sortLabel, type FieldFilters } from "../src/hex-table/view/fieldColumns";
+import { nextSort, sortLabel } from "../src/hex-table/view/tableSort";
+import { compareFieldValues, filtersLabel, matchesFieldFilters, rowValues, type FieldFilters } from "../src/fields/fieldColumns";
 import { FieldStore } from "../src/fields/FieldStore";
 import { recalcSummary } from "../src/fields/RecalculateFieldsModal";
 import type { FieldDef } from "../src/fields/fieldTypes";
@@ -21,7 +22,6 @@ describe("hex table: field columns, sorting and filters", () => {
 		expect(seen).toEqual(["Sort: xy", "Sort: yx", "Sort: type", "Sort: Population", "Sort: Crop"]);
 		// A field that was removed: back to the start.
 		expect(nextSort("field:Gone", fields)).toBe("x");
-		expect(sortField("field:population", fields)).toBe(POP);
 	});
 
 	it("compares by size, by choice order, by text; blanks last", () => {
@@ -45,11 +45,11 @@ describe("hex table: field columns, sorting and filters", () => {
 		expect(filtersLabel(new Map([["ruler", {}], ["crop", { equals: "Rye" }]]))).toBe("Fields: 1 set");
 	});
 
-	it("the view uses the field helpers (columns after Type, filters, sort)", () => {
+	it("the view asks the modules' parts (columns after Type, filters, sort)", () => {
 		const src = readSurface("hex-table");
-		expect(src).toMatch(/renderFieldHeaders\(headerRow/);
-		expect(src).toMatch(/renderFieldCells\(tr,/);
-		expect(src).toMatch(/matchesFieldFilters\(valuesOfRow\(tr\)/);
+		expect(src).toMatch(/part\.headers\(headerRow\)/);
+		expect(src).toMatch(/part\.cells\(tr,/);
+		expect(src).toMatch(/p\.passes\(tr\)/);
 		expect(src).toMatch(/nextSort\(this\.sortPrimary/);
 	});
 });

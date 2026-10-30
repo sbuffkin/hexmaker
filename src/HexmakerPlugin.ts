@@ -46,7 +46,6 @@ import type {
 } from "./types";
 import { clearPendingTerrain } from "./frontmatter";
 import { MapStore } from "./maps/MapStore";
-import { FieldsService } from "./services/FieldsService";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
@@ -121,8 +120,6 @@ export default class HexmakerPlugin extends Plugin {
   events = new EventsService(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
-  /** Custom hex fields (#52): the world's fields note, fills, Recalculate (src/services/FieldsService.ts). */
-  readonly fields = new FieldsService(this);
   /** What each hex note's Map data callout last showed (phase 2: tells a hand edit from a stale copy). */
   calloutMemory = new CalloutMemory(() => this.app.vault.adapter, () => this.manifest.dir ?? "");
   /** Hex notes' terrain/area/icon/name properties, both ways (MG4, src/maps/hexPropsSync.ts). */

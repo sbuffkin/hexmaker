@@ -10,18 +10,19 @@
  * all while the world has no fields.
  */
 
-import { Fold } from "../../ui/disclosure";
-import { canDo } from "../../modeGate";
-import { lockedHint } from "../../workMode";
-import { hexKey } from "../../hexKey";
-import { isNumeric, isValidValue, normalizeValue, type FieldDef } from "../../fields/fieldTypes";
-import { FIELD_ROLLS_COLUMN, getField, readRolls } from "../../fields/hexFields";
-import { EditorWritePart, bumpFieldSeq } from "./host";
+import { Fold } from "../ui/disclosure";
+import { canDo } from "../modeGate";
+import { lockedHint } from "../workMode";
+import { hexKey } from "../hexKey";
+import { isNumeric, isValidValue, normalizeValue, type FieldDef } from "./fieldTypes";
+import { FIELD_ROLLS_COLUMN, getField, readRolls } from "./hexFields";
+import { EditorWritePart, bumpFieldSeq } from "../hex-map/editor/host";
+import { fieldsOf } from "./context";
 
 export class FieldsSection extends EditorWritePart {
   /** Draw the section into `container` (nothing when the world has no fields). */
   render(container: HTMLElement): void {
-    const fields = this.plugin.fields.fields();
+    const fields = fieldsOf(this.plugin)?.fields() ?? [];
     if (!fields.length) return;
     container.createEl("hr", { cls: "duckmage-editor-divider" });
     const fold = new Fold(container, { title: "Fields", cls: "duckmage-editor-fields" });
@@ -45,11 +46,11 @@ export class FieldsSection extends EditorWritePart {
         row.createSpan({ text: value || f.default || "–", cls: "duckmage-editor-field-value", attr: { id, title: f.formula ? `= ${f.formula}` : title } });
         continue;
       }
-      const save = (raw: string) => this.write(body, fields, () => this.plugin.fields.setValue(this.mapName, key, f.name, raw));
+      const save = (raw: string) => this.write(body, fields, () => fieldsOf(this.plugin)!.setValue(this.mapName, key, f.name, raw));
       this.input(row, f, id, value, title, save);
       if (f.table) {
         const roll = row.createEl("button", { text: "🎲", cls: "duckmage-editor-field-roll", attr: { title: `Roll ${f.name} again` } });
-        roll.addEventListener("click", () => this.write(body, fields, () => this.plugin.fields.rollField(this.mapName, key, f.name)));
+        roll.addEventListener("click", () => this.write(body, fields, () => fieldsOf(this.plugin)!.rollField(this.mapName, key, f.name)));
       }
     }
     if (!editable) body.createDiv({ cls: "duckmage-editor-mode-locked", text: lockedHint("edit-fields") });

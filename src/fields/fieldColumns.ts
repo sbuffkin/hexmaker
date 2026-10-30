@@ -10,33 +10,9 @@
  * Pure except for drawing cells on elements it's given (no Obsidian imports).
  */
 
-import type { HexData } from "../../maps/mapNote";
-import { isNumeric, readNumber, normalizeValue, type FieldDef } from "../../fields/fieldTypes";
-import { shownValue } from "../../fields/hexFields";
-
-export type SortMode = "x" | "y" | "type" | `field:${string}`;
-
-/** The sort button's label. */
-export function sortLabel(mode: SortMode): string {
-  if (mode === "x") return "Sort: xy";
-  if (mode === "y") return "Sort: yx";
-  if (mode === "type") return "Sort: type";
-  return `Sort: ${mode.slice("field:".length)}`;
-}
-
-/** The next sort: xy → yx → type → each field in order → xy. */
-export function nextSort(mode: SortMode, fields: readonly Pick<FieldDef, "name">[]): SortMode {
-  const order: SortMode[] = ["x", "y", "type", ...fields.map((f) => `field:${f.name}` as SortMode)];
-  const i = order.findIndex((m) => m.toLowerCase() === mode.toLowerCase());
-  return order[(i + 1) % order.length] ?? "x";
-}
-
-/** The field a sort mode sorts by, if any. */
-export function sortField(mode: SortMode, fields: readonly FieldDef[]): FieldDef | undefined {
-  if (!mode.startsWith("field:")) return undefined;
-  const name = mode.slice("field:".length).toLowerCase();
-  return fields.find((f) => f.name.toLowerCase() === name);
-}
+import type { HexData } from "../maps/mapNote";
+import { isNumeric, readNumber, normalizeValue, type FieldDef } from "./fieldTypes";
+import { shownValue } from "./hexFields";
 
 /** Two shown values in field order: numbers by size (blank last), the rest by text. */
 export function compareFieldValues(f: FieldDef, a: string, b: string): number {

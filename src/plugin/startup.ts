@@ -51,8 +51,6 @@ export function startOnLayoutReady(plugin: HexmakerPlugin, newerData: string | n
   if (gate.held) plugin.settings.palettesMigrated = true;
   const storesReady = gate.wait.then(() => plugin.paletteStore.init()).then(() => plugin.mapStore.init());
   plugin.storesStarted = storesReady;
-  // The world's hex fields note (#52): read once the map store is in; it writes nothing by itself.
-  void storesReady.then(() => plugin.fields.init()).catch((e) => logError("hex fields", e));
   // Each module's one-time upgrades once its stores and the core's are in
   // (World maps, BC1: every overworld hex's biome in its Biome column).
   runAfterStoresReady(plugin, storesReady, plugin.moduleStores, storeReady);

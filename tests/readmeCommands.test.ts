@@ -29,8 +29,8 @@ const mentioned = [...readme.matchAll(new RegExp(`${escaped}([^*"\\n|]+?)(?=\\*\
 
 describe("README command names", () => {
 	it("finds the registered commands, the modules' too", () => {
-		// Read per module folder, in name order (gen-page, packs, play, space, world, world-maps).
-		expect(fromModules).toEqual(["Open terrain generator", "Export content pack…", "Import content pack…", "Open today's play log", "Edit world types…", "Convert world types to tables", "New overworld…"]);
+		// Read per module folder, in name order (fields, gen-page, packs, play, space, world, world-maps).
+		expect(fromModules).toEqual(["Recalculate fields", "Open terrain generator", "Export content pack…", "Import content pack…", "Open today's play log", "Edit world types…", "Convert world types to tables", "New overworld…"]);
 		expect(registered.length).toBeGreaterThan(5);
 		expect(registered).toContain("Export current map…");
 	});

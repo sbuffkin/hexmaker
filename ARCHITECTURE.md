@@ -255,7 +255,7 @@ Map types and whole features are **modules** (owner calls CM1–CM8, plan `plan-
 | `worldgen/` | Generator registry and engines, `NewMapSetupModal`, previews, the saves format |
 | `overworld/`, `space/`, `hexflower/` | Module code: World maps (biomes, regions, overworld layer), Space (orbits, star scatter, world types), hex flowers |
 | `random-tables/` | `RandomTableView`, parse/roll (`randomTable.ts`, `resolve.ts`), `TableStore`, `TableNotes`, roller block, workflows |
-| `fields/` | Custom hex fields (#52): the world's fields note (`fieldsNote.ts`, `FieldStore`), types, formulas, place influences, `near:` places, a hex / a map worked out (`hexFields.ts`, `mapFields.ts`); the plugin half is `services/FieldsService.ts`, the fill hook `maps/fieldFill.ts` |
+| `fields/` | The `fields` slice (module `modules/fields/`). Custom hex fields (#52): the world's fields note (`fieldsNote.ts`, `FieldStore`), types, formulas, place influences, `near:` places, a hex / a map worked out (`hexFields.ts`, `mapFields.ts`); the plugin half is `services/FieldsService.ts`, the fill hook `maps/fieldFill.ts` |
 | `palettes/` | `PaletteStore`, `paletteNote.ts`, `pathTypeTable.ts`, presets, palette editor view, renames |
 | `paths/` | `PathsService`, router, route cache and pins, edits and gates, path columns, legacy readers |
 | `arrival/` | Places made on arrival, events ledgers (Solo play is `modules/play/`) |

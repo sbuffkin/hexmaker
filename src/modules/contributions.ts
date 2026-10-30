@@ -14,6 +14,8 @@ import type { Setting, View, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapPdfExportOptions } from "../export/exporters/mapWithTable";
 import type { ModeAction, WorkMode } from "../workMode";
+import type { EditorWriteHost } from "../hex-map/editor/host";
+import type { HexData } from "../maps/mapNote";
 
 /** A module's rows of the work-mode tables (src/workMode.ts); ids never shadow the core's. */
 export interface ModeActionContributions {
@@ -174,4 +176,32 @@ export interface LogWriterContribution {
   label: string;
   title: string;
   open(plugin: HexmakerPlugin, at: { map: string; x: number; y: number }): void;
+}
+
+/** A section a module adds to the hex editor, made once per editor, drawn after Terrain. */
+export interface HexEditorSectionContribution {
+  id: string;
+  create(host: EditorWriteHost): { render(container: HTMLElement): void };
+}
+
+/** What a module adds to one hex table: its columns, sorts and filters. Made once per table view. */
+export interface HexTablePart {
+  /** More words for the sort button's tooltip (", then each hex field"). */
+  sortHint?: string;
+  /** Its toolbar controls; `filtersChanged` applies the filters again. */
+  toolbar(el: HTMLElement, filtersChanged: () => void): void;
+  /** Reset to no filters. */
+  clearFilters(): void;
+  /** The sorts it adds after the core's, by name. */
+  sortNames(): readonly string[];
+  /** Tell the table when its columns change; returns how to stop. */
+  onChange(columnsChanged: () => void): () => void;
+  /** Its header cells, after the core's. */
+  headers(row: HTMLElement): void;
+  /** Its cells for one row, after the core's. */
+  cells(tr: HTMLElement, h: HexData | undefined): void;
+  /** Does this row pass its filters? */
+  passes(tr: HTMLElement): boolean;
+  /** How to compare two hexes for sort `name`; undefined when it isn't one of its sorts. */
+  comparer(name: string): ((a: HexData | undefined, b: HexData | undefined) => number) | undefined;
 }

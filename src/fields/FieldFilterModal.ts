@@ -5,8 +5,8 @@
  */
 
 import type { App } from "obsidian";
-import { HexmakerModal } from "../../HexmakerModal";
-import { isNumeric, type FieldDef } from "../../fields/fieldTypes";
+import { HexmakerModal } from "../HexmakerModal";
+import { isNumeric, type FieldDef } from "./fieldTypes";
 import type { FieldFilter, FieldFilters } from "./fieldColumns";
 
 export class FieldFilterModal extends HexmakerModal {

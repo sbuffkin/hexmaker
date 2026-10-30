@@ -8,6 +8,7 @@
     "manual": { "docs": true, "define": "__SLICE_MANUAL__", "modules": ["manual"], "released": true, "requires": [] },
     "play": { "docs": true, "define": "__SLICE_PLAY__", "modules": ["play"], "released": false, "requires": [] },
     "hexflower": { "docs": true, "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false, "requires": ["genpage", "play"] },
-    "packs": { "docs": true, "define": "__SLICE_PACKS__", "modules": ["packs"], "released": false, "requires": [] }
+    "packs": { "docs": true, "define": "__SLICE_PACKS__", "modules": ["packs"], "released": false, "requires": [] },
+    "fields": { "docs": true, "define": "__SLICE_FIELDS__", "modules": ["fields"], "released": false, "requires": [] }
   }
 }

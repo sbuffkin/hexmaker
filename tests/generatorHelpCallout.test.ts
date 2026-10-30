@@ -54,7 +54,7 @@ describe("generator help callout", () => {
       settings: { worldFolder: "W" },
       app: { vault: { getMarkdownFiles: () => Object.keys(notes).map((path) => ({ path })), cachedRead: async (f: { path: string }) => notes[f.path] } },
     } as never;
-    await generatorHelpCallout.plan(host, (path: string) => planned.push(path));
+    await generatorHelpCallout.plan(host, (path: string) => void planned.push(path), {} as never);
     expect(planned).toEqual(["W/generators/a.md"]);
   });
 });

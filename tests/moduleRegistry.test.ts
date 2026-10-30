@@ -37,9 +37,9 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps, space, gen-page, play, hex-flower, packs and manual (those built), in that order", () => {
+  it("registers world, world-maps, space, gen-page, play, hex-flower, packs, manual and fields (those built), in that order", () => {
     // Play before Hex flower: a step is marked visited before exploring reads it.
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "play", "hex-flower", "packs", "manual"].filter(moduleOn));
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "play", "hex-flower", "packs", "manual", "fields"].filter(moduleOn));
     expect(registry.kindIds()).toEqual(["world", "space"].filter(moduleOn));
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();
@@ -220,7 +220,7 @@ describe("generators, engines and table roles through modules (P3)", () => {
   itWith(EVERY, "path roles and When keys come from the modules", async () => {
     const { conditionKeys, parseWhen, formatWhen } = await import("../src/random-tables/tableConditions");
     expect(registry.pathRoles()).toEqual({ routes: "Path type for routes", orbits: "Path type for orbits" });
-    expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "from", "type", "terrain", "near"]);
+    expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "from", "near", "type", "terrain"]);
     // Aliases read as the module's key.
     expect(formatWhen(parseWhen("orbit: outer; distance: 2-3; temp: cold"))).toBe("zone: outer; ring: 2–3; temperature: 0–0.2");
   });
@@ -238,6 +238,7 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
       ...(sliceOn("play") ? [["open-play-log", null]] : []), // Solo play
       // Content packs, when built: any vault.
       ...(sliceOn("packs") ? [["export-content-pack", null], ["import-content-pack", null]] : []),
+      ...(sliceOn("fields") ? [["recalculate-fields", null]] : []), // Hex fields
     ]);
     expect(moduleFolderSettings().map((d) => [d.id, d.key])).toEqual([
       ["Settings.biomesFolder", "biomesFolder"],

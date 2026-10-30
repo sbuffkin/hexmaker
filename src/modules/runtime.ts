@@ -24,7 +24,9 @@ import type {
   TokenMenuContribution,
   ViewContribution,
   WizardOfferContribution,
+  HexEditorSectionContribution,
   HexMenuContribution,
+  HexTablePart,
   PartyAt,
   PartyControl,
   PartyStep,
@@ -43,6 +45,7 @@ import type {
 import type { TableSource } from "../worldgen/tableRoles";
 import type { PackKind } from "./packs/packKinds";
 import type { UndoItem } from "../hex-map/undoItems";
+import type { EditorWriteHost } from "../hex-map/editor/host";
 import type { MapData } from "../types";
 import { registry } from "./index";
 import { setActiveRuntimes } from "./active";
@@ -54,6 +57,7 @@ import { playRuntime } from "./play/runtime";
 import { hexFlowerRuntime } from "./hex-flower/runtime";
 import { packsRuntime } from "./packs/runtime";
 import { manualRuntime } from "./manual/runtime";
+import { fieldsRuntime } from "./fields/runtime";
 
 /** The runtime halves, by the same slice flags as ./index.ts. */
 const compiled: ModuleRuntime[] = [worldRuntime];
@@ -65,6 +69,7 @@ if (__SLICE_PLAY__) compiled.push(playRuntime);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
 if (__SLICE_PACKS__) compiled.push(packsRuntime);
 if (__SLICE_MANUAL__) compiled.push(manualRuntime);
+if (__SLICE_FIELDS__) compiled.push(fieldsRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 setActiveRuntimes(MODULE_RUNTIMES);
 // genPage() and worldMaps() live in ./active.ts so module code can call them without importing this file.
@@ -240,6 +245,16 @@ export async function runOnEnabled(plugin: HexmakerPlugin, kinds: readonly strin
     const kind = registry.module(m.id)?.kind?.id;
     if (kind && kinds.includes(kind)) await m.onEnabled?.(plugin);
   }
+}
+
+/** The modules' hex editor sections for one editor, in module order. */
+export function moduleHexEditorSections(host: EditorWriteHost): { render(container: HTMLElement): void }[] {
+  return MODULE_RUNTIMES.flatMap((m) => (m.hexEditor ?? []).map((s: HexEditorSectionContribution) => s.create(host)));
+}
+
+/** The modules' parts of one hex table view, in module order. */
+export function moduleHexTableParts(plugin: HexmakerPlugin): HexTablePart[] {
+  return MODULE_RUNTIMES.flatMap((m) => (m.hexTable ? [m.hexTable(plugin)] : []));
 }
 
 /** Every module's map overlays, in module order (map view and PNG export). */

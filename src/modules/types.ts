@@ -46,6 +46,8 @@ import type {
   TokenMenuContribution,
   ViewContribution,
   WizardOfferContribution,
+  HexEditorSectionContribution,
+  HexTablePart,
 } from "./contributions";
 
 // The contribution points of ./contributions.ts, also importable from here.
@@ -341,6 +343,8 @@ export interface ModuleStore {
   onModify?(f: TAbstractFile): void;
   onDelete?(f: TAbstractFile): void;
   onRename?(f: TAbstractFile, oldPath: string): void;
+  /** A note's metadata changed (any note). */
+  onMetadataChanged?(): void;
 }
 
 /** A command a module adds (registered only when the module is compiled in). */
@@ -763,6 +767,10 @@ export interface ModuleRuntime {
   play?: PlayHooks;
   /** Items for a hex's right-click menu on map `map` (none: an empty list). */
   hexMenu?(plugin: HexmakerPlugin, map: string, hex: string): HexMenuContribution[];
+  /** Sections of the hex editor. */
+  hexEditor?: readonly HexEditorSectionContribution[];
+  /** Its part of a hex table view, made once per view. */
+  hexTable?(plugin: HexmakerPlugin): HexTablePart;
   /** More hexes the map's "?" layer marks (the uncharted layer). */
   unchartedKeys?(plugin: HexmakerPlugin, map: string): Iterable<string>;
   /** Tabs of the generator page's library. */

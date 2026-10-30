@@ -21,6 +21,7 @@ import { playModule } from "./play";
 import { hexFlowerModule } from "./hex-flower";
 import { packsModule } from "./packs";
 import { manualModule } from "./manual";
+import { fieldsModule } from "./fields";
 
 // Plain `if`s on the flags: esbuild drops a false branch (and so the
 // module) without minifying; a ternary inside an array isn't folded.
@@ -32,6 +33,7 @@ if (__SLICE_PLAY__) compiled.push(playModule);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerModule);
 if (__SLICE_PACKS__) compiled.push(packsModule);
 if (__SLICE_MANUAL__) compiled.push(manualModule);
+if (__SLICE_FIELDS__) compiled.push(fieldsModule);
 
 export const MODULES: readonly HexmakerModule[] = compiled;
 

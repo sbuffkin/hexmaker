@@ -27,9 +27,8 @@ import {
 } from "./terrainTypeFilter";
 import { uniqueMapsByName } from "../maps/mapTree";
 import { hexKey } from "../hexKey";
-import { shownValue } from "../fields/hexFields";
-import { FieldFilterModal } from "./view/FieldFilterModal";
-import { compareFieldValues, filtersLabel, matchesFieldFilters, nextSort, renderFieldCells, renderFieldHeaders, sortField, sortLabel, valuesOfRow, type FieldFilters, type SortMode } from "./view/fieldColumns";
+import { nextSort, sortLabel, type SortMode } from "./view/tableSort";
+import { moduleHexTableParts } from "../modules/runtime";
 
 /** The "has a …" filters: a link section the row must link something in. */
 const HAS_FILTERS = [["towns", "Town", "Towns"], ["dungeons", "Dungeon", "Dungeons"], ["features", "Feature", "Features"], ["quests", "Quest", "Quests"], ["factions", "Faction", "Factions"]] as const;
@@ -82,8 +81,8 @@ export class HexTableView extends ItemView {
   private filterExcludeTypes = new Set<string>();
   /** Link sections a row must have something in ("has a …" checkboxes). */
   private filterHas = new Set<string>();
-  /** Hex field filters (view/fieldColumns.ts). */
-  private fieldFilters: FieldFilters = new Map();
+  /** What modules add to the table (columns, sorts, filters). */
+  private readonly parts = moduleHexTableParts(this.plugin);
   private mapFilter = "all";
   /** Column names for link sections, per the shown maps' type (G4b). */
   private words: SectionWordsFn | null = null;
@@ -98,7 +97,6 @@ export class HexTableView extends ItemView {
   private filterYMaxInput: HTMLInputElement | null = null;
   private terrainFilterBtn: HTMLButtonElement | null = null;
   private hasBoxes: HTMLInputElement[] = [];
-  private fieldFilterBtn: HTMLButtonElement | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -215,13 +213,7 @@ export class HexTableView extends ItemView {
       });
       this.hasBoxes.push(cb);
     }
-    // Hex field filters (#52): only while the world has fields.
-    this.fieldFilterBtn = toolbar.createEl("button", { text: filtersLabel(this.fieldFilters), cls: "duckmage-filter-btn duckmage-field-filter-btn" });
-    this.fieldFilterBtn.toggle(this.plugin.fields.fields().length > 0);
-    this.fieldFilterBtn.addEventListener("click", () => new FieldFilterModal(this.app, this.plugin.fields.fields(), this.fieldFilters, () => {
-      this.fieldFilterBtn?.setText(filtersLabel(this.fieldFilters));
-      this.applyFilters();
-    }).open());
+    for (const part of this.parts) part.toolbar(toolbar, () => this.applyFilters());
 
     toolbar.createDiv({ cls: "duckmage-filter-separator" });
 
@@ -255,9 +247,9 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-btn",
     });
     this.sortPrimaryBtn.title =
-      "Cycle sort order: X first, y first, terrain type, then each hex field";
+      `Cycle sort order: X first, y first, terrain type${this.parts.map((p) => p.sortHint ?? "").join("")}`;
     this.sortPrimaryBtn.addEventListener("click", () => {
-      this.sortPrimary = nextSort(this.sortPrimary, this.plugin.fields.fields());
+      this.sortPrimary = nextSort(this.sortPrimary, this.parts.flatMap((p) => p.sortNames()).map((name) => ({ name })));
       this.sortPrimaryBtn!.setText(sortLabel(this.sortPrimary));
       void this.loadTable();
     });
@@ -291,11 +283,8 @@ export class HexTableView extends ItemView {
       cls: "duckmage-hex-table-empty",
     });
 
-    // The world's hex fields changed (#52): new columns, the filter button.
-    this.register(this.plugin.fields.store.onChange(() => {
-      this.fieldFilterBtn?.toggle(this.plugin.fields.fields().length > 0);
-      void this.loadTable();
-    }));
+    // A module's columns changed.
+    for (const part of this.parts) this.register(part.onChange(() => void this.loadTable()));
     // ── Vault event listeners ─────────────────────────────────────────────
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
@@ -448,15 +437,15 @@ export class HexTableView extends ItemView {
         typeOf.set(f.path, this.resolveHexTerrain(f.path, f.region).type);
       }
     }
-    // Field sort (#52): by the field's shown value, then x, y.
-    const byField = sortField(this.sortPrimary, this.plugin.fields.fields());
-    const fieldOf = (f: { x: number; y: number; region: string }) => (byField ? this.plugin.mapStore.get(f.region, hexKey(f.x, f.y))?.extra : undefined);
+    // A module's sort, then x, y.
+    const addedSort = this.sortPrimary.startsWith("field:") ? this.parts.map((p) => p.comparer(this.sortPrimary.slice("field:".length))).find((c) => c) : undefined;
+    const hexOf = (f: { x: number; y: number; region: string }) => this.plugin.mapStore.get(f.region, hexKey(f.x, f.y));
     files.sort((a, b) => {
       let diff = 0;
       if (this.sortPrimary === "type") {
         diff = compareTerrainTypes(typeOf.get(a.path)!, typeOf.get(b.path)!);
-      } else if (byField) {
-        diff = compareFieldValues(byField, shownValue({ extra: fieldOf(a) }, byField), shownValue({ extra: fieldOf(b) }, byField));
+      } else if (addedSort) {
+        diff = addedSort(hexOf(a), hexOf(b));
       }
       if (diff === 0) {
         const p = this.sortPrimary === "y" ? "y" : "x";
@@ -499,7 +488,7 @@ export class HexTableView extends ItemView {
     headerRow.createEl("th", { text: "Hex" });
     headerRow.createEl("th", { text: "Terrain" });
     headerRow.createEl("th", { text: "Type" });
-    renderFieldHeaders(headerRow, this.plugin.fields.fields());
+    for (const part of this.parts) part.headers(headerRow);
     const words = this.sectionWords();
     this.words = words;
     // The "has a …" filters follow too.
@@ -601,8 +590,7 @@ export class HexTableView extends ItemView {
     this.filterTypes = new Set();
     this.filterExcludeTypes = new Set();
     this.filterHas.clear();
-    this.fieldFilters.clear();
-    this.fieldFilterBtn?.setText(filtersLabel(this.fieldFilters));
+    for (const part of this.parts) part.clearFilters();
 
     if (this.filterXMinInput) this.filterXMinInput.value = "";
     if (this.filterXMaxInput) this.filterXMaxInput.value = "";
@@ -632,7 +620,6 @@ export class HexTableView extends ItemView {
       types: this.filterTypes,
       excludeTypes: this.filterExcludeTypes,
     };
-    const fields = this.plugin.fields.fields();
     for (const tr of rows ?? Array.from(tbody.rows)) {
       const x = Number(tr.dataset.hexX);
       const y = Number(tr.dataset.hexY);
@@ -650,7 +637,7 @@ export class HexTableView extends ItemView {
       if (this.filterYMax !== null && y > this.filterYMax) show = false;
       if (!matchesTerrainFilter(terrainRow, terrainFilter)) show = false;
       for (const key of this.filterHas) if (!has.has(key)) show = false;
-      if (!matchesFieldFilters(valuesOfRow(tr), this.fieldFilters, fields)) show = false;
+      if (!this.parts.every((p) => p.passes(tr))) show = false;
 
       tr.classList.toggle("duckmage-row-hidden", !show);
     }
@@ -757,7 +744,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-hex-table-cell-clickable",
     });
     const typeTd = tr.createEl("td");
-    renderFieldCells(tr, this.plugin.mapStore.get(region, hexKey(x, y)), this.plugin.fields.fields());
+    for (const part of this.parts) part.cells(tr, this.plugin.mapStore.get(region, hexKey(x, y)));
     // Renders terrain + type and refreshes the row's filter data, so a pick
     // shows at once (the vault modify event re-renders the row again later).
     const renderTerrainCell = () => {

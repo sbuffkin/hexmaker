@@ -11,7 +11,8 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { HexmakerModal } from "../HexmakerModal";
 import { lockedHint } from "../workMode";
 import { canDo } from "../modeGate";
-import type { RecalcReport } from "../services/FieldsService";
+import { fieldsOf } from "./context";
+import type { RecalcReport } from "./FieldsService";
 
 /** The notice after a recalculation. */
 export function recalcSummary(map: string, r: RecalcReport): string {
@@ -31,7 +32,7 @@ export class RecalculateFieldsModal extends HexmakerModal {
     this.titleEl.setText(`Recalculate fields: ${this.mapName}`);
     const { contentEl } = this;
     contentEl.addClass("duckmage-recalc-fields-modal");
-    const fields = this.plugin.fields.fields();
+    const fields = fieldsOf(this.plugin)?.fields() ?? [];
     if (!fields.length) {
       contentEl.createEl("p", { text: "This world has no hex fields yet. Add some in the plugin's settings." });
       this.footer({ cancel: { text: "Close", onClick: () => this.close() } });
@@ -48,7 +49,7 @@ export class RecalculateFieldsModal extends HexmakerModal {
     contentEl.createEl("p", { text: "Undo puts the hexes back." });
     const run = (pass: "modifiers" | "reroll") => {
       this.close();
-      void this.plugin.fields.recalculate(this.mapName, pass).then((r) => new Notice(recalcSummary(this.mapName, r)));
+      void fieldsOf(this.plugin)!.recalculate(this.mapName, pass).then((r) => new Notice(recalcSummary(this.mapName, r)));
     };
     this.footer({
       primary: { text: "Update places", onClick: () => run("modifiers"), cls: "duckmage-recalc-modifiers" },

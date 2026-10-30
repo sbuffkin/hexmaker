@@ -137,10 +137,10 @@ describe("re-learn keeps the user's text", () => {
   it("settings it no longer has go; a source key the re-made model dropped goes", () => {
     const m: HexWfcModel = { name: "x", terrains: [{ name: "Grass", weight: 1 }], adjacency: [{ a: "Grass", b: "Grass", weight: 1 }], meta: { "source-influence": "60 + 40", mine: "keep" } };
     const plugin = { settings: { worldFolder: "world" }, app: { vault: { getAbstractFileByPath: () => null } } } as never;
-    const old = generatorText(plugin, { ...m, settings: { clumping: 0.5 } });
+    const old = generatorText(plugin, { ...m, settings: { featureSize: 2 } });
     const next = updateGeneratorNote(old, generatorText(plugin, { ...m, meta: { mine: "keep" } }));
     expect(next).not.toContain("source-influence");
-    expect(next).not.toMatch(/^clumping:/m);
+    expect(next).not.toMatch(/^feature-size:/m);
     expect(next).toContain("mine: keep");
   });
 

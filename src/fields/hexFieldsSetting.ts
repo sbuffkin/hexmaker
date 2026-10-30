@@ -5,20 +5,23 @@
  * (`<world folder>/Hex fields.md`, FieldStore), which stays the only copy,
  * so the same rows can be edited there by hand.
  *
- * The tab draws the same definitions on both settings paths
+ * The tab draws module settings on both settings paths
  * (getSettingDefinitions and the display() fallback), so these rows show
  * in both. Placement ids: Settings.hexFields, Settings.placeInfluences,
  * Settings.hexFieldsNote.
  */
 import type { Setting } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { ModuleSettingRow } from "./moduleSettings";
-import { FIELD_TYPES, parseFieldType, type FieldDecls, type FieldDef, type InfluenceDef } from "../fields/fieldTypes";
-import { parseChange } from "../fields/influence";
-import { compileFormula } from "../fields/formula";
-import { linkTarget } from "../fields/fieldsNote";
+import type { SettingContribution } from "../modules/types";
+import { fieldsOf } from "./context";
+import { FIELD_TYPES, parseFieldType, type FieldDecls, type FieldDef, type InfluenceDef } from "./fieldTypes";
+import { parseChange } from "./influence";
+import { compileFormula } from "./formula";
+import { linkTarget } from "./fieldsNote";
 
 export const HEX_FIELDS_SECTION = "Hex fields";
+
+const storeOf = (plugin: HexmakerPlugin) => fieldsOf(plugin)!.store;
 
 const FIELDS_DESC =
   "Your own data on every hex (population, land value…). Each field is a column in every map note's Hexes table. A field rolls its table when a hex gets terrain (the table's When column can say near: town 2), or is worked out from a formula over the hex's other fields. Renaming a field doesn't rename the column in map notes that already have it.";
@@ -26,34 +29,25 @@ const INFLUENCES_DESC =
   "What each kind of place does to a field: on its own hex (Here) and on the hexes within Radius (Nearby, fading with distance). +400 adds, +40% or x1.4 multiplies, =yes sets. Towns and cities are hexes whose terrain is named like a place type, or a note linked under a hex's Towns (its place-type property, else town). Run Recalculate fields after adding places.";
 const NOTE_DESC = "The fields and influences live in one note in the world folder. Edit it by hand if you like; these rows follow it.";
 
-/** The settings rows of Hex fields, added as their own section. */
-export function addHexFieldSettings<T>(
-  sections: { heading?: string; items: { id: string; item: T }[] }[],
-  row: (r: ModuleSettingRow) => T,
-  plugin: HexmakerPlugin,
-): void {
-  sections.push({
-    heading: HEX_FIELDS_SECTION,
-    items: [
-      { id: "Settings.hexFields", item: row({ name: "Fields", desc: FIELDS_DESC, aliases: ["hex fields", "custom fields", "population", "columns"], render: (s) => renderFields(s, plugin) }) },
-      { id: "Settings.placeInfluences", item: row({ name: "Place influences", desc: INFLUENCES_DESC, aliases: ["towns", "cities", "settlements", "influence"], render: (s) => renderInfluences(s, plugin) }) },
-      { id: "Settings.hexFieldsNote", item: row({ name: "Open the fields note", desc: NOTE_DESC, render: (s) => renderOpenNote(s, plugin) }) },
-    ],
-  });
-}
+/** The settings rows of Hex fields: a section of their own. */
+export const HEX_FIELD_SETTINGS: readonly SettingContribution[] = [
+  { id: "Settings.hexFields", section: HEX_FIELDS_SECTION, name: "Fields", desc: FIELDS_DESC, aliases: ["hex fields", "custom fields", "population", "columns"], control: { type: "custom", render: renderFields } },
+  { id: "Settings.placeInfluences", section: HEX_FIELDS_SECTION, name: "Place influences", desc: INFLUENCES_DESC, aliases: ["towns", "cities", "settlements", "influence"], control: { type: "custom", render: renderInfluences } },
+  { id: "Settings.hexFieldsNote", section: HEX_FIELDS_SECTION, name: "Open the fields note", desc: NOTE_DESC, control: { type: "custom", render: renderOpenNote } },
+];
 
 /** The list area under a row's name, redrawn whenever the fields note changes. */
 function listArea(setting: Setting, plugin: HexmakerPlugin, cls: string, draw: (el: HTMLElement) => void): void {
   setting.settingEl.addClass("duckmage-settings-fields-row");
   const el = setting.settingEl.createDiv({ cls: `duckmage-settings-fields ${cls}` });
   draw(el);
-  const off = plugin.fields.store.onChange(() => {
+  const off = storeOf(plugin).onChange(() => {
     if (!el.isConnected) { off(); return; }
     draw(el);
   });
 }
 
-const save = (plugin: HexmakerPlugin, decls: FieldDecls) => void plugin.fields.store.save(decls);
+const save = (plugin: HexmakerPlugin, decls: FieldDecls) => void storeOf(plugin).save(decls);
 
 function textBox(parent: HTMLElement, value: string, placeholder: string, label: string, commit: (v: string, box: HTMLInputElement) => void): HTMLInputElement {
   const box = parent.createEl("input", { type: "text", cls: "duckmage-settings-fields-input", attr: { placeholder, "aria-label": label } });
@@ -65,7 +59,7 @@ function textBox(parent: HTMLElement, value: string, placeholder: string, label:
 function renderFields(setting: Setting, plugin: HexmakerPlugin): void {
   listArea(setting, plugin, "duckmage-settings-fields-list", (el) => {
     el.empty();
-    const decls = plugin.fields.store.get();
+    const decls = storeOf(plugin).get();
     const put = (i: number, patch: Partial<FieldDef>) => {
       const fields = decls.fields.map((f, j) => (j === i ? { ...f, ...patch } : f));
       save(plugin, { ...decls, fields });
@@ -91,7 +85,7 @@ function renderFields(setting: Setting, plugin: HexmakerPlugin): void {
         save(plugin, { ...decls, fields: decls.fields.filter((_, j) => j !== i) });
       });
     });
-    for (const p of plugin.fields.store.problems()) el.createDiv({ cls: "duckmage-settings-fields-problem", text: `${p.where}: ${p.text} — ${p.reason}` });
+    for (const p of storeOf(plugin).problems()) el.createDiv({ cls: "duckmage-settings-fields-problem", text: `${p.where}: ${p.text} — ${p.reason}` });
     el.createEl("button", { text: "Add field", cls: "duckmage-settings-fields-add" }).addEventListener("click", () => {
       let n = decls.fields.length + 1;
       while (decls.fields.some((f) => f.name.toLowerCase() === `field ${n}`)) n++;
@@ -103,7 +97,7 @@ function renderFields(setting: Setting, plugin: HexmakerPlugin): void {
 function renderInfluences(setting: Setting, plugin: HexmakerPlugin): void {
   listArea(setting, plugin, "duckmage-settings-influences-list", (el) => {
     el.empty();
-    const decls = plugin.fields.store.get();
+    const decls = storeOf(plugin).get();
     if (!decls.fields.length) {
       el.createDiv({ cls: "duckmage-settings-fields-empty", text: "Add a field first." });
       return;
@@ -142,8 +136,8 @@ function renderOpenNote(setting: Setting, plugin: HexmakerPlugin): void {
   setting.addButton((b) =>
     b.setButtonText("Open note").onClick(() => {
       const open = async () => {
-        if (!plugin.fields.store.noteFile()) await plugin.fields.store.save(plugin.fields.store.get());
-        const file = plugin.fields.store.noteFile();
+        if (!storeOf(plugin).noteFile()) await storeOf(plugin).save(storeOf(plugin).get());
+        const file = storeOf(plugin).noteFile();
         if (file) await plugin.app.workspace.getLeaf("tab").openFile(file);
       };
       void open();

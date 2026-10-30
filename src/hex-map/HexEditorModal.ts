@@ -31,7 +31,7 @@ import { TerrainIconSections, type TerrainIconHost } from "./editor/TerrainIconS
 import { LinkSections, type LinkSectionHost } from "./editor/LinkSection";
 import { TableSections, type TableSectionsHost } from "./editor/TableSections";
 import { TextSections, type TextSectionHost } from "./editor/TextSection";
-import { FieldsSection } from "./editor/FieldsSection";
+import { moduleHexEditorSections } from "../modules/runtime";
 import { nextFieldSeq } from "./editor/host";
 
 /** Typing pause after which a text section autosaves. */
@@ -77,7 +77,8 @@ export class HexEditorModal extends HexmakerModal {
   private readonly links = new LinkSections(this.host);
   private readonly tables = new TableSections(this.host);
   private readonly texts = new TextSections(this.host, this.tables);
-  private readonly fieldBoxes = new FieldsSection(this.host);
+  /** Modules' sections, after Terrain. */
+  private readonly moduleSections = moduleHexEditorSections(this.host);
 
   constructor(
     app: App,
@@ -298,8 +299,7 @@ export class HexEditorModal extends HexmakerModal {
     // (one line instead of the pickers). Notes are never locked (WM2).
     if (canDo(this.mapName, "paint-terrain")) this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
     else this.renderModeLocked(terrainBody, "paint-terrain");
-    // The world's hex fields (#52): map data, typed (editor/FieldsSection.ts).
-    this.fieldBoxes.render(bodyEl);
+    for (const section of this.moduleSections) section.render(bodyEl);
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
     const { body: notesBody } = this.makeCollapsible(

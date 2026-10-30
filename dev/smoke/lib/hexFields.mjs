@@ -18,11 +18,12 @@ export async function hexFieldsCheck(id) {
   const app = window.app;
   const p = app.plugins.plugins[id];
   const store = p.mapStore;
+  const fieldsSvc = p.moduleStore("hex-fields")?.service;
+  if (!fieldsSvc) return { ok: true, skipped: "the fields slice is off in this build", steps: [], problems: [] };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waitFor = async (fn, ms = 5000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(100); } return fn(); };
   const out = { ok: true, steps: [], problems: [] };
   const fail = (m) => { out.ok = false; out.problems.push(m); };
-  if (!p.fields) return { ok: true, skipped: "no hex fields in this build", steps: [], problems: [] };
   const modalsBefore = document.querySelectorAll(".modal-container").length;
   // Close the modals this check opened (the top one each time: Escape, then its × if that didn't do it).
   const closeOurs = async () => {
@@ -41,11 +42,11 @@ export async function hexFieldsCheck(id) {
   if (!app.vault.getAbstractFileByPath(`${tables}/fields`)) await app.vault.createFolder(`${tables}/fields`).catch(() => {});
   if (!app.vault.getAbstractFileByPath(tablePath)) await app.vault.create(tablePath, "| d1 | Result | Weight |\n| --- | --- | --- |\n| 1 | 100 | 1 |\n");
   await waitFor(() => p.tableNotes.lookup().table(tablePath.replace(/\.md$/, "")));
-  await p.fields.store.save({
+  await fieldsSvc.store.save({
     fields: [{ name: "Population", type: "whole number", default: "0", table: tablePath.replace(/\.md$/, "") }],
     influences: [{ place: "Town", field: "Population", here: "+1000", nearby: "x2", radius: 2 }],
   });
-  const notePath = p.fields.store.notePath();
+  const notePath = fieldsSvc.store.notePath();
   const noteText = (await app.vault.adapter.exists(notePath)) ? await app.vault.adapter.read(notePath) : "";
   if (!/\| Population \| whole number \|/.test(noteText)) fail(`fields note ${notePath}: ${noteText.slice(0, 200)}`);
   else out.steps.push(`declared Population in ${notePath}`);
@@ -100,8 +101,8 @@ export async function hexFieldsCheck(id) {
   await closeOurs();
   // 4. A town linked under 5_3's Towns, then Recalculate fields → Update places.
   const link = await p.hexNotes.createAndLinkNote({ x: 5, y: 3, mapName: map, section: "Towns", folder: `${world}/towns`, name: "Smoke Fields Town" });
-  await waitFor(() => p.fields.places(map).some((pl) => pl.key === "5_3" && pl.type === "town"));
-  if (!p.fields.places(map).some((pl) => pl.key === "5_3")) fail(`the town ${link} under 5_3's Towns isn't a place`);
+  await waitFor(() => fieldsSvc.places(map).some((pl) => pl.key === "5_3" && pl.type === "town"));
+  if (!fieldsSvc.places(map).some((pl) => pl.key === "5_3")) fail(`the town ${link} under 5_3's Towns isn't a place`);
   app.workspace.setActiveLeaf(view.leaf, { focus: true });
   const ran = app.commands.executeCommandById(`${id}:recalculate-fields`);
   const btn = await waitFor(() => document.querySelector(".modal .duckmage-recalc-modifiers"));
@@ -127,6 +128,6 @@ export async function hexFieldsCheck(id) {
   // Clean up the declarations (the map stays for the restart check).
   const fnote = app.vault.getAbstractFileByPath(notePath);
   if (fnote) await app.vault.delete(fnote);
-  await waitFor(() => p.fields.fields().length === 0);
+  await waitFor(() => fieldsSvc.fields().length === 0);
   return out;
 }
