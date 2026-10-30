@@ -295,7 +295,8 @@
    "note-links",
    "ref-links",
    "area-line",
-   "hex-properties"
+   "hex-properties",
+   "generator-help"
   ],
   "tableRangesUpgraded": true
  }

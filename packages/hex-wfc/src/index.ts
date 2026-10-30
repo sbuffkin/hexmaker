@@ -56,6 +56,7 @@ export {
   encodeSetting,
   decodeSetting,
   FORMAT_VERSION,
+  HELP_TITLE,
   SETTING_KEYS,
   type ParseResult,
 } from "./format";

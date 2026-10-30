@@ -348,6 +348,48 @@ export function shareCell(model: HexWfcModel, t: TerrainEntry): string {
 }
 const opt = (n: number | undefined, scale = 1) => (n === undefined ? "" : num(n * scale));
 
+/**
+ * The help in a generator note: a collapsed callout, so the note opens on
+ * its tables. Older notes have the same text as plain lines (the migration
+ * unreleased-generator-help-callout wraps them; the reader ignores both).
+ */
+const HELP_LINES = [
+  "A wave function collapse generator. You can edit the tables and settings by hand.",
+  "",
+  "- **Terrains**: *Weight* is how common the terrain is; 0 means the solver never places it.",
+  "  *Share* is worked out by the plugin (editing it does nothing): the terrain's share of",
+  "  the map by weight, and what the frontmatter `mix`, `counts` and `near` change.",
+  "  *Patch %* is the size of a typical patch as a share of the map, so patches scale",
+  "  with the map. *Shape* is how it spreads: `blob` (compact patches), `line` (long",
+  "  thin runs), `scatter` (single hexes) or `none` (left to the neighbour rules).",
+  "  *Turn* is how often a `line` changes direction (0 to 1) and *Width* its",
+  "  thickness (1 to 3). *Spacing* is the closest two `scatter` hexes may be.",
+  "  *Edge* is how common the terrain is along the map border (1 = as anywhere).",
+  "  *Near* keeps a terrain within some hexes of another, e.g. `volcano 3` for lava",
+  "  fields (steered while generating, strength from `clumping`, then enforced).",
+  "- **Adjacency**: pairs that may touch, and how often (higher is more likely).",
+  "  A pair that isn't listed can never touch, including a terrain next to itself.",
+  "  Order doesn't matter, so *A | B* also covers *B | A*.",
+  "- **Features** (optional): lines of terrain that are always placed. *From* and *To*",
+  "  are `edge`, `none` or a terrain name.",
+  "- **Paths** (optional): paths drawn over the terrain. *From* and *To* are `edge`,",
+  "  `edge-N`, `edge-E`, `edge-S`, `edge-W` (one side of the map), `none`, `path`",
+  "  (joins another path of the same type) or a terrain. *Through*",
+  "  is the share of the path on each terrain.",
+  "- **Layout** (optional): where each terrain sat in the example map, in a 3×3",
+  "  grid (NW … SE) or a finer 5×5 one (R1C1 … R5C5). 1 means as common there as",
+  "  anywhere; 3 means three times as common. Values blend smoothly between cells",
+  "  and `directional-bias` sets how strongly they apply (patches grow along them too).",
+  "- Frontmatter settings (optional): `feature-size`, `directional-bias`, `clumping`,",
+  "  `mix-strength`, `scatter`, `randomness`, `edge-strength`, `edge-terrain`,",
+  "  `line-width`, `edge-smoothing`, `speck-size`, `keep-rare`, `symmetry`, `spacing`,",
+  "  `connected`, `impassable`, `near`,",
+  "  `mix`, `counts`, `features`, `draw-paths` and `paths` (per route, e.g.",
+  "  `Road: edge > peak = count 2, wiggle 1.5, as Trade road`).",
+];
+export const HELP_TITLE = "How to edit this generator";
+const HELP_CALLOUT = [`> [!info]- ${HELP_TITLE}`, ...HELP_LINES.map((l) => (l ? `> ${l}` : ">"))];
+
 export function modelToMarkdown(model: HexWfcModel): string {
   const fm = [`${MARKER}: ${FORMAT_VERSION}`, `name: ${yamlValue(model.name)}`];
   if (model.exampleHexes !== undefined) fm.push(`${EXAMPLE_KEY}: ${model.exampleHexes}`);
@@ -373,38 +415,7 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "",
     `# ${model.name}`,
     "",
-    "A wave function collapse generator. You can edit the tables and settings by hand.",
-    "",
-    "- **Terrains**: *Weight* is how common the terrain is; 0 means the solver never places it.",
-    "  *Share* is worked out by the plugin (editing it does nothing): the terrain's share of",
-    "  the map by weight, and what the frontmatter `mix`, `counts` and `near` change.",
-    "  *Patch %* is the size of a typical patch as a share of the map, so patches scale",
-    "  with the map. *Shape* is how it spreads: `blob` (compact patches), `line` (long",
-    "  thin runs), `scatter` (single hexes) or `none` (left to the neighbour rules).",
-    "  *Turn* is how often a `line` changes direction (0 to 1) and *Width* its",
-    "  thickness (1 to 3). *Spacing* is the closest two `scatter` hexes may be.",
-    "  *Edge* is how common the terrain is along the map border (1 = as anywhere).",
-    "  *Near* keeps a terrain within some hexes of another, e.g. `volcano 3` for lava",
-    "  fields (steered while generating, strength from `clumping`, then enforced).",
-    "- **Adjacency**: pairs that may touch, and how often (higher is more likely).",
-    "  A pair that isn't listed can never touch, including a terrain next to itself.",
-    "  Order doesn't matter, so *A | B* also covers *B | A*.",
-    "- **Features** (optional): lines of terrain that are always placed. *From* and *To*",
-    "  are `edge`, `none` or a terrain name.",
-    "- **Paths** (optional): paths drawn over the terrain. *From* and *To* are `edge`,",
-    "  `edge-N`, `edge-E`, `edge-S`, `edge-W` (one side of the map), `none`, `path`",
-    "  (joins another path of the same type) or a terrain. *Through*",
-    "  is the share of the path on each terrain.",
-    "- **Layout** (optional): where each terrain sat in the example map, in a 3×3",
-    "  grid (NW … SE) or a finer 5×5 one (R1C1 … R5C5). 1 means as common there as",
-    "  anywhere; 3 means three times as common. Values blend smoothly between cells",
-    "  and `directional-bias` sets how strongly they apply (patches grow along them too).",
-    "- Frontmatter settings (optional): `feature-size`, `directional-bias`, `clumping`,",
-    "  `mix-strength`, `scatter`, `randomness`, `edge-strength`, `edge-terrain`,",
-    "  `line-width`, `edge-smoothing`, `speck-size`, `keep-rare`, `symmetry`, `spacing`,",
-    "  `connected`, `impassable`, `near`,",
-    "  `mix`, `counts`, `features`, `draw-paths` and `paths` (per route, e.g.",
-    "  `Road: edge > peak = count 2, wiggle 1.5, as Trade road`).",
+    ...HELP_CALLOUT,
     "",
     "## Terrains",
     "",

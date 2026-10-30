@@ -57,6 +57,7 @@ named in each file; settings, notes and tables run from `registry.ts`.
 | notes | `v1.5-ref-links` | 1.5.x → 1.6 | `noteFormatUpgrades: ref-links` |
 | notes | `unreleased-hex-callout-area-line` | unreleased → 1.6 | `noteFormatUpgrades: area-line` |
 | notes | `unreleased-hex-note-properties` | unreleased → 1.6 | `noteFormatUpgrades: hex-properties` |
+| notes | `unreleased-generator-help-callout` | unreleased → 2.0 | `noteFormatUpgrades: generator-help` |
 | tables | `v1.0-flat-terrain-tables-to-subfolders` | 0.x → 1.0 | every terrain-table check |
 | tables | `v1.5-table-roll-ranges` | 1.5.x → 1.6 | `tableRangesUpgraded` |
 
