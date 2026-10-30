@@ -10130,6 +10130,8 @@ body.is-mobile .duckmage-party-control button {
 .duckmage-explore-problem {
     color: var(--text-error);
     min-height: 1.2em;
+}
+
 /* ── Hex fields (#52): the editor's Fields section, the hex table's field columns and filters, Settings → Hex fields ── */
 .duckmage-editor-field-row {
   display: flex;
