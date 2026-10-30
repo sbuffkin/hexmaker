@@ -54,6 +54,7 @@ import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
 import { genPageRuntime } from "./gen-page/runtime";
 import { playRuntime } from "./play/runtime";
+import { fogRuntime } from "./fog/runtime";
 import { hexFlowerRuntime } from "./hex-flower/runtime";
 import { packsRuntime } from "./packs/runtime";
 import { manualRuntime } from "./manual/runtime";
@@ -64,8 +65,9 @@ const compiled: ModuleRuntime[] = [worldRuntime];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
 if (__SLICE_SPACE__) compiled.push(spaceRuntime);
 if (__SLICE_GENPAGE__) compiled.push(genPageRuntime);
-// Before Hex flower: a step is marked visited before exploring reads it.
+// Play, then Fog, then Hex flower: a step is marked visited before exploring reads it, and Sees comes before what Hex flower adds to the party controls.
 if (__SLICE_PLAY__) compiled.push(playRuntime);
+if (__SLICE_FOG__) compiled.push(fogRuntime);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
 if (__SLICE_PACKS__) compiled.push(packsRuntime);
 if (__SLICE_MANUAL__) compiled.push(manualRuntime);
@@ -73,7 +75,7 @@ if (__SLICE_FIELDS__) compiled.push(fieldsRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 setActiveRuntimes(MODULE_RUNTIMES);
 // genPage() and worldMaps() live in ./active.ts so module code can call them without importing this file.
-export { genPage, worldMaps } from "./active";
+export { genPage, runPartyLooked, worldMaps } from "./active";
 
 /** Every module's built-in generators, in list order. */
 export function moduleGenerators(plugin: HexmakerPlugin, helpers: GeneratorHelpers): GeneratorContribution[] {
@@ -359,24 +361,6 @@ export async function runPartyEntered(plugin: HexmakerPlugin, step: PartyStep): 
       out.push(...await m.play.onEnter(plugin, step));
     } catch (e) {
       logError(`${m.id} party step`, e);
-    }
-  }
-  return out;
-}
-
-/**
- * The party looks around where it stands (its own hex clicked in Play):
- * each module's onLook, in module order; the undo entries of what they
- * wrote. A hook that fails is logged and skipped.
- */
-export async function runPartyLooked(plugin: HexmakerPlugin, party: PartyAt): Promise<UndoItem[]> {
-  const out: UndoItem[] = [];
-  for (const m of MODULE_RUNTIMES) {
-    if (!m.play?.onLook) continue;
-    try {
-      out.push(...await m.play.onLook(plugin, party));
-    } catch (e) {
-      logError(`${m.id} party look`, e);
     }
   }
   return out;

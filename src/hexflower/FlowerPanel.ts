@@ -44,7 +44,7 @@ import { flowerStoreOf, terrainColors } from "./context";
 import { drawFlower } from "./flowerView";
 import { formatRule, planStep, readRules } from "./explore";
 import type { FlowerEntry } from "./FlowerStore";
-import type { ExploreMap } from "./exploreFields";
+import type { ExploreMap } from "../fog/exploreFields";
 import { hexKey, hexXY } from "../hexKey";
 
 /** Page state kept across re-renders. */

@@ -11,8 +11,8 @@ import { clearRevealed, markRevealed, REVEAL_BOUNCE_MS, revealedNow } from "../s
 import { drawPartyControls, PARTY_CONTROLS_CLS } from "../src/hex-map/view/partyControls";
 import { WorkModeButton } from "../src/hex-map/view/workModeButton";
 import { setExplore } from "../src/hexflower/context";
-import { SEES_CONTROL_ID } from "../src/hexflower/exploreHooks";
-import { ringOrder } from "../src/hexflower/exploreOrder";
+import { SEES_CONTROL_ID } from "./helpers/exploring";
+import { ringOrder } from "../src/fog/exploreOrder";
 import { neighbourKeys } from "../src/hexKey";
 import type { UndoItem } from "../src/hex-map/undoItems";
 import { readSource } from "./helpers/source";

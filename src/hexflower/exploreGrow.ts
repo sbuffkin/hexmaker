@@ -18,7 +18,7 @@ import { applyGridChange } from "../hex-map/gridChange";
 import { capGrowth, describeGrowth, gridBoxOf, grownGrid, growthFor, hasRoom } from "../maps/gridGrowth";
 import { MAX_GRID_SIDE } from "../sizeInput";
 import { canDo } from "../modeGate";
-import type { ExploreMap } from "./exploreFields";
+import type { ExploreMap } from "../fog/exploreFields";
 
 /** Hexes beyond sight that must be on the map (the "?" ring). */
 export const GROW_NEED = 1;

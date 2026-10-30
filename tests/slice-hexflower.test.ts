@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { moduleFog, moduleGenerators, moduleNewMapModes, modulePartyClick } from "../src/modules/runtime";
-import { FogService } from "../src/hexflower/FogService";
-import { setFog } from "../src/hexflower/context";
+import { moduleGenerators, moduleNewMapModes } from "../src/modules/runtime";
 import { mapModeChoices, modeOfKind } from "../src/worldgen/newMapSetup/modes";
 import { visibleKinds, type TerrainGeneratorKind } from "../src/worldgen/registry";
 import { describeWith, describeWithout } from "./helpers/slices";
@@ -38,33 +36,6 @@ describeWithout("hexflower", "hexflower off: no explore mode", () => {
     expect(moduleNewMapModes()).toEqual([]);
     expect(ids(mapModeChoices(moduleNewMapModes()))).toEqual(["generate", "blank"]);
     expect(ids(moduleGenerators(plugin, helpers))).not.toContain("procedural:hex-flower");
-  });
-});
-
-/** A map under fog (HF11) and the party's own hex clicked on it. */
-function fogged() {
-  const map = { name: "m", gridSize: { cols: 5, rows: 5 }, gridOffset: { x: 0, y: 0 }, exploreFog: "on", exploreSeen: ["2: 2"] };
-  const p = { settings: { hexOrientation: "flat" }, getMap: (n: string) => (n === "m" ? map : undefined), saveSettings: async () => {} };
-  setFog(p as never, new FogService(p as never, () => {}));
-  const click = { map: "m", token: "p.md", from: "2_2", to: "2_2", orientation: "flat" as const, stagger: "odd" as const };
-  return { map, p, click };
-}
-
-describeWith("hexflower", "hexflower on: fog of war (HF11)", () => {
-  it("a fogged map has fog; the party's own hex is a look around", () => {
-    const { map, p, click } = fogged();
-    const fog = moduleFog(p as never, map as never);
-    expect(fog?.hidden("2_2")).toBe(false);
-    expect(fog?.hidden("0_0")).toBe(true);
-    expect(modulePartyClick(p as never, click)).toBe("look");
-  });
-});
-
-describeWithout("hexflower", "hexflower off: no fog", () => {
-  it("no fog over any map, and the party's own hex does nothing", () => {
-    const { map, p, click } = fogged();
-    expect(moduleFog(p as never, map as never)).toBeUndefined();
-    expect(modulePartyClick(p as never, click)).toBe("none");
   });
 });
 

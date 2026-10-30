@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { setup, undoRedo } from "./helpers/exploreFixture";
 import { readSource } from "./helpers/source";
-import { exploreStep } from "../src/hexflower/exploreHooks";
+import { exploreStep } from "./helpers/exploring";
 import { emptyFlower } from "../src/hexflower/flower";
 import { buildFlowerNote } from "../src/hexflower/flowerNote";
 import { sectionText } from "../src/sections";

@@ -1,5 +1,6 @@
 /**
- * The map settings exploring keeps in the map note (plan-hex-flower):
+ * The map settings exploring keeps in the map note (plan-hex-flower; the
+ * flower's own `hex-flower-at` is the Hex flower module's, the rest read here):
  *
  *   explore-with: ["[[Weather]] -> play log, every step", "[[Wilds]] -> terrain"]
  *   hex-flower-at: ["Wilds: 10"]
@@ -16,7 +17,7 @@
  */
 
 import type { MapData } from "../types";
-import type { MapNoteField, TableConditionDef } from "../modules/types";
+import type { MapNoteField } from "../modules/types";
 
 /** The fields on a map (MapData) that exploring adds. */
 export interface ExploreFields {
@@ -44,7 +45,6 @@ export type ExploreMap = MapData & ExploreFields;
 
 export const EXPLORE_FIELDS: readonly MapNoteField[] = [
   { field: "exploreWith", key: "explore-with", kind: "list" },
-  { field: "hexFlowerAt", key: "hex-flower-at", kind: "list" },
   { field: "exploreReveal", key: "explore-reveal", kind: "str" },
   { field: "exploreGrow", key: "explore-grow", kind: "str" },
   { field: "exploreRealms", key: "explore-realms", kind: "list" },
@@ -69,19 +69,3 @@ export function isFogMap(map: MapData | undefined): map is ExploreMap {
   const m = map as unknown as ExploreFields | undefined;
   return m?.exploreFog?.trim().toLowerCase() === "on" && !isExploreMap(map);
 }
-
-const lc = (s: string) => s.trim().toLowerCase();
-
-/**
- * A random table's When key: `from: grassland, hills` — the terrain of the
- * hex the party came from (exploring passes it in).
- */
-export const FROM_CONDITION: TableConditionDef = {
-  key: "from",
-  read: (value) => {
-    const list = value.split(/\s*,\s*/).map(lc).filter(Boolean);
-    return list.length ? list : undefined;
-  },
-  fits: (read, known) => typeof known === "string" && (read as string[]).includes(lc(known)),
-  format: (read) => (read as string[]).join(", "),
-};

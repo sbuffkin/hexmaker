@@ -12,7 +12,7 @@ import { EXPLORE_PROPS } from "../src/hexflower/exploreProps";
 import { emptyFlower } from "../src/hexflower/flower";
 import { buildFlowerNote } from "../src/hexflower/flowerNote";
 import { NEW_FLOWER } from "../src/hexflower/flowerGenerator";
-import { isExploreMap } from "../src/hexflower/exploreFields";
+import { isExploreMap } from "../src/fog/exploreFields";
 import { readRules } from "../src/hexflower/explore";
 
 /** Hex flower as a map setting (owner HF8): turned on and off from Map properties. */

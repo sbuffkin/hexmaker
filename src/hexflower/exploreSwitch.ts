@@ -14,7 +14,7 @@ import { tokensOnMap } from "../modules/play/playLogWriter";
 import { markVisited } from "../modules/play/partyTravel";
 import { flowerStoreOf, exploreOf } from "./context";
 import { formatRule } from "./explore";
-import type { ExploreMap } from "./exploreFields";
+import type { ExploreMap } from "../fog/exploreFields";
 import { addPartyToken, middleHex, NEW_FLOWER, runFlower } from "./flowerGenerator";
 
 export interface EnableExploring {

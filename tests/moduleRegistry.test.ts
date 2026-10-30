@@ -22,7 +22,7 @@ import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/spa
 import { describeWith, itWith, moduleOn, sliceOn } from "./helpers/slices";
 
 /** Every slice with a flag: tests of the modules' combined lists need them all (npm run test:slices builds fewer). */
-const EVERY = ["worldmaps", "space", "genpage", "play", "hexflower"];
+const EVERY = ["worldmaps", "space", "genpage", "play", "fog", "hexflower"];
 
 /**
  * The module registry (plan-code-modules P1) and the one map-type rule
@@ -37,9 +37,9 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps, space, gen-page, play, hex-flower, packs, manual and fields (those built), in that order", () => {
+  it("registers world, world-maps, space, gen-page, play, fog, hex-flower, packs, manual and fields (those built), in that order", () => {
     // Play before Hex flower: a step is marked visited before exploring reads it.
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "play", "hex-flower", "packs", "manual", "fields"].filter(moduleOn));
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "play", "fog", "hex-flower", "packs", "manual", "fields"].filter(moduleOn));
     expect(registry.kindIds()).toEqual(["world", "space"].filter(moduleOn));
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();

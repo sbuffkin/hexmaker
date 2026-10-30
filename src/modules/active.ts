@@ -8,7 +8,10 @@
  * Types only besides the list: safe to import from anywhere.
  */
 
-import type { GenPageApi, ModuleRuntime } from "./types";
+import { logError } from "../log";
+import type HexmakerPlugin from "../HexmakerPlugin";
+import type { UndoItem } from "../hex-map/undoItems";
+import type { GenPageApi, ModuleRuntime, PartyAt } from "./types";
 import type { WorldMapsApi } from "./world-maps/api";
 
 let runtimes: readonly ModuleRuntime[] = [];
@@ -33,4 +36,22 @@ export function genPage(): GenPageApi | undefined {
 export function worldMaps(): WorldMapsApi | undefined {
   for (const m of runtimes) if (m.worldMaps) return m.worldMaps();
   return undefined;
+}
+
+/**
+ * The party looks around where it stands (its own hex clicked in Play, or a
+ * Look button): each module's onLook, in module order; the undo entries of
+ * what they wrote. A hook that fails is logged and skipped.
+ */
+export async function runPartyLooked(plugin: HexmakerPlugin, party: PartyAt): Promise<UndoItem[]> {
+  const out: UndoItem[] = [];
+  for (const m of runtimes) {
+    if (!m.play?.onLook) continue;
+    try {
+      out.push(...await m.play.onLook(plugin, party));
+    } catch (e) {
+      logError(`${m.id} party look`, e);
+    }
+  }
+  return out;
 }

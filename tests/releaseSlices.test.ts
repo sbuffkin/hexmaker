@@ -112,12 +112,12 @@ describe("build flags", () => {
 		// A list starting with an id is exactly those (in release-slices.json order).
 		expect(resolveSlices({ spec: "space, worldmaps" }).slices).toEqual(["worldmaps", "space"]);
 		// +/- start from the base; keywords reset the set.
-		expect(resolveSlices({ spec: "+play,+hexflower" }).slices).toEqual([...releasedSlices(), "play", "hexflower"]);
+		expect(resolveSlices({ spec: "+play,+fog,+hexflower" }).slices).toEqual([...releasedSlices(), "play", "fog", "hexflower"]);
 		expect(resolveSlices({ spec: "-space", base: "all" }).slices).toEqual(all.filter((id) => id !== "space"));
 		expect(resolveSlices({ spec: "all,-space" }).slices).toEqual(all.filter((id) => id !== "space"));
 		expect(resolveSlices({ spec: "none,+space" }).slices).toEqual(["space"]);
 		// ON on top, then OFF, which wins.
-		expect(resolveSlices({ spec: "none", on: "space,genpage,play,hexflower" }).slices).toEqual(["space", "genpage", "play", "hexflower"]);
+		expect(resolveSlices({ spec: "none", on: "space,genpage,play,fog,hexflower" }).slices).toEqual(["space", "genpage", "play", "fog", "hexflower"]);
 		expect(resolveSlices({ spec: "all", on: "space", off: "space" }).slices).toEqual(all.filter((id) => id !== "space"));
 		// Errors: unknown ids, foundation, an unknown base.
 		expect(() => resolveSlices({ spec: "nope" })).toThrow(/no slice "nope"/);

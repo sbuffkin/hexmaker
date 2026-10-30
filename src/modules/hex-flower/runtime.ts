@@ -8,10 +8,9 @@ import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { ModuleRuntime, ModuleStore } from "../types";
 import { FlowerStore } from "../../hexflower/FlowerStore";
 import { FLOWER_BLOCK } from "../../hexflower/flowerNote";
-import { flowerStoreOf, setExplore, setFlowerStore, setFog, terrainColors } from "../../hexflower/context";
+import { flowerStoreOf, setExplore, setFlowerStore, terrainColors } from "../../hexflower/context";
 import { ExploreService } from "../../hexflower/ExploreService";
-import { FogService } from "../../hexflower/FogService";
-import { exploreFog, exploreFrontier, exploreHexMenu, exploreHiddenTerrain, exploreLook, explorePartyClick, explorePartyControls, exploreStep } from "../../hexflower/exploreHooks";
+import { exploreFrontier, exploreHexMenu, exploreHiddenTerrain, exploreLook, explorePartyClick, explorePartyControls, exploreStep } from "../../hexflower/exploreHooks";
 import { drawFlowerList, renderFlowerPanel } from "../../hexflower/FlowerPanel";
 import { EXPLORE_MODE, HEX_FLOWER_GENERATOR_ID, hexFlowerGenerator } from "../../hexflower/flowerGenerator";
 import { EXPLORE_PROPS } from "../../hexflower/exploreProps";
@@ -30,7 +29,6 @@ function stores(plugin: HexmakerPlugin): ModuleStore[] {
   }));
   setFlowerStore(plugin, store);
   setExplore(plugin, new ExploreService(plugin));
-  setFog(plugin, new FogService(plugin));
   return [store];
 }
 
@@ -49,8 +47,6 @@ export const hexFlowerRuntime: ModuleRuntime = {
     onLook: exploreLook,
     partyControls: explorePartyControls,
     hiddenTerrain: exploreHiddenTerrain,
-    // A finished map explored by revealing it (HF11).
-    fog: exploreFog,
   },
   hexMenu: exploreHexMenu,
   unchartedKeys: exploreFrontier,

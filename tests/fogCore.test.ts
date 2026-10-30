@@ -9,8 +9,8 @@ import { TOOL_ACTIONS } from "../src/workMode";
 import { manualExportOptions } from "../src/modules/manual/exportForm";
 import type { HexBrush } from "../src/modules/types";
 import { MemVault } from "./helpers/memVault";
-import { FogService } from "../src/hexflower/FogService";
-import { setFog } from "../src/hexflower/context";
+import { FogService } from "../src/fog/FogService";
+import { setFog } from "../src/fog/context";
 
 /**
  * HF11's core seams: the party controls' selected

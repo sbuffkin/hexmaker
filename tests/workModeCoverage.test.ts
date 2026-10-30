@@ -85,7 +85,7 @@ describe("work mode classification covers every entry point", () => {
 		}
 		// Modules' hex and token menu items (ModuleRuntime.hexMenu, play.tokenMenu): `menuId: "hex.<id>"`
 		// or `id: "token.<id>"` in their code.
-		for (const f of src.filter((p) => /^src\/(modules|hexflower)\//.test(p))) {
+		for (const f of src.filter((p) => /^src\/(modules|hexflower|fog|fields)\//.test(p))) {
 			for (const m of read(f).matchAll(/menuId:\s*"([^"]+)"/g)) used.add(m[1]);
 			for (const m of read(f).matchAll(/\bid:\s*"((?:hex|token)\.[^"]+)"/g)) used.add(m[1]);
 		}

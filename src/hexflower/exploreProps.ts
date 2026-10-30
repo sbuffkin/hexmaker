@@ -11,9 +11,9 @@
 import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
-import type { ExploreMap } from "./exploreFields";
+import type { ExploreMap } from "../fog/exploreFields";
 import type { MapPropertiesSection } from "../modules/types";
-import { isExploreMap } from "./exploreFields";
+import { isExploreMap } from "../fog/exploreFields";
 import { growOff } from "./exploreGrow";
 import { formatReveal, parseFlowerAt, parseReveal, parseRule } from "./explore";
 import { exploreOf, flowerStoreOf } from "./context";

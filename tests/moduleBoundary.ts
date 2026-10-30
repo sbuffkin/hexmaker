@@ -26,6 +26,7 @@ export const MODULE_DIRS: Record<string, string[]> = {
   play: ["src/modules/play/"],
   manual: ["src/modules/manual/"],
   fields: ["src/fields/", "src/modules/fields/"],
+  fog: ["src/fog/", "src/modules/fog/"],
 };
 
 /**

@@ -7,7 +7,8 @@
     "genpage": { "docs": true, "define": "__SLICE_GENPAGE__", "modules": ["gen-page"], "released": true, "requires": [] },
     "manual": { "docs": true, "define": "__SLICE_MANUAL__", "modules": ["manual"], "released": true, "requires": [] },
     "play": { "docs": true, "define": "__SLICE_PLAY__", "modules": ["play"], "released": false, "requires": [] },
-    "hexflower": { "docs": true, "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false, "requires": ["genpage", "play"] },
+    "fog": { "docs": true, "define": "__SLICE_FOG__", "modules": ["fog"], "released": false, "requires": ["play"] },
+    "hexflower": { "docs": true, "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false, "requires": ["genpage", "play", "fog"] },
     "packs": { "docs": true, "define": "__SLICE_PACKS__", "modules": ["packs"], "released": false, "requires": [] },
     "fields": { "docs": true, "define": "__SLICE_FIELDS__", "modules": ["fields"], "released": false, "requires": [] }
   }

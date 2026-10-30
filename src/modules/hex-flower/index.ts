@@ -9,12 +9,12 @@
  */
 
 import type { HexmakerModule } from "../types";
-import { EXPLORE_FIELDS, FROM_CONDITION } from "../../hexflower/exploreFields";
+import { FROM_CONDITION, HEX_FLOWER_FIELDS } from "../../hexflower/flowerFields";
 
 export const hexFlowerModule: HexmakerModule = {
   id: "hex-flower",
   slice: "hexflower",
-  mapNoteFields: EXPLORE_FIELDS,
+  mapNoteFields: HEX_FLOWER_FIELDS,
   // A table's When `from:` (the terrain of the hex the party came from).
   tableConditions: [FROM_CONDITION],
   // Where its controls sit (merged into src/ui/placement.ts PLACEMENT).
@@ -42,22 +42,16 @@ export const hexFlowerModule: HexmakerModule = {
     // A map the party explores grows (blank hexes only) as the party nears its edge, in every mode like discovering (HF4).
     policy: {
       "grow-while-exploring": { modes: ["play", "build", "god"], verb: "grow the map as the party explores" },
-      // HF11: what the party sees and the GM reveals (sight, peek, start/stop, fog): play state, never map data.
-      "explore-play": { modes: ["play", "build", "god"], verb: "explore the map" },
     },
-    // Its hex menu items (runtime hexMenu): rolling an unknown hex; revealing and hiding under fog.
+    // Its hex menu items (runtime hexMenu): rolling an unknown hex.
     menus: {
       "hex.explore-roll": "discover",
       "hex.explore-reroll": "discover",
-      "hex.explore-start": "explore-play",
-      "hex.explore-reveal-hex": "explore-play",
-      "hex.explore-hide-hex": "explore-play",
-      "hex.explore-stop": "explore-play",
     },
   },
   owns: {
     settingsKeys: ["hexFlowersFolder"],
-    mapNoteKeys: EXPLORE_FIELDS.map((f) => f.key),
+    mapNoteKeys: HEX_FLOWER_FIELDS.map((f) => f.key),
     commands: [],
     // Not "Hex flowers" (the tab): the region shape and the regions' toolbar ring are called hex flowers too.
     strings: [
@@ -72,8 +66,6 @@ export const hexFlowerModule: HexmakerModule = {
       "Explore as you go",
       "Make your own flower",
       "Add another area",
-      "Start exploring",
-      "Reveal this hex",
     ],
   },
 };

@@ -11,7 +11,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { getTokenDataFromCache } from "../frontmatter";
 import { hexKey, hexPair } from "../hexKey";
-import { parseReveal } from "./explore";
+import { parseReveal } from "./sight";
 import type { ExploreMap } from "./exploreFields";
 import type { FogService, FogStart } from "./FogService";
 

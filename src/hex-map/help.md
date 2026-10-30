@@ -284,6 +284,12 @@ Palette menus (setup, New map, new submap) show the picked palette's terrains as
 ## Show linked notes on the map
 
 **Show on map.** When a hex's town, dungeon or feature section has a link, the hex editor offers **Show on map** with that section's icon under it: one click makes it the hex's icon, in Play too. Which icon each section offers (or none) is in **Settings → Map look → Icons for linked notes**.
+<!-- slice:fog -->
+## Exploring a finished map (fog of war)
+
+Any map you already made or generated can be explored as it is. In Play, right-click a hex → **Start exploring from here…** (start hex, **Party sees**, the party token). Everything the party hasn't seen goes under fog; each step reveals what it sees. Select the party token for the controls at the top of the map: **Sees 0 · 1 · 2 · 3** and **Look**, **Peek** (the GM sees under the fog, faintly), **Reveal hexes** (a brush: exactly the hexes you pick) and **Stop** (lifts the fog; what was seen is kept for next time). Right-click a hex for **Reveal this hex** or **Hide again**. The fog is play state: it never changes the map's own data (`explore-fog`, `explore-seen` and `explore-reveal` in the map note).
+<!-- /slice -->
+
 <!-- slice:hexflower -->
 ## Exploring with hex flowers
 

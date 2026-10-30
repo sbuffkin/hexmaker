@@ -19,7 +19,7 @@ import { kindOfTerrains } from "../mapKinds";
 import { kindsForPalette, listGeneratorKinds, visibleKinds, type TerrainGeneratorKind } from "../worldgen/registry";
 import { newPickerState, pickerSettings, renderGeneratorPicker } from "../worldgen/newMapSetup/generatorPicker";
 import { exploreOf } from "./context";
-import type { ExploreMap } from "./exploreFields";
+import type { ExploreMap } from "../fog/exploreFields";
 import {
   REACH_LABEL,
   blockedDirections,

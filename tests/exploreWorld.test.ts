@@ -6,7 +6,7 @@ import type { TerrainColor } from "../src/types";
 import { ExploreService } from "../src/hexflower/ExploreService";
 import { FlowerStore } from "../src/hexflower/FlowerStore";
 import { setExplore, setFlowerStore } from "../src/hexflower/context";
-import { exploreHiddenTerrain, explorePartyControls, exploreStep, PEEK_CONTROL_ID } from "../src/hexflower/exploreHooks";
+import { exploreHiddenTerrain, explorePartyControls, exploreStep, PEEK_CONTROL_ID } from "./helpers/exploring";
 import { REALMS_RULE } from "../src/hexflower/realms";
 import { anchorOnLand, blendPick, mirror, nudge, shapeOf, standable, tileAt, tileOrigin, type Tile } from "../src/hexflower/world";
 import { emptyFlower } from "../src/hexflower/flower";

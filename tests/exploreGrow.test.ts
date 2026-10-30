@@ -4,9 +4,9 @@ import { fakeRoot } from "./helpers/fakeDom";
 import { setup, undoRedo } from "./helpers/exploreFixture";
 import { capGrowth, gridBoxOf } from "../src/maps/gridGrowth";
 import { AT_MAX_SIZE } from "../src/hexflower/exploreGrow";
-import { exploreStep } from "../src/hexflower/exploreHooks";
+import { exploreStep } from "./helpers/exploring";
 import { EXPLORE_PROPS, GROW_LABEL } from "../src/hexflower/exploreProps";
-import { EXPLORE_FIELDS } from "../src/hexflower/exploreFields";
+import { EXPLORE_FIELDS } from "../src/fog/exploreFields";
 
 /** Owner HF4 (plan-hf4-map-grows): an explored map grows as the party nears its edge. */
 

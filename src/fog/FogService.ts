@@ -28,7 +28,7 @@ import { hexKey, hexPair, neighbourKeys } from "../hexKey";
 import { markRevealed } from "../hex-map/revealBounce";
 import { parseVisited } from "../modules/play/partyTravel";
 import { isFogMap, type ExploreMap } from "./exploreFields";
-import { formatReveal, parseReveal } from "./explore";
+import { formatReveal, parseReveal } from "./sight";
 import { fogEdge, formatSeen, parseSeen, sightKeys, withSeen } from "./fog";
 
 /** The action every fog write is (src/workMode.ts; the module classifies it for every mode). */

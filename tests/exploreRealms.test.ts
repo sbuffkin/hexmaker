@@ -5,7 +5,7 @@ import type { HexData } from "../src/maps/mapNote";
 import { ExploreService } from "../src/hexflower/ExploreService";
 import { FlowerStore } from "../src/hexflower/FlowerStore";
 import { setExplore, setFlowerStore } from "../src/hexflower/context";
-import { AREA_CONTROL_ID, PEEK_CONTROL_ID, explorePartyControls, exploreStep } from "../src/hexflower/exploreHooks";
+import { AREA_CONTROL_ID, PEEK_CONTROL_ID, explorePartyControls, exploreStep } from "./helpers/exploring";
 import { ChangeAreaModal, areaAt } from "../src/hexflower/ChangeAreaModal";
 import { parseFlowerAt } from "../src/hexflower/explore";
 import { REALMS_RULE, directionOf, formatRealm, parseRealms, placeCentre } from "../src/hexflower/realms";
