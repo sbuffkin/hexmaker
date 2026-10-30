@@ -174,13 +174,13 @@ describe("smoke suite: silent table-range upgrade (DJ-Q6) is an allowed, backed-
     writeFileSync(path.join(dir, "tables.json.gz"), gzipSync(JSON.stringify({ kind: "table-ranges", notes: { "tables/beach.md": "| Result | Weight |" } })));
     const tr = tableRangeBackups(vault, "p");
     expect(Object.keys(tr)).toEqual(["tables/beach.md"]);
-    expect((tr as Record<string, string>)["tables/beach.md"]).toMatch(/^[0-9a-f]+$/);
+    expect((tr as Record<string, string[]>)["tables/beach.md"][0]).toMatch(/^[0-9a-f]+$/);
     expect(noteFormatBackups(vault, "p")).toEqual({});
   });
 
   it("C4 allows a changed table only when its backed-up original matches", () => {
     const src = read("dev", "smoke", "run.mjs");
-    expect(src).toContain("trBackups[p] === snap0[p]?.h");
+    expect(src).toContain("trBackups[p]?.includes(snap0[p]?.h)");
     expect(src).toContain("ranged.includes(p)");
   });
 });
