@@ -1,7 +1,7 @@
 # Changelog
 
 One short sentence per change. The upgrade note a vault gets after updating
-("Hexmaker upgrade <date>", in the world folder) lists the points newer than
+("Hexmaker upgrade" and the date, in the world folder) lists the points newer than
 the version it came from.
 
 ## Unreleased
@@ -19,7 +19,7 @@ the version it came from.
 - Random tables show each row's roll range for their die, so you can roll them by hand.
 - Old filled Terrain and Region lines in hex notes move into the note's Map data box.
 - Every upgrade backs up what it changes first, under the plugin's backups folder.
-- A "Hexmaker upgrade <date>" note in your world folder lists what changed, the backups, and anything to check.
+- A "Hexmaker upgrade" note, by date, in your world folder lists what changed, the backups, and anything to check.
 - New commands open the backups folder and restore notes from an upgrade backup.
 - Named zones on a map are called areas everywhere, in notes too (`> Area:`, an Area column); old names still read.
 - data.json carries a data format number, so an older version can tell the vault was updated.

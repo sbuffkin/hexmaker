@@ -39,7 +39,7 @@ export const info: MigrationInfo = {
   from: "1.5.x",
   to: "1.6",
   phase: "maps",
-  change: "Each map's terrain, icons, regions and paths moved out of the hex notes into one map note, _<map>.md, in the map's folder.",
+  change: "Each map's terrain, icons, regions and paths moved out of the hex notes into one map note, `_<map>.md`, in the map's folder.",
   recordedBy: "a map note existing for the map",
 };
 
@@ -153,7 +153,7 @@ export async function migrateMaps(host: MapNotesMigrationHost, maps: MapData[]):
       check: [`The maps ${failed.join(", ")} couldn't be moved into map notes. Their hex notes are as they were; the next start tries again.`],
     });
   } else {
-    noticeUpgrade(`map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${dir}.`, { ids: [info.id], backups: [dir] });
+    noticeUpgrade(`map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (\`_<map>.md\`). Hex notes keep their text; a full copy of them is in ${dir}.`, { ids: [info.id], backups: [dir] });
   }
   await host.plugin.saveData(host.plugin.settings);
 }

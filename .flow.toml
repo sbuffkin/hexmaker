@@ -8,7 +8,7 @@ rules = [
   "Every feature is a release slice (release-slices.json). Add new features behind a module and __SLICE_*__ flag, not in core.",
   "Core never imports a slice's folder (src/hexflower, src/space, ...): reach it through module hooks.",
   "Play mode never writes map data (src/workMode.ts ACTION_POLICY, modeGate). Classify every new action; workModeCoverage fails otherwise.",
-  "A new setting goes in both getSettingDefinitions() and display(). Modals extend DuckmageModal. Per-hex loops read layout first, then write.",
+  "A new setting goes in getSettingDefinitions() (display() draws the same definitions). Modals extend HexmakerModal. Per-hex loops read layout first, then write.",
 ]
 
 [modes.verify]

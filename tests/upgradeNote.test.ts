@@ -6,6 +6,7 @@
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
+import { readSource } from "./helpers/source";
 import { Notice } from "obsidian";
 import { beginNoticeBatch, combinedTimeout, endNoticeBatch, noticeBatchOpen, noticeUpgrade } from "../src/ui/notify";
 import { takeUpgradeReport } from "../src/migrations/upgradeReport";
@@ -163,5 +164,14 @@ describe("MG7: the data stamp", () => {
 		const readme = readSource("src", "migrations", "README.md");
 		expect(readme).toContain('"dataFormat": 2');
 		expect(readme).toContain("hexmaker-map:");
+	});
+});
+
+describe("the upgrade note reads as Markdown", () => {
+	it("no bare <tag> in its changes or the changelog: an HTML tag stops the rest of the note rendering", () => {
+		const log = readFileSync("CHANGELOG.md", "utf8").replace(/`[^`]*`/g, "").replace(/<!--[\s\S]*?-->/g, "");
+		expect(log.match(/<[a-z][^>\n]*>/g) ?? []).toEqual([]);
+		const migration = readSource("src/migrations/v1.5-map-data-to-map-notes.ts");
+		expect(migration).toContain("map notes (\\`_<map>.md\\`)");
 	});
 });
