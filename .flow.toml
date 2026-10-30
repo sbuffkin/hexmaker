@@ -1,0 +1,55 @@
+# Flow modes for this repo: only what a session wouldn't otherwise know.
+# Public repo: no secrets, no local paths. Check with `flow lint .flow.toml`.
+private = false
+
+[modes.implement]
+rules = [
+  "CRLF repo: run git with -c core.autocrlf=true -c core.fileMode=false.",
+  "Every feature is a release slice (release-slices.json). Add new features behind a module and __SLICE_*__ flag, not in core.",
+  "Core never imports a slice's folder (src/hexflower, src/space, ...): reach it through module hooks.",
+  "Play mode never writes map data (src/workMode.ts ACTION_POLICY, modeGate). Classify every new action; workModeCoverage fails otherwise.",
+  "A new setting goes in both getSettingDefinitions() and display(). Modals extend DuckmageModal. Per-hex loops read layout first, then write.",
+]
+
+[modes.verify]
+description = "running this plugin's gates and hidden smoke suite on a change"
+exit = "tsc, eslint, tests, the full build, test:slices, check:release and the smoke suite all pass."
+rules = [
+  "Gate: npm run build, npm run lint, npm test, npm run build:full, npm run test:slices, npm run check:release. Run heavy steps through jobq.",
+  "Behaviour: npm run smoke -- --slices all --jobs 2 --stamp <name> drives a hidden Obsidian through 9 vault setups; npm run smoke:mobile adds touch. npm run premerge runs the merge gate.",
+  "Add a smoke check (dev/smoke/lib) for any new user flow. Type checks and unit tests alone don't count for UI work.",
+  "Performance claims need a benchmark on a large map, not a headless impression.",
+]
+
+[modes.qa]
+rules = [
+  "Fresh-eyes rounds use the sandboxes in dev/smoke; they launch Obsidian hidden.",
+  "Check each release set as a built bundle: HEXMAKER_SLICES=<spec> node esbuild.config.mjs production, then npm run check:release -- --slices <spec>.",
+]
+
+[modes.ship]
+purpose = "Release to the Obsidian community store."
+exit = "The GitHub release exists, and the Obsidian review on it passed."
+rules = [
+  "A push to master auto-releases. Never push or release without the owner's explicit approval for that change.",
+  "Follow .claude/commands/release.md. One bump per release, as its own tip commit. The owner decides what's in the release through released flags in release-slices.json.",
+  "Master releases are gated on the Obsidian review in CI; if it fails, follow .github/OBSIDIAN_REVIEW.md.",
+  "Before a release, run check:release: a slice built off must leave no trace in main.js or the release README.",
+]
+
+[modes.coordinate]
+rules = [
+  "Public issues and PRs: never post, comment, close or label. Give the owner bullet points of what's relevant; the owner writes the reply.",
+]
+
+[modes.import-tables]
+description = "importing random tables into this plugin's table format from an outside source"
+purpose = "Get outside tables into the vault as readable random tables."
+exit = "The tables parse and roll in the plugin."
+skills = ["hex-table-import"]
+
+[modes.docs-sync]
+description = "bringing the plugin's bundled help and README in line with its tools"
+purpose = "Keep the bundled help and README true to what's built."
+exit = "Help and README match the commands and tools, with slice markers kept."
+rules = ["Run /update-help. Text about an unreleased slice stays inside its slice markers. readmeCommands fails if README and commands differ."]
