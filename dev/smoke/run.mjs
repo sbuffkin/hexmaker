@@ -167,7 +167,9 @@ async function readJson(file) {
 }
 
 async function runSetup(setup) {
-  const why = setup.unavailable?.();
+  const off = (setup.needs ?? []).filter((id) => !builtSlices.on?.includes(id));
+  const on = (setup.needsOff ?? []).filter((id) => builtSlices.on?.includes(id));
+  const why = setup.unavailable?.() ?? (off.length ? `needs slice ${off.join(", ")}, built off` : on.length ? `needs slice ${on.join(", ")} built off` : undefined);
   if (why) {
     log(`${setup.id}: SKIPPED (${why})`);
     return { id: setup.id, title: setup.title, ok: true, skipped: why, seconds: 0, runDir: null, checks: [] };
@@ -265,7 +267,9 @@ async function runSetup(setup) {
         const r = await ev(P.openMap, pluginId, m.name, budget + 5000);
         firstOpen ??= r;
         opens.push({ map: m.name, ...r });
-        if (r.active !== m.name) probs.push(`${m.name}: view shows ${r.active}`);
+        // Made with a slice built off: listed, never opened.
+        if (m.offSlice) { if (r.active === m.name) probs.push(`${m.name}: made with a newer build, but it opened`); }
+        else if (r.active !== m.name) probs.push(`${m.name}: view shows ${r.active}`);
         // Deleted by hand (SM-DEL): the view shows the missing empty state.
         else if (m.missing) { if (!r.missingState) probs.push(`${m.name}: missing, but no missing-map state shown`); }
         else if (m.broken) probs.push(`${m.name}: map note unreadable`);
@@ -369,7 +373,7 @@ async function runSetup(setup) {
     }
 
     // C6 + C8 on the smallest plain map.
-    const plain = state.maps.filter((m) => !m.overworld && m.cols * m.rows > 0).sort((a, b) => a.cols * a.rows - b.cols * b.rows);
+    const plain = state.maps.filter((m) => !m.overworld && !m.offSlice && m.cols * m.rows > 0).sort((a, b) => a.cols * a.rows - b.cols * b.rows);
     const target = plain.find((m) => m.hexes > 0) ?? plain[0];
     if (!target) rec("C6-paint", false, "no plain map to paint on");
     else {

@@ -10207,3 +10207,14 @@ body.is-mobile .duckmage-party-control button {
 .duckmage-settings-fields-problem {
   color: var(--text-error);
 }
+
+/* A map made with a slice this build doesn't have (maps/offSliceMaps.ts) */
+.duckmage-map-list-item.is-off-slice .duckmage-map-list-name {
+    color: var(--text-muted);
+}
+.duckmage-map-off-slice {
+    margin-left: 8px;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    font-style: italic;
+}

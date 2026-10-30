@@ -503,6 +503,7 @@ export default class HexmakerPlugin extends Plugin {
   autoRegisterMapsFromVault(): Promise<void> { return this.maps.autoRegisterMapsFromVault(); }
   updateSubmapReferences(oldName: string, newName: string): Promise<void> { return this.maps.updateSubmapReferences(oldName, newName); }
   restoreMissingMap(name: string): Promise<boolean> { return this.maps.restoreMissingMap(name); }
+  isOffSliceMap(name: string): boolean { return this.maps.isOffSliceMap(name); }
   removeMapEntry(name: string): Promise<void> { return this.maps.removeMapEntry(name); }
   createNewMap(opts: NewMapOptions): Promise<{ name: string } | { error: string }> { return this.maps.createNewMap(opts); }
   getMap(name: string): MapData | undefined { return this.maps.getMap(name); }

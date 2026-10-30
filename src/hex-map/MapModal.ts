@@ -1,3 +1,5 @@
+import { OFF_SLICE_TEXT } from "../maps/offSliceMaps";
+import { renderMissingActions } from "./mapModal/missingActions";
 import { App, Menu, Notice, TFolder, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
@@ -37,34 +39,6 @@ import { isDebugMode } from "../ui/debugMode";
 import { groupId } from "../ui/placeGroup";
 
 type ModalTab = "Maps" | "Properties" | "Regions" | "Export";
-
-/**
- * Restore / Remove for a missing map (SM-DEL), in the map list and on the
- * map view's empty state. Remove asks once more (a second click) before it
- * drops the map from the list; no file is touched either way.
- */
-export function renderMissingActions(el: HTMLElement, plugin: HexmakerPlugin, name: string, done: () => void): void {
-  const box = el.createSpan({ cls: "duckmage-map-missing-actions" });
-  const restore = box.createEl("button", { text: "Restore", cls: "mod-cta", attr: { title: "Write its map note back from the last saved copy" } });
-  restore.addEventListener("click", (e) => {
-    e.stopPropagation();
-    restore.disabled = true;
-    void plugin.restoreMissingMap(name).then(done);
-  });
-  const remove = box.createEl("button", { text: "Remove", attr: { title: "Drop it from the map list (no files are deleted)" } });
-  // The shared two-click guard (src/ui/footer.ts armButton).
-  remove.addEventListener("click", (e) => e.stopPropagation());
-  armButton(remove, {
-    armedText: "Click again to remove",
-    onConfirm: () => {
-      remove.disabled = true;
-      void plugin.removeMapEntry(name).then(() => {
-        new Notice(`Removed "${plugin.mapLabel(name)}" from the map list.`);
-        done();
-      });
-    },
-  });
-}
 
 export class MapModal extends HexmakerModal {
   private stopKeepInViewport?: () => void;
@@ -376,6 +350,13 @@ export class MapModal extends HexmakerModal {
         swatch.addClass("duckmage-map-terrain-swatch--set");
       }
 
+      // Made with a slice this build doesn't have: listed and marked, never opened (maps/offSliceMaps.ts).
+      if (this.plugin.isOffSliceMap(map.name)) {
+        row.addClass("is-off-slice");
+        row.createSpan({ text: node.label, cls: "duckmage-map-list-name" });
+        row.createSpan({ cls: "duckmage-map-off-slice", text: OFF_SLICE_TEXT });
+        return;
+      }
       const missing = this.plugin.mapStore.isMissing(map.name);
       if (missing) {
         row.addClass("is-missing");

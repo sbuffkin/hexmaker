@@ -26,6 +26,20 @@ export function releasedSlices(slices = readSlices()) {
 	return flaggedSlices(slices).filter((id) => slices[id].released);
 }
 
+/**
+ * A map mark's hash (FNV-1a, 32 bits): what a build keeps of the map-note keys
+ * of slices built off, so it can tell such a map without naming the slice's
+ * keys in main.js. src/maps/offSliceMaps.ts computes the same.
+ */
+export function markHash(key) {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < key.length; i++) {
+		h ^= key.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h;
+}
+
 /** Split an id list ("a, b" or "a,b"); blanks dropped. */
 const ids = (v) => String(v ?? "").split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
 
@@ -54,7 +68,7 @@ const ids = (v) => String(v ?? "").split(/[\s,]+/).map((s) => s.trim()).filter(B
  * differs from the release set).
  *
  * @param {{ spec?: string, on?: string, off?: string, base?: string, slices?: Record<string, any> }} [opts]
- * @returns {{ on: Set<string>, off: Set<string>, flags: Record<string, boolean>, channel: string, slices: string[] }}
+ * @returns {{ on: Set<string>, off: Set<string>, flags: Record<string, boolean>, channel: string, slices: string[], offMapMarks: number[] }}
  */
 export function resolveSlices({ spec = undefined, on = undefined, off = undefined, base = "released", slices = readSlices() } = {}) {
 	const flagged = flaggedSlices(slices);
@@ -91,7 +105,8 @@ export function resolveSlices({ spec = undefined, on = undefined, off = undefine
 	const plus = onIds.filter((id) => !released.has(id));
 	const minus = named.released.filter((id) => !set.has(id));
 	const channel = !plus.length && !minus.length ? "release" : !offIds.length ? "full" : `custom ${[...plus.map((i) => `+${i}`), ...minus.map((i) => `-${i}`)].join(" ")}`;
-	return { on: new Set(onIds), off: new Set(offIds), flags, channel, slices: onIds };
+	const offMapMarks = offIds.flatMap((id) => slices[id].mapMarks ?? []).map(markHash);
+	return { on: new Set(onIds), off: new Set(offIds), flags, channel, slices: onIds, offMapMarks };
 }
 
 /**
@@ -149,6 +164,7 @@ export function sliceDefines(resolved) {
 	return {
 		...Object.fromEntries(Object.entries(resolved.flags).map(([k, v]) => [k, JSON.stringify(v)])),
 		__HEXMAKER_SLICES__: JSON.stringify(JSON.stringify(resolved.slices)),
+		__OFF_SLICE_MAP_MARKS__: JSON.stringify(resolved.offMapMarks ?? []),
 	};
 }
 

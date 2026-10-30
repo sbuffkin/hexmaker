@@ -112,7 +112,7 @@ function rollTarget(mode: string) {
 
 describe("the play slice in release-slices.json", () => {
   it("unreleased for now, documented, and Hex flower needs it (built off together)", () => {
-    expect(SLICES.play).toEqual({ docs: true, define: "__SLICE_PLAY__", modules: ["play"], released: false, requires: [] });
+    expect(SLICES.play).toEqual({ docs: true, define: "__SLICE_PLAY__", modules: ["play"], released: false, mapMarks: ["visited", "show-visited"], requires: [] });
     expect(SLICES.hexflower.requires).toContain("play");
     expect(offClosure(["play"])).toEqual(expect.arrayContaining(["play", "hexflower"]));
   });

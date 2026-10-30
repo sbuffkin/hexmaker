@@ -10,6 +10,7 @@
  *   expect       what the checks assert for this setup
  *   extra        setup-specific checks in the check launch
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { hostPath } from "./lib/obsidian.mjs";
@@ -704,6 +705,36 @@ async function manyMapsExtra(ctx) {
   return [{ check: "F9-count", ok: n >= 80, detail: `${n} maps, ${deep} at depth 4, store ready in ${ctx.readyMs} ms` }];
 }
 
+function recipeNewerBuild(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    const app = window.app;
+    p.settings.setupComplete = true;
+    app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    const a = await p.createNewMap({ name: "Newer", cols: 6, rows: 5, palette: p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name, quiet: true });
+    const b = await p.createNewMap({ name: "Mine", cols: 6, rows: 5, palette: p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name, quiet: true });
+    if ("error" in a || "error" in b) throw new Error("maps not made");
+    const palette = p.getMap(a.name).paletteName;
+    const terrain = p.getPaletteOrPresetTerrains(palette)[0].name;
+    p.mapStore.setMany(a.name, [["1_1", { terrain }]]);
+    p.mapStore.setMany(b.name, [["1_1", { terrain }]]);
+    p.settings.defaultMap = b.name;
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return { marked: a.name, other: b.name, notePath: p.mapStore.notePath(a.name) };
+  })();
+}
+
+async function newerBuildExtra(ctx) {
+  const r = await ctx.ev((id, n, o) => window.__smokePage.offSliceCheck(id, n, o), ctx.pluginId, ctx.prepInfo.marked, ctx.prepInfo.other);
+  const out = [{ check: "C13-newer-build", ok: r.problems.length === 0, detail: [...r.steps, ...r.problems].join("; ") }];
+  // Still byte for byte what the run started with (C4 and C5 check every other file).
+  const now = fs.readFileSync(path.join(ctx.vault, ctx.prepInfo.notePath));
+  const same = createHash("sha1").update(now).digest("hex").slice(0, 16) === ctx.snap0[ctx.prepInfo.notePath]?.h;
+  out.push({ check: "C13-note-unchanged", ok: same, detail: /^explore-fog: on$/m.test(now.toString("utf8")) ? "keys kept" : "explore-fog gone" });
+  return out;
+}
+
 // ── the matrix ────────────────────────────────────────────────────────────
 
 export const SETUPS = [
@@ -725,9 +756,9 @@ export const SETUPS = [
   // `slices`: the slices a setup exercises beyond the foundation (premerge runs those with an unreleased one on a build with every slice).
   { id: "fresh", title: "Fresh install", build: (dir) => ({ seed: seedDir(dir) }), expect: { wizard: true }, extra: freshExtra, skipPaint: true, slices: ["play", "fog", "hexflower", "fields"] },
   { id: "v155", title: "Synthetic 1.5.5 vault (hex-note frontmatter + data.json maps), migrates", build: buildV155, migration: true, expect: {} },
-  { id: "space", title: "Space only (sector → system → planet)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSpace, expect: {}, extra: spaceExtra, slices: ["space"] },
-  { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, prepHeld: true, expect: { openMs: 60_000 }, extra: overworldExtra, slices: ["worldmaps"] },
-  { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: {}, extra: neighboursExtra },
+  { id: "space", title: "Space only (sector → system → planet)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSpace, expect: {}, extra: spaceExtra, slices: ["space"], needs: ["space"] },
+  { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, prepHeld: true, expect: { openMs: 60_000 }, extra: overworldExtra, slices: ["worldmaps"], needs: ["worldmaps"] },
+  { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: {}, extra: neighboursExtra, needs: ["worldmaps"] },
   { id: "custom-palette", title: "One custom palette, no default names", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeCustomPalette, expect: {}, extra: customPaletteExtra },
   {
     id: "deleted", title: "Everything deleted (no palettes, path types or map folders)",
@@ -744,6 +775,22 @@ export const SETUPS = [
       fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
     },
     expect: {}, extra: deletedExtra, skipModeLocks: true,
+  },
+  {
+    id: "newer-build", title: "A map made with a slice built off (marked, not opened, not rewritten)",
+    build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNewerBuild, needsOff: ["fog"],
+    postPrep(vault, info, pluginId) {
+      // What a full build leaves: the keys in its note, the fields in data.json.
+      const note = path.join(vault, info.notePath);
+      fs.writeFileSync(note, fs.readFileSync(note, "utf8").replace(/^---\r?\n/, 'hexmaker-held: 0\n').replace(/^hexmaker-held: 0\n/, '---\nexplore-fog: on\nexplore-seen: ["1: 1"]\n'));
+      const dataFile = path.join(vault, ".obsidian", "plugins", pluginId, "data.json");
+      const data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+      const map = data.maps.find((m) => m.name === info.marked);
+      map.exploreFog = "on";
+      map.exploreSeen = ["1: 1"];
+      fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+    },
+    expect: {}, extra: newerBuildExtra,
   },
   { id: "many-maps", title: "Many maps (80, nested 4 deep, look-alike names)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeManyMaps, expect: {}, extra: manyMapsExtra },
 ];

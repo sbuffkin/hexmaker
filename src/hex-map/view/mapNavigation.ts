@@ -5,6 +5,7 @@
  * linked from a hex, and landing on a hex (centred, flashed). Switching the
  * open map itself stays with the view (host.switchToMap).
  */
+import { OFF_SLICE_TEXT } from "../../maps/offSliceMaps";
 import { Notice, type App } from "obsidian";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../../maps/mapTree";
@@ -83,6 +84,10 @@ export class MapNavigation {
   navigateToMap(name: string, opts: { recordHistory?: boolean; offerModule?: boolean } = {}): void {
     if (!this.plugin.getMap(name)) {
       new Notice(`Map "${name}" no longer exists.`);
+      return;
+    }
+    if (this.plugin.isOffSliceMap(name)) {
+      new Notice(`"${this.plugin.mapLabel(name)}" was ${OFF_SLICE_TEXT}, so it can't be opened here. Nothing in it has changed.`);
       return;
     }
     if (name === this.activeMapName) {

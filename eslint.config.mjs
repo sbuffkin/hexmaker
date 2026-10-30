@@ -10,6 +10,7 @@ import { readSlices } from "./dev/release/slices.mjs";
 const sliceGlobals = Object.fromEntries([
   ...Object.values(readSlices()).filter((s) => s.define).map((s) => [s.define, "readonly"]),
   ["__HEXMAKER_SLICES__", "readonly"],
+  ["__OFF_SLICE_MAP_MARKS__", "readonly"],
 ]);
 
 export default defineConfig([

@@ -101,6 +101,7 @@ export function state(id) {
     hexes: p.mapStore.all(m.name).size,
     broken: !!p.mapStore.broken?.has?.(m.name),
     missing: !!p.mapStore.isMissing?.(m.name),
+    offSlice: !!p.isOffSliceMap?.(m.name),
     noteExists: !!app.vault.getAbstractFileByPath(p.mapStore.notePath(m.name)),
     notePath: p.mapStore.notePath(m.name),
     // contextKinds since the module registry (P2); isSpaceMap on older builds.
@@ -163,6 +164,7 @@ export async function openMap(id, name, timeoutMs) {
   const view = () => app.workspace.getLeavesOfType("duckmage-hex-map")[0]?.view;
   let last = -1, stable = 0, hexes = 0;
   while (performance.now() - t0 < timeoutMs) {
+    if (p.isOffSliceMap?.(name)) break;
     const v = view();
     const root = v?.containerEl;
     hexes = root ? root.querySelectorAll(".duckmage-hex[data-x]").length : 0;
@@ -187,6 +189,34 @@ export async function openMap(id, name, timeoutMs) {
     workModeBtn: !!v?.containerEl?.querySelector(".duckmage-work-mode-btn"),
     missingState: !!v?.containerEl?.querySelector(".duckmage-map-missing-state"),
   };
+}
+
+/** A map made with a slice built off: marked in the map list, refused by the view and the write gate, its note untouched. */
+export async function offSliceCheck(id, name, other) {
+  const app = window.app;
+  const p = app.plugins.plugins[id];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const problems = [], steps = [];
+  if (!p.isOffSliceMap(name)) problems.push(`${name} isn't marked`);
+  if (p.isOffSliceMap(other)) problems.push(`${other} is marked and shouldn't be`);
+  const view = app.workspace.getLeavesOfType("duckmage-hex-map")[0]?.view;
+  await p.showMap(other);
+  await sleep(300);
+  view?.switchMapFromModal(name);
+  await sleep(300);
+  if (view?.activeMapName === name) problems.push("the view opened it");
+  else steps.push(`view stayed on ${view?.activeMapName}`);
+  if (p.mapStore.set(name, "0_0", { terrain: "x" }, "paint-terrain") !== false) problems.push("a paint went through");
+  else steps.push("paint refused");
+  const before = document.querySelectorAll(".modal-container").length;
+  view?.containerEl.querySelector(".duckmage-region-btn")?.click();
+  await sleep(500);
+  const marks = [...document.querySelectorAll(".duckmage-map-list-item.is-off-slice")].map((row) => row.textContent);
+  if (!marks.some((t) => /made with a newer build/.test(t))) problems.push(`not marked in the map list (rows marked: ${marks.length}, modals ${document.querySelectorAll(".modal-container").length - before})`);
+  else steps.push("marked in the map list");
+  document.querySelectorAll(".modal-container .modal-close-button").forEach((b) => b.click());
+  await sleep(200);
+  return { steps, problems };
 }
 
 /** Run a command by id; true if it ran (errors land in the console log). */

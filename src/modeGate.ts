@@ -19,8 +19,16 @@ export function setModeMapLookup(fn: MapLookup | null): void {
   lookup = fn;
 }
 
+let offSlice: ((mapName: string) => boolean) | null = null;
+
+/** Tell the gate how to spot a map made with a slice this build doesn't have: nothing writes to one. */
+export function setOffSliceCheck(fn: ((mapName: string) => boolean) | null): void {
+  offSlice = fn;
+}
+
 /** May `action` be done on map `mapName` in its current mode? */
 export function canDo(mapName: string, action: ModeAction): boolean {
+  if (offSlice?.(mapName)) return false;
   if (!lookup) return true;
   const map = lookup(mapName);
   if (!map) return true;

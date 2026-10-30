@@ -9,6 +9,7 @@ import { slicesFromEnv } from "../dev/release/slices.mjs";
 const slices = slicesFromEnv(process.env, [], "all");
 for (const [flag, on] of Object.entries(slices.flags)) globalThis[flag] = on;
 globalThis.__HEXMAKER_SLICES__ = JSON.stringify(slices.slices);
+globalThis.__OFF_SLICE_MAP_MARKS__ = slices.offMapMarks;
 
 // Stub .png and .md for CJS mode (tsx CLI uses CJS transforms; without this, tsx's
 // .js fallback handler tries to parse binary/markdown files as TypeScript and crashes).

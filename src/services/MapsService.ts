@@ -17,6 +17,8 @@ import type {
   MapData,
 } from "../types";
 import { pluginVersion } from "../compat";
+import { ALL_MAP_KINDS } from "../mapKinds";
+import { hasOffSliceKey, isOffSliceKind } from "../maps/offSliceMaps";
 import { workModeOf, type ModeAction, type WorkMode } from "../workMode";
 import { inheritedRoleTables, type RoleTablePick } from "../worldgen/tableSources";
 import { NAMES_ROLE, type RoleId } from "../worldgen/tableRoles";
@@ -41,7 +43,7 @@ import { hexKey, strictHexXY } from "../hexKey";
 import { ensureFolder } from "../vault/ensureFolder";
 
 /** What MapsService uses of the plugin. */
-export type MapsHost = Pick<HexmakerPlugin, "app" | "manifest" | "ensureOverworldBiomes" | "ensurePaletteInstalled" | "events" | "getMap" | "getMapPalette" | "mapLabel" | "mapStore" | "parentOf" | "refreshHexMap" | "roleTablesFor" | "saveSettings" | "settings" | "syncMapCoordAliases" | "tableNotes" | "undoBook">;
+export type MapsHost = Pick<HexmakerPlugin, "app" | "manifest" | "ensureOverworldBiomes" | "ensurePaletteInstalled" | "events" | "getMap" | "getMapPalette" | "mapLabel" | "mapStore" | "paletteStore" | "parentOf" | "refreshHexMap" | "roleTablesFor" | "saveSettings" | "settings" | "syncMapCoordAliases" | "tableNotes" | "undoBook">;
 
 /** What a new map is made with (createNewMap). */
 export interface NewMapOptions {
@@ -180,6 +182,19 @@ export class MapsService {
    * Create hex notes for every (x, y) in the cartesian product of xs × ys,
    * skipping any that already exist on disk.  Returns the number of notes created.
    */
+  /** A map made with a slice this build doesn't have (maps/offSliceMaps.ts): marked in the list, not opened, not written. */
+  isOffSliceMap(name: string): boolean {
+    const { vault, metadataCache } = this.plugin.app;
+    const frontmatter = (path: string | undefined) => {
+      const f = path ? vault.getAbstractFileByPath(path) : null;
+      return f instanceof TFile ? metadataCache.getFileCache(f)?.frontmatter : undefined;
+    };
+    if (hasOffSliceKey(frontmatter(this.plugin.mapStore.notePath(name)))) return true;
+    const palette = this.plugin.getMap(name)?.paletteName;
+    const kind: unknown = frontmatter(palette ? this.plugin.paletteStore.notePathOf(palette) : undefined)?.["map-kind"];
+    return isOffSliceKind(kind, ALL_MAP_KINDS);
+  }
+
   /**
    * Restore a missing map (SM-DEL): its note is written back from the last
    * saved copy (see MapStore.restoreMissing). Says what it did.

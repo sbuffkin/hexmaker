@@ -17,7 +17,7 @@ import type HexmakerPlugin from "./HexmakerPlugin";
 import { setIconPackDefault } from "./HexmakerModal";
 import { setHexDataSource } from "./maps/hexData";
 import { setFieldFiller } from "./maps/fieldFill";
-import { setHandEditListener, setModeMapLookup } from "./modeGate";
+import { setHandEditListener, setModeMapLookup, setOffSliceCheck } from "./modeGate";
 import { setPaletteTerrainSource } from "./palettes/paletteOptions";
 import { setPathEditMapLookup } from "./paths/editGate";
 import { isDebugMode } from "./ui/debugMode";
@@ -25,7 +25,7 @@ import { setNumberBoxDebug } from "./ui/numberBoxes";
 import { defaultIconPack } from "./utils";
 
 /** What the ports read from the plugin. */
-export type PortsHost = Pick<HexmakerPlugin, "settings" | "app" | "mapStore" | "arrival" | "getMap" | "getPaletteOrPresetTerrains">;
+export type PortsHost = Pick<HexmakerPlugin, "settings" | "app" | "mapStore" | "arrival" | "getMap" | "getPaletteOrPresetTerrains"> & Partial<Pick<HexmakerPlugin, "isOffSliceMap">>;
 
 /** Point every plugin-fed port at `plugin`. */
 export function bindPorts(plugin: PortsHost): void {
@@ -38,6 +38,7 @@ export function bindPorts(plugin: PortsHost): void {
 	setHexDataSource(plugin.mapStore);
 	setPathEditMapLookup((name) => plugin.getMap(name));
 	setModeMapLookup((name) => plugin.getMap(name));
+	setOffSliceCheck((name) => plugin.isOffSliceMap?.(name) ?? false);
 	// The first hand edit of a new (open) place locks it (ArrivalService.lockOnHandEdit).
 	setHandEditListener((name) => plugin.arrival.lockOnHandEdit(name));
 }
@@ -50,6 +51,7 @@ export function resetPorts(): void {
 	setHexDataSource(null);
 	setPathEditMapLookup(null);
 	setModeMapLookup(null);
+	setOffSliceCheck(null);
 	setHandEditListener(null);
 	setFieldFiller(null);
 }

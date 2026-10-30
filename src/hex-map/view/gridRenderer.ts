@@ -9,6 +9,7 @@
  * every measured layer runs after whenSized, and each of those builders reads
  * all geometry first (see CLAUDE.md, the coord-label thrash bench).
  */
+import { OFF_SLICE_TEXT } from "../../maps/offSliceMaps";
 import { TFile, TFolder, type App } from "obsidian";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { normalizeFolder, getIconUrl, createIconEl } from "../../utils";
@@ -20,7 +21,7 @@ import {
   gmIconsFromFm,
   getFactionColorFromFile,
 } from "../../frontmatter";
-import { renderMissingActions } from "../MapModal";
+import { renderMissingActions } from "../mapModal/missingActions";
 import { canAdd } from "../../workMode";
 import { coordHaloColor } from "../../coordStyle";
 import { watchBiomesPathHover } from "../biomesPathHover";
@@ -206,9 +207,15 @@ export class GridRenderer {
     this.missingEl?.remove();
     this.missingEl = null;
     const name = this.activeMapName;
-    if (!this.plugin.mapStore.isMissing(name) || !this.controlsEl) return false;
+    const offSlice = this.plugin.isOffSliceMap(name);
+    if ((!offSlice && !this.plugin.mapStore.isMissing(name)) || !this.controlsEl) return false;
     const box = this.controlsEl.createDiv({ cls: "duckmage-map-missing-state" });
     this.missingEl = box;
+    if (offSlice) {
+      box.createEl("h3", { text: `${this.plugin.mapLabel(name)} was ${OFF_SLICE_TEXT}` });
+      box.createEl("p", { text: "This build can't open it. Its notes are kept exactly as they are." });
+      return true;
+    }
     box.createEl("h3", { text: `${this.plugin.mapLabel(name)} is missing` });
     box.createEl("p", { text: `Its folder and map note (${this.plugin.mapStore.notePath(name)}) were deleted. Restore writes the note back from the last saved copy; Remove drops the map from the list. No file is deleted.` });
     renderMissingActions(box, this.plugin, name, () => this.renderGrid());

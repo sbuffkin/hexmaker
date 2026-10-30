@@ -15,3 +15,5 @@ declare const __SLICE_MANUAL__: boolean;
 declare const __SLICE_FIELDS__: boolean;
 /** The slices built on, as JSON text ('["worldmaps","space"]'); see src/modules/index.ts builtSlices(). */
 declare const __HEXMAKER_SLICES__: string;
+/** Hashes of the map-note keys of slices built off (src/maps/offSliceMaps.ts). */
+declare const __OFF_SLICE_MAP_MARKS__: readonly number[];
