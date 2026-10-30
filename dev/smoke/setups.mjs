@@ -380,6 +380,9 @@ async function freshExtra(ctx) {
   // C10b: New map's Explore as you go, powered by generators (HF8).
   const ex = await ctx.ev((id) => window.__smokePage.exploreAsYouGo(id), ctx.pluginId);
   out.push({ check: "C10b-explore-as-you-go", ok: ex.ok, detail: ex.skipped ? `skipped: ${ex.skipped}` : [...ex.steps, ...ex.problems].join("; ") });
+  // C12: hex fields (#52): declare, paint, type in the editor, Recalculate near a town, undo.
+  const hf2 = await ctx.ev((id) => window.__smokePage.hexFieldsCheck(id), ctx.pluginId);
+  out.push({ check: "C12-hex-fields", ok: hf2.ok, detail: hf2.skipped ? `skipped: ${hf2.skipped}` : [...hf2.steps, ...hf2.problems].join("; ") });
   return out;
 }
 

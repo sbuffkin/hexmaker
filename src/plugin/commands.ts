@@ -19,6 +19,7 @@ import { enabledKinds } from "../mapKinds";
 import { isDebugMode } from "../ui/debugMode";
 import { addPlacedMenuItems, placeCommand } from "../ui/commandPlacement";
 import { RestoreBackupModal, openBackupsFolder } from "../BackupsModal";
+import { RecalculateFieldsModal } from "../fields/RecalculateFieldsModal";
 import { mapLinkUri } from "../hexLink";
 import { normalizeFolder } from "../utils";
 import { pdfAvailable } from "../platform";
@@ -109,6 +110,17 @@ export function registerCommands(plugin: HexmakerPlugin): void {
     id: "check-tables",
     name: "Check tables",
     callback: () => void runTableCheck(plugin),
+  });
+  // Hex fields (#52): redo the open map's fields after places changed.
+  addPlaced("Plugin.cmd.recalculateFields", {
+    id: "recalculate-fields",
+    name: "Recalculate fields",
+    checkCallback: (checking) => {
+      const map = plugin.activeMapName();
+      if (!map) return false;
+      if (!checking) new RecalculateFieldsModal(plugin.app, plugin, map).open();
+      return true;
+    },
   });
   // Backups stay in the plugin's folder; these reach them (owner MG2).
   addPlaced("Plugin.cmd.openBackupsFolder", {

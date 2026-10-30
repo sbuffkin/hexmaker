@@ -10130,4 +10130,78 @@ body.is-mobile .duckmage-party-control button {
 .duckmage-explore-problem {
     color: var(--text-error);
     min-height: 1.2em;
+/* ── Hex fields (#52): the editor's Fields section, the hex table's field columns and filters, Settings → Hex fields ── */
+.duckmage-editor-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.duckmage-editor-field-label {
+  flex: 0 0 9em;
+  color: var(--text-muted);
+}
+.duckmage-editor-field-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.duckmage-editor-field-input.is-invalid,
+.duckmage-settings-fields-input.is-invalid {
+  border-color: var(--text-error);
+}
+.duckmage-editor-field-value {
+  flex: 1 1 auto;
+  font-variant-numeric: tabular-nums;
+}
+.duckmage-editor-field-roll {
+  flex: 0 0 auto;
+}
+.duckmage-hex-table-field.is-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.duckmage-hex-table-field-head {
+  white-space: nowrap;
+}
+.duckmage-field-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.duckmage-field-filter-name {
+  flex: 0 0 9em;
+}
+.duckmage-field-filter-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.duckmage-settings-fields-row {
+  flex-wrap: wrap;
+}
+.duckmage-settings-fields {
+  flex: 1 0 100%;
+  margin-top: 8px;
+}
+.duckmage-settings-fields-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.duckmage-settings-fields-input {
+  flex: 1 1 8em;
+  min-width: 6em;
+}
+.duckmage-settings-fields-radius {
+  flex: 0 0 5em;
+}
+.duckmage-settings-fields-problem,
+.duckmage-settings-fields-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 4px 0;
+}
+.duckmage-settings-fields-problem {
+  color: var(--text-error);
 }

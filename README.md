@@ -34,6 +34,15 @@ A two-panel view for rolling and managing weighted random tables. The left panel
 
 ![Rolling on a random table and seeing the result highlighted](docs/RandomTable.gif)
 
+### Hex fields
+Your own data on every hex: population, land value, a ruler, "has a ford"… Declare the fields once per world in **Settings → Hex fields** (or by hand in the note `Hex fields.md` in the world folder): each has a name, a type (number, whole number, text, yes/no or choice), a default, and either a random table to roll or a formula over the hex's other fields (`Population / 20`).
+
+- **Rolled when a hex gets terrain** (painted, generated or explored). A table row's **When** can say `near: town 2` (a town within 2 hexes).
+- **Places change them:** each place type (town, city, camp, settlement, or your own) can add or multiply a field on its own hex (**Here**: `+400`, `x1.5`, `=yes`) and on the hexes within a radius (**Nearby**: `+40%`, fading with distance). A hex is a town when its terrain is called Town (or its terrain type is a settlement type), or its note links a town note under Towns (the town note's `place-type:` property names other types: `place-type: city`).
+- **Recalculate fields** redoes a map after you add places.
+- **Edit** them in the hex editor's **Fields** section (Build mode; Play shows them read-only), and sort and filter by them in the hex table.
+- They are stored as columns of the map note's `## Hexes` table, named like the field, plain values; edits made to those columns by hand or by a script are kept. A "Field rolls" column remembers each roll before places changed it.
+
 ### Hex table view
 
 A scrollable spreadsheet of every hex note — one row per hex, columns for terrain, description, towns, dungeons, features, quests, factions, encounters table, and all the freeform sections. Click any cell to edit it in place. Filter by map, terrain type, or the presence of specific link types. The ◎ button jumps the map view to that hex's position.
@@ -248,7 +257,7 @@ More a table can say, all optional (a table without them reads exactly as before
 
 - **Weights** can be decimals (`3.5`, `0.5`) or percentages (`50%` is 0.5).
 - **Extra columns** are kept and shown read-only in the Random Tables view; they travel with a row when something rolls on it<!-- slice:space --> (a world's **Size**, **Generator**, **Mainworld**…)<!-- /slice -->.
-- Four column names will mean the same in every table: **Roll** (`now`, or `on arrival` for a row that stays unknown until someone visits), **Shown as** (what such a hex shows until then), **Once** (`per world` or `per map`) and **When** (<!-- slice:space -->`zone: outer`, `star: red dwarf, white dwarf`, `ring: 2–4`, <!-- /slice --><!-- slice:worldmaps -->`temperature: cold`, <!-- /slice -->`type: gas-giant`; separate several with `;`; a row whose When doesn't fit is rolled again). They are read, kept and checked (**Check tables** lists a value it can't read). Roll and Shown as work when generating and arriving, and Once when the map rolls (see **Once-only rows**); When in the Random Tables view comes later.
+- Four column names will mean the same in every table: **Roll** (`now`, or `on arrival` for a row that stays unknown until someone visits), **Shown as** (what such a hex shows until then), **Once** (`per world` or `per map`) and **When** (<!-- slice:space -->`zone: outer`, `star: red dwarf, white dwarf`, `ring: 2–4`, <!-- /slice --><!-- slice:worldmaps -->`temperature: cold`, <!-- /slice -->`type: gas-giant`, `near: town 2`; separate several with `;`; a row whose When doesn't fit is rolled again). They are read, kept and checked (**Check tables** lists a value it can't read). Roll and Shown as work when generating and arriving, and Once when the map rolls (see **Once-only rows**); When in the Random Tables view comes later.
 - `rows:` in the frontmatter says what the rows are (`text`, `note`, `table`, `generator`, `terrain`<!-- slice:worldmaps -->, `biome`<!-- /slice --> or `any`, the default), and `terrain-type:` narrows terrain rows<!-- slice:space --> (`star`)<!-- /slice -->. It is read and checked now; table pickers will use it to offer only tables that fit.
 - `linked-folder:` works like `linkedFolder:`.
 - `pick: each` in the frontmatter makes a "roll for each line" table: every row comes up on its own **Chance** column (`always`, `1 in 2`, `60%`; blank is always) instead of one row by weight.<!-- slice:space --> Orbits' **System extras** is one.<!-- /slice -->
@@ -395,6 +404,7 @@ Every command, as it appears in the command palette:
 | **Hexmap World Creator: Convert world types to tables** | Writes each World types note as random tables under `{tables folder}/space/<name>/` (backed up first; the notes are kept and link to the tables). Shown while a note is left to convert. |
 | **Hexmap World Creator: Edit world types…** | Opens the world types table editor (which worlds the space generators place, how often, and how each world's map is made), with a preview. Space maps on. |<!-- /slice --><!-- slice:worldmaps -->
 | **Hexmap World Creator: New overworld…** | Generate overworld (first pass): a map of biomes from a biome pool, laid out by climate, whose hexes open into regions that join up; can make every region at once. |<!-- /slice -->
+| **Hexmap World Creator: Recalculate fields** | Works out the open map's hex fields again after towns or cities were added or the fields changed: **Update places** keeps rolls and typed values, **Roll everything again** rolls every field. One undo step. See Hex fields. |
 | **Hexmap World Creator: Go up to parent map** | From a submap, back to the map it belongs to. |
 | **Hexmap World Creator: Go back to previous map** | Returns to the map you were on before. |
 | **Hexmap World Creator: Go forward to the next map** | After going back, forward again (like a browser). |

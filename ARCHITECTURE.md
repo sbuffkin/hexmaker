@@ -134,6 +134,9 @@ name: Glass Wastes
 ### Palettes and path types — notes
 One note per palette in `palettesFolder` (default `{worldFolder}/palettes`; frontmatter `hexmaker-palette`, basename = name). A terrain table (`| Terrain | Color | Icon | Icon color | Category | Type | Impassable |`, colours as inline code) and a `## Path types` table (`| Path | Color | Width | Style | Routing | Avoid impassable | Auto-route |`). `PaletteStore` syncs notes ⇄ `settings.terrainPalettes` (working copy + data.json cache); code edits palettes in memory and calls `saveSettings()`. Presets: `src/palettes/presets.ts` and each module's `presets.ts`; `presetUpdates.ts` offers new preset content once.
 
+### Hex fields note
+`{worldFolder}/Hex fields.md` (`hexmaker-fields: 1`): `## Fields` (`| Field | Type | Default | Table | Formula | Choices |`) and `## Place influences` (`| Place type | Field | Here | Nearby | Radius |`). The only copy of the declarations (`FieldStore`); the values are `## Hexes` columns of each map note named like the field, plus a `Field rolls` column (each rolled value before places changed it). A hex is filled when it gets terrain (`maps/fieldFill.ts`, inside `MapStore.set` / `setMany`, so it shares that write's work-mode gate and undo).
+
 ### Other notes
 - **Areas:** faction and region notes (`factionsFolder`, `regionsFolder`), styled by `src/notes/areaStyle.ts`, with a Map data callout (`regionMapData.ts`).
 - **Biomes and pools** (World maps, `BiomeStore`), **world types** (Space, `WorldTypeStore`), **hex flowers** (`FlowerStore`): folders of notes that are the only copy of their data, on `src/stores/NoteFolderStore.ts`.
@@ -252,6 +255,7 @@ Map types and whole features are **modules** (owner calls CM1–CM8, plan `plan-
 | `worldgen/` | Generator registry and engines, `NewMapSetupModal`, previews, the saves format |
 | `overworld/`, `space/`, `hexflower/` | Module code: World maps (biomes, regions, overworld layer), Space (orbits, star scatter, world types), hex flowers |
 | `random-tables/` | `RandomTableView`, parse/roll (`randomTable.ts`, `resolve.ts`), `TableStore`, `TableNotes`, roller block, workflows |
+| `fields/` | Custom hex fields (#52): the world's fields note (`fieldsNote.ts`, `FieldStore`), types, formulas, place influences, `near:` places, a hex / a map worked out (`hexFields.ts`, `mapFields.ts`); the plugin half is `services/FieldsService.ts`, the fill hook `maps/fieldFill.ts` |
 | `palettes/` | `PaletteStore`, `paletteNote.ts`, `pathTypeTable.ts`, presets, palette editor view, renames |
 | `paths/` | `PathsService`, router, route cache and pins, edits and gates, path columns, legacy readers |
 | `arrival/` | Places made on arrival, events ledgers (Solo play is `modules/play/`) |

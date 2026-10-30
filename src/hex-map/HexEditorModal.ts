@@ -31,6 +31,7 @@ import { TerrainIconSections, type TerrainIconHost } from "./editor/TerrainIconS
 import { LinkSections, type LinkSectionHost } from "./editor/LinkSection";
 import { TableSections, type TableSectionsHost } from "./editor/TableSections";
 import { TextSections, type TextSectionHost } from "./editor/TextSection";
+import { FieldsSection } from "./editor/FieldsSection";
 import { nextFieldSeq } from "./editor/host";
 
 /** Typing pause after which a text section autosaves. */
@@ -76,6 +77,7 @@ export class HexEditorModal extends HexmakerModal {
   private readonly links = new LinkSections(this.host);
   private readonly tables = new TableSections(this.host);
   private readonly texts = new TextSections(this.host, this.tables);
+  private readonly fieldBoxes = new FieldsSection(this.host);
 
   constructor(
     app: App,
@@ -296,7 +298,8 @@ export class HexEditorModal extends HexmakerModal {
     // (one line instead of the pickers). Notes are never locked (WM2).
     if (canDo(this.mapName, "paint-terrain")) this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
     else this.renderModeLocked(terrainBody, "paint-terrain");
-
+    // The world's hex fields (#52): map data, typed (editor/FieldsSection.ts).
+    this.fieldBoxes.render(bodyEl);
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
     const { body: notesBody } = this.makeCollapsible(
@@ -565,14 +568,7 @@ export class HexEditorModal extends HexmakerModal {
   }
 
   /** A link section (editor/LinkSection.ts); returns its links setter. */
-  private renderDropdownSection(
-    container: HTMLElement,
-    path: string,
-    section: LinkSection,
-    hexExists: boolean,
-    sourceFolder: string,
-    initialLinks: string[],
-  ): (links: string[]) => void {
+  private renderDropdownSection(container: HTMLElement, path: string, section: LinkSection, hexExists: boolean, sourceFolder: string, initialLinks: string[]): (links: string[]) => void {
     return this.links.renderDropdownSection(container, path, section, hexExists, sourceFolder, initialLinks);
   }
 

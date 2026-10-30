@@ -36,6 +36,7 @@ function fakePlugin(opts: { throwIn?: string } = {}) {
 		moduleStores: [{ onCreate: rec("module.create"), onModify: rec("module.modify"), onDelete: rec("module.delete"), onRename: rec("module.rename") }],
 		mapStore: { onCreate: rec("map.create"), onModify: rec("map.modify"), onDelete: rec("map.delete"), isReady: () => false, resolve: () => null },
 		calloutMemory: { forget: rec("callout.forget"), rename: rec("callout.rename") },
+		fields: { onMetadataChanged: rec("fields.places"), store: { onModify: rec("fields.modify"), onDelete: rec("fields.delete"), onRename: rec("fields.rename") } },
 		regionOrFactionKind: () => null,
 	};
 	registerVaultEvents(plugin as never);
@@ -60,15 +61,15 @@ describe("vault events: one dispatcher per event, order kept", () => {
 		const { log, fire } = fakePlugin();
 		const icon = file("icons/a.png");
 		fire("vault:create", icon);
-		expect(log.splice(0)).toEqual(["icons", "palette.modify", "module.create", "map.create"]);
+		expect(log.splice(0)).toEqual(["icons", "palette.modify", "module.create", "map.create", "fields.modify"]);
 		fire("vault:modify", icon);
-		expect(log.splice(0)).toEqual(["palette.modify", "module.modify", "map.modify"]);
+		expect(log.splice(0)).toEqual(["palette.modify", "module.modify", "map.modify", "fields.modify"]);
 		fire("vault:delete", icon);
-		expect(log.splice(0)).toEqual(["hexProps.delete", "icons", "map.delete", "palette.delete", "module.delete", "callout.forget"]);
+		expect(log.splice(0)).toEqual(["hexProps.delete", "icons", "map.delete", "palette.delete", "module.delete", "callout.forget", "fields.delete"]);
 		fire("vault:rename", icon, "icons/b.png");
-		expect(log.splice(0)).toEqual(["hexProps.rename", "icons", "palette.rename", "module.rename", "callout.rename"]);
+		expect(log.splice(0)).toEqual(["hexProps.rename", "icons", "palette.rename", "module.rename", "callout.rename", "fields.rename"]);
 		fire("meta:changed", icon, "", {});
-		expect(log.splice(0)).toEqual(["hexProps.changed"]);
+		expect(log.splice(0)).toEqual(["hexProps.changed", "fields.places"]);
 		fire("ws:file-open", icon);
 		expect(log.splice(0)).toEqual(["hexProps.open"]);
 		fire("ws:active-leaf-change");
@@ -78,7 +79,7 @@ describe("vault events: one dispatcher per event, order kept", () => {
 	it("a file outside the icons folder doesn't reload the icons", () => {
 		const { log, fire } = fakePlugin();
 		fire("vault:create", file("notes/a.md"));
-		expect(log).toEqual(["palette.modify", "module.create", "map.create"]);
+		expect(log).toEqual(["palette.modify", "module.create", "map.create", "fields.modify"]);
 	});
 
 	it("a throwing step stops only its own group, as separate handlers did (and is logged)", () => {
@@ -88,7 +89,7 @@ describe("vault events: one dispatcher per event, order kept", () => {
 		try {
 		const { log, fire } = fakePlugin({ throwIn: "hexProps.delete" });
 		fire("vault:delete", file("icons/a.png"));
-		expect(log).toEqual(["hexProps.delete", "icons", "map.delete", "palette.delete", "module.delete", "callout.forget"]);
+		expect(log).toEqual(["hexProps.delete", "icons", "map.delete", "palette.delete", "module.delete", "callout.forget", "fields.delete"]);
 		const inGroup = fakePlugin({ throwIn: "map.delete" });
 		inGroup.fire("vault:delete", file("icons/a.png"));
 		expect(inGroup.log).toEqual(["hexProps.delete", "icons", "map.delete"]);
