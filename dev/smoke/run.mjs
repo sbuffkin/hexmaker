@@ -277,6 +277,9 @@ async function runSetup(setup) {
         else if (!m.overworld && r.hexes !== r.expected) probs.push(`${m.name}: ${r.hexes} hexes, expected ${r.expected}`);
         if (r.ms > budget) probs.push(`${m.name}: ${r.ms} ms > ${budget} ms`);
       }
+      // Only a map made with a slice built off is marked: never a map this build should open.
+      const marked = state.maps.filter((m) => m.offSlice).map((m) => m.name);
+      if (marked.length && !setup.needsOff && !setup.mayMarkOffSlice) probs.push(`marked "made with a newer build": ${marked.join(", ")}`);
       const slow = opens.slice().sort((a, b) => b.ms - a.ms)[0];
       rec("C3-maps-open", probs.length === 0 && opens.length > 0, probs.join("; ") || `${opens.length} maps opened; slowest ${slow?.map} ${slow?.ms} ms`, { opens: opens.map((o) => [o.map, o.ms, o.hexes]) });
     }
@@ -299,11 +302,11 @@ async function runSetup(setup) {
       if (upgraded.length || paletteProbs.length) rec("M-palettes", paletteProbs.length === 0, paletteProbs.join("; ") || `${upgraded.length} palette notes upgraded, every terrain row kept: ${upgraded.join(", ")}`);
       // Note-format upgrades (NF1–NF3) may rewrite a note once, backed up first.
       const nfBackups = noteFormatBackups(vault, pluginId);
-      const reformatted = d.changed.filter((p) => nfBackups[p] !== undefined && nfBackups[p] === snap0[p]?.h);
+      const reformatted = d.changed.filter((p) => nfBackups[p]?.includes(snap0[p]?.h));
       if (reformatted.length) rec("M-note-formats", true, `${reformatted.length} notes rewritten to the new note formats, each backed up first: ${reformatted.slice(0, 6).join(", ")}${reformatted.length > 6 ? ", …" : ""}`);
       // Older tables get roll ranges once on the first start, silently, backed up first (DJ-Q6).
       const trBackups = tableRangeBackups(vault, pluginId);
-      const ranged = d.changed.filter((p) => trBackups[p] !== undefined && trBackups[p] === snap0[p]?.h);
+      const ranged = d.changed.filter((p) => trBackups[p]?.includes(snap0[p]?.h));
       if (ranged.length) rec("M-table-ranges", true, `${ranged.length} tables got roll ranges, each backed up first: ${ranged.slice(0, 6).join(", ")}${ranged.length > 6 ? ", …" : ""}`);
       const allowed = (p) => p === `${pluginRel}data.json` || migrated.has(p) || upgraded.includes(p) || reformatted.includes(p) || ranged.includes(p);
       const changed = d.changed.filter((p) => !allowed(p));

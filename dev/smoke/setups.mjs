@@ -739,7 +739,7 @@ async function newerBuildExtra(ctx) {
 
 export const SETUPS = [
   {
-    id: "real-data", title: "Owner real-data copy (seedF + live data.json), migrates", slow: true,
+    id: "real-data", title: "Owner real-data copy (seedF + live data.json), migrates", slow: true, mayMarkOffSlice: true,
     // Private data on the owner's machine (SMOKE_REAL_SEED / SMOKE_REAL_DATA elsewhere): skipped, loudly, without it.
     unavailable: () => (!fs.existsSync(REAL_SEED) ? `real seed missing: ${REAL_SEED}` : !fs.existsSync(REAL_DATA) ? `live data.json missing: ${REAL_DATA}` : null),
     build(dir) {
@@ -782,8 +782,12 @@ export const SETUPS = [
     postPrep(vault, info, pluginId) {
       // What a full build leaves: the keys in its note, the fields in data.json.
       const note = path.join(vault, info.notePath);
-      fs.writeFileSync(note, fs.readFileSync(note, "utf8").replace(/^---\r?\n/, 'hexmaker-held: 0\n').replace(/^hexmaker-held: 0\n/, '---\nexplore-fog: on\nexplore-seen: ["1: 1"]\n'));
-      const dataFile = path.join(vault, ".obsidian", "plugins", pluginId, "data.json");
+      const pluginDir = path.join(vault, ".obsidian", "plugins", pluginId);
+      // The note and the plugin's last saved copy of it, as a full build leaves them.
+      for (const f of [note, path.join(pluginDir, "map-cache", `${info.marked}.md`)]) {
+        if (fs.existsSync(f)) fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/^---\r?\n/, '---\nexplore-fog: on\nexplore-seen: ["1: 1"]\n'));
+      }
+      const dataFile = path.join(pluginDir, "data.json");
       const data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
       const map = data.maps.find((m) => m.name === info.marked);
       map.exploreFog = "on";

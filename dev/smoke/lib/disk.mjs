@@ -287,7 +287,7 @@ export function tableRangeBackups(vault, pluginId) {
   return backupsUnder(vault, pluginId, "table-ranges-");
 }
 
-/** note path → hash of the original text kept in the plugin backups folders starting with prefix. */
+/** note path → hashes of the texts kept in the plugin backups folders starting with prefix (one per rewrite that changed it; the first holds the original). */
 function backupsUnder(vault, pluginId, prefix) {
   const bdir = path.join(vault, ".obsidian", "plugins", pluginId, "backups");
   const out = {};
@@ -299,7 +299,7 @@ function backupsUnder(vault, pluginId, prefix) {
       if (!/\.json(\.gz)?$/.test(f)) continue;
       const buf = fs.readFileSync(path.join(d, f));
       const b = JSON.parse((f.endsWith(".gz") ? zlib.gunzipSync(buf) : buf).toString("utf8"));
-      for (const [p, text] of Object.entries(b.notes ?? {})) out[p] ??= sha(Buffer.from(text, "utf8"));
+      for (const [p, text] of Object.entries(b.notes ?? {})) (out[p] ??= []).push(sha(Buffer.from(text, "utf8")));
     }
   }
   return out;
