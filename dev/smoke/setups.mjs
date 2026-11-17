@@ -9,11 +9,13 @@
  *   migration    the check launch migrates legacy hex notes (verified)
  *   expect       what the checks assert for this setup
  *   extra        setup-specific checks in the check launch
+ *   custom       (ctx) → checks: the setup owns its launches (the upgrade question; dev/smoke/lib/upgrade.mjs)
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { hostPath } from "./lib/obsidian.mjs";
+import { upgradeUndoCase } from "./lib/upgrade.mjs";
 
 export const REAL_SEED = process.env.SMOKE_REAL_SEED ?? hostPath("C:/Users/markr/work/tmp/migtest/seedF");
 export const REAL_DATA = process.env.SMOKE_REAL_DATA ?? hostPath("C:/Users/markr/Documents/KB/journal/.obsidian/plugins/duckmage-plugin/data.json");
@@ -394,7 +396,47 @@ async function freshExtra(ctx) {
  * options are above the fold and Advanced holds 5–10 tuning sliders that
  * count in its header once moved. Nothing is created (no map name).
  */
+/** The wizard's map step in a build without the generator list: scales and size stay, no list, no preview, no Reroll. */
+async function wizardBlankOnlyChecks(ctx) {
+  const r = await ctx.ev(() => (async () => {
+    const leaf = window.app.workspace.getLeavesOfType("duckmage-setup-wizard")[0];
+    if (!leaf) return { error: "no wizard leaf" };
+    await window.app.workspace.revealLeaf(leaf);
+    window.app.workspace.setActiveLeaf(leaf, { focus: true });
+    const view = leaf.view;
+    view.currentIndex = 2;
+    view.renderView();
+    await new Promise((r2) => setTimeout(r2, 1500));
+    const root = view.contentEl;
+    const cols = root.querySelector('input[aria-label="Columns"]');
+    const start = cols?.value;
+    cols?.focus();
+    cols?.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+    const wheel = cols?.value;
+    root.querySelector(".duckmage-wizard-size-reset")?.click();
+    return {
+      scales: root.querySelectorAll(".duckmage-wizard-scale-btn").length,
+      cards: root.querySelectorAll(".duckmage-setup-gen").length,
+      field: root.querySelectorAll(".duckmage-wizard-generator").length,
+      canvas: root.querySelectorAll(".duckmage-setup-canvas").length,
+      reroll: [...root.querySelectorAll("button")].filter((b) => /reroll/i.test(b.textContent)).length,
+      text: root.innerText.replace(/\s+/g, " ").slice(0, 400),
+      size: { start, wheel, reset: cols?.value },
+      progress: !!root.querySelector("#duckmage-wizard-gen-progress"),
+    };
+  })());
+  await ctx.shot("wizard-map-step-blank");
+  if (r.error) return [{ check: "F1-wizard-blank-only", ok: false, detail: r.error }];
+  return [
+    { check: "F1-wizard-blank-only", ok: r.scales > 0 && r.cards === 0 && r.field === 0 && r.canvas === 0 && r.reroll === 0 && r.progress,
+      detail: `scales ${r.scales}; generator cards ${r.cards}, list ${r.field}, preview ${r.canvas}, Reroll ${r.reroll}; progress line ${r.progress}` },
+    { check: "F1-wizard-size", ok: Number(r.size.wheel) === Number(r.size.start) + 1 && r.size.reset === r.size.start, detail: `columns: start ${r.size.start}, wheel up ${r.size.wheel}, reset ${r.size.reset}` },
+  ];
+}
+
 async function wizardMapStepChecks(ctx) {
+  // A build without the wizard's generator list (slice wizardgen, R22): the map step offers a Blank map only.
+  if (!ctx.slices?.includes("wizardgen")) return wizardBlankOnlyChecks(ctx);
   const r = await ctx.ev(() => (async () => {
     const leaf = window.app.workspace.getLeavesOfType("duckmage-setup-wizard")[0];
     if (!leaf) return { error: "no wizard leaf" };
@@ -756,6 +798,7 @@ export const SETUPS = [
   // `slices`: the slices a setup exercises beyond the foundation (premerge runs those with an unreleased one on a build with every slice).
   { id: "fresh", title: "Fresh install", build: (dir) => ({ seed: seedDir(dir) }), expect: { wizard: true }, extra: freshExtra, skipPaint: true, slices: ["play", "fog", "hexflower", "fields"] },
   { id: "v155", title: "Synthetic 1.5.5 vault (hex-note frontmatter + data.json maps), migrates", build: buildV155, migration: true, expect: {} },
+  { id: "upgrade", title: "2.0 upgrade question on a 1.5.5 vault: Not now, Upgrade now, Undo", build: buildV155, custom: upgradeUndoCase, expect: {} },
   { id: "space", title: "Space only (sector → system → planet)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSpace, expect: {}, extra: spaceExtra, slices: ["space"], needs: ["space"] },
   { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, prepHeld: true, expect: { openMs: 60_000 }, extra: overworldExtra, slices: ["worldmaps"], needs: ["worldmaps"] },
   { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: {}, extra: neighboursExtra },

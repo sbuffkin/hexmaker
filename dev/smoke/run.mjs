@@ -142,7 +142,7 @@ const mainJs = fs.readFileSync(path.join(buildDir, "main.js"), "utf8");
 const expectedCommands = [...new Set([
   ...[...mainJs.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1]),
   ...[...mainJs.matchAll(/\{\s*id:\s*"([^"]+)",\s*name:\s*"[^"]*",\s*placementId:\s*"Plugin\.cmd\./g)].map((m) => m[1]),
-].map((id) => `${pluginId}:${id}`))];
+].filter((id) => id !== "upgrade-to-2").map((id) => `${pluginId}:${id}`))]; // (upgrade-to-2 exists only while a 1.5.x vault waits: dev/smoke/lib/upgrade.mjs)
 const builtSlices = bannerSlices(mainJs);
 log(`build ${buildHash} (${manifest.version}) from ${source}; ${expectedCommands.length} commands; channel ${builtSlices.channel ?? "?"}, slices ${JSON.stringify(builtSlices.on)}`);
 
@@ -221,6 +221,18 @@ async function runSetup(setup) {
       rec("prep", errs.length === 0, errs.length ? errs.map((e) => e.text).join(" || ") : JSON.stringify(info).slice(0, 600));
       await stop();
       if (setup.postPrep) setup.postPrep(vault, info, pluginId);
+    }
+
+    // A setup that owns its launches (the upgrade question, its undo): it gets the helpers, not the C-checks.
+    if (setup.custom) {
+      await launch();
+      const dataFile = path.join(vault, ".obsidian", "plugins", pluginId, "data.json");
+      const ctx = { pluginId, vault, runDir, dataFile, P, snapshot, diff, readJson, sleep, launch, stop, ev, shot: (n) => shot(sess.page, runDir, n), log: () => sess.log,
+        // The headless window can report 1x1; modals centre on the viewport when they open, so give it a size first.
+        fixViewport: async () => { const z = await sess.page.evaluate(() => ({ w: innerWidth, h: innerHeight })); if (z.w < 200 || z.h < 200) await sess.page.setViewport({ width: 1400, height: 900 }).catch(() => {}); } };
+      for (const c of await setup.custom(ctx)) rec(c.check, c.ok, c.detail);
+      log(`${setup.id}: ${checks.every((c) => c.ok) ? "PASS" : "FAIL"} in ${Math.round((Date.now() - t0) / 1000)} s`);
+      return { id: setup.id, title: setup.title, ok: checks.every((c) => c.ok), seconds: Math.round((Date.now() - t0) / 1000), runDir, checks };
     }
 
     // ── inputs, before the check launch ──
@@ -370,7 +382,7 @@ async function runSetup(setup) {
 
     // Setup-specific checks.
     if (setup.extra) {
-      const ctx = { pluginId, state, ev, log: sess.log, readyMs: ready.ms, firstOpen, wizardAtLoad, runDir, vault, snap0, prepInfo, slices: builtSlices.on };
+      const ctx = { pluginId, state, ev, shot: (n) => shot(sess.page, runDir, n), log: sess.log, readyMs: ready.ms, firstOpen, wizardAtLoad, runDir, vault, snap0, prepInfo, slices: builtSlices.on };
       for (const c of await setup.extra(ctx)) rec(c.check, c.ok, c.detail);
       state = await ev(P.state, pluginId);
     }

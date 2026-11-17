@@ -121,7 +121,13 @@ export async function shot(page, runDir, name) {
   try {
     const file = path.join(runDir, "shots", `${name}.png`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    await page.screenshot({ path: file });
+    // The headless (Xvfb) window can report 1x1 (a blank capture): give the page a real viewport first.
+    const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    if (size.w < 200 || size.h < 200) await page.setViewport({ width: 1400, height: 900 }).catch(() => {});
+    // The sandbox's own "Do you trust the author of this vault?" prompt sits over every capture: hide it for the shot.
+    const hidden = await page.evaluate(() => [...document.querySelectorAll(".modal-container")].filter((m) => /trust the author/i.test(m.textContent ?? "")).map((m) => { m.dataset.shotHidden = m.style.display; m.style.display = "none"; return true; }).length).catch(() => 0);
+    try { await page.screenshot({ path: file }); }
+    finally { if (hidden) await page.evaluate(() => document.querySelectorAll("[data-shot-hidden]").forEach((m) => { m.style.display = m.dataset.shotHidden; delete m.dataset.shotHidden; })).catch(() => {}); }
     return file;
   } catch { return null; }
 }

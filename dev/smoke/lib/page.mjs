@@ -30,6 +30,11 @@ export async function waitReady(id, timeoutMs) {
       window.__smoke.held = { held: true, writes: window.__smoke.writes.map((w) => w.path) };
       p.releaseStartupWrites();
     }
+    // A vault 1.5.x wrote is held until its owner says so (B1): answer the question as a user would, once.
+    if (app.workspace.layoutReady && p && p.started === false && !window.__smoke.upgradeAnswered) {
+      const btn = document.querySelector(".duckmage-upgrade-now");
+      if (btn) { window.__smoke.upgradeAnswered = true; btn.click(); }
+    }
     if (app.workspace.layoutReady && p?.mapStore?.isReady?.() && p.paletteStore?.isReady?.()) {
       return { ready: true, ms: Date.now() - t0 };
     }
