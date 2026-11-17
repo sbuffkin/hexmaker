@@ -5,7 +5,7 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { Modal, Notice } from "obsidian";
+import { Modal, Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown and Modal.opened record what happened
 import { backUpDataJson, listSnapshots, oldestSince, planUndo, writePreUpgradeSnapshot } from "../src/upgrade/undoUpgrade";
 import { runUndo, undoUpgradeCommand } from "../src/upgrade/undoRun";
 import { writeJsonBackup } from "../src/backup";
@@ -97,7 +97,7 @@ function plugin(vault: MemVault, log: string[]) {
   const write = app.vault.adapter.write;
   app.vault.adapter.write = async (path: string, c: string) => { log.push(`write ${path}`); return write(path, c); };
   const process = app.vault.process;
-  app.vault.process = async (f: never, fn: (s: string) => string) => { log.push(`process ${(f as { path: string }).path}`); return process(f, fn); };
+  (app.vault as { process: unknown }).process = async (f: { path: string }, fn: (s: string) => string) => { log.push(`process ${f.path}`); return (process as (f: unknown, fn: unknown) => Promise<string>)(f, fn); };
   return p as unknown as HexmakerPlugin;
 }
 

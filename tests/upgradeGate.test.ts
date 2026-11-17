@@ -4,7 +4,7 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian";
 import { needsUpgradeAsk, UPGRADE_LEAD } from "../src/upgrade/upgradeGate";
 import { holdForUpgrade, upgradeNow } from "../src/upgrade/hold";
 import { PRE_UPGRADE_KIND, listSnapshots } from "../src/upgrade/undoUpgrade";

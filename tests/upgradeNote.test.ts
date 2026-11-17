@@ -13,7 +13,6 @@ import { takeUpgradeReport } from "../src/migrations/upgradeReport";
 import { UPDATE_DEVICES_LINE, changelogPoints, upgradeNoteName, upgradeNoteText, writeUpgradeNote } from "../src/migrations/upgradeNote";
 import { DATA_FORMAT, dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "../src/migrations/stamp";
 import { MemVault } from "./helpers/memVault";
-import { readSource } from "./helpers/source";
 
 const g = globalThis as Record<string, unknown>;
 g.window ??= globalThis;
