@@ -30,7 +30,7 @@ export const SURFACES = {
 	/** The hex map view and the controllers split out of it. */
 	"map-view": { file: "src/hex-map/HexMapView.ts", more: ["src/hex-map/view"] },
 	/** The plugin class plus the services/commands split out of it. */
-	"plugin": { file: "src/HexmakerPlugin.ts", more: ["src/plugin", "src/services"] },
+	"plugin": { file: "src/HexmakerPlugin.ts", more: ["src/plugin", "src/services", "src/upgrade"] },
 	/** The right-click hex editor and its section renderers. */
 	"hex-editor": { file: "src/hex-map/HexEditorModal.ts", more: ["src/hex-map/editor"] },
 	/** The generator page (GeneratorPanel) and its section renderers / page state. */

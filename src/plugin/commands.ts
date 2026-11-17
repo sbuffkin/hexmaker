@@ -19,6 +19,7 @@ import { enabledKinds } from "../mapKinds";
 import { isDebugMode } from "../ui/debugMode";
 import { addPlacedMenuItems, placeCommand } from "../ui/commandPlacement";
 import { RestoreBackupModal, openBackupsFolder } from "../BackupsModal";
+import { undoUpgradeCommand } from "../upgrade/undoRun";
 import { mapLinkUri } from "../hexLink";
 import { normalizeFolder } from "../utils";
 import { pdfAvailable } from "../platform";
@@ -121,6 +122,8 @@ export function registerCommands(plugin: HexmakerPlugin): void {
     name: "Restore from upgrade backup…",
     callback: () => new RestoreBackupModal(plugin.app, plugin).open(),
   });
+  // Back to 1.5.x data after the 2.0 upgrade (release plan B2).
+  plugin.addCommand({ id: "undo-2-0-upgrade", name: "Undo the 2.0 upgrade", callback: () => void undoUpgradeCommand(plugin) });
   addPlaced("Plugin.cmd.exportNotePdf", {
     id: "export-current-note-pdf",
     name: "Export current note to PDF",

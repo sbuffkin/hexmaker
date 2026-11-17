@@ -121,6 +121,7 @@ export class SettingsPersistence {
    * note, which a person can read and edit. Maps not yet in a note keep them.
    */
   async saveData(data: unknown): Promise<void> {
+    if (this.frozen) return;
     const ready = !!this.plugin.mapStore?.isReady();
     const out = data !== this.plugin.settings ? data : withoutNotePaths(this.plugin.settings, (name) => ready && this.plugin.mapStore.holdsPaths(name));
     // Same as what data.json holds (last loaded or written): don't touch the
@@ -132,6 +133,10 @@ export class SettingsPersistence {
     await this.writeRaw(out);
     this.onDisk = text;
   }
+
+  /** "Undo the 2.0 upgrade" has begun: nothing may write data.json any more (src/upgrade/undoRun.ts). */
+  private frozen = false;
+  freeze(): void { this.frozen = true; }
 
   /** Set when data.json was written by a newer build: the notice to show (see stamp.ts). */
   newerData: string | null = null;

@@ -171,7 +171,8 @@ describe("views[], lifecycle and genPage()", () => {
     expect(calls).toEqual(["load a", "load c", "unload c", "unload a"]);
     const plugin = readSource("src", "HexmakerPlugin.ts");
     expect(plugin).toMatch(/registerProtocolHandlers\(this\);\n\s+await runModuleLoad\(this\);\n\s+\}/);
-    expect(plugin).toMatch(/onunload\(\) \{\n\s+runModuleUnload\(this\);/);
+    // (An idle plugin, one a vault 1.5.x wrote is waiting on, never loaded its modules: src/upgrade/hold.ts.)
+    expect(plugin).toMatch(/onunload\(\) \{\n\s+if \(!this\.started\) return;\n\s+runModuleUnload\(this\);/);
   });
 
   it("genPage: the first module that provides it; the core opens the page only through it", async () => {

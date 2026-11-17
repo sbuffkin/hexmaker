@@ -58,7 +58,7 @@ The map note's **Summary** (above the Hexes table) and the *Route* column in Pat
 
 Paths are named. The **Paths** table lists each path (name, type, your notes); **Path routes** lists the hexes each one passes through in order, like `0, 8 → 9, 8 → 13, 8`, and the map draws the way between them. A path's `main` row is its main line; other rows are forks that leave it at their first hex. The tables are linked by name, so to rename a path edit it in both. Older notes that listed every hex of a path are converted once, after a backup, with a report of what changed beside it.
 
-**After an update.** When an update changes your notes, a **Hexmaker upgrade <date>** note in the world folder lists what changed, the backups and anything to check; the update's notice links to it. Update every device that shares the vault first. The backups are in the plugin's folder: the commands **Open backups folder** and **Restore from upgrade backup…** reach them (a restore backs up the notes as they are first, so it can be undone).
+**After an update.** When an update changes your notes, a **Hexmaker upgrade <date>** note in the world folder lists what changed, the backups and anything to check; the update's notice links to it. Update every device that shares the vault first. The backups are in the plugin's folder: the commands **Open backups folder** and **Restore from upgrade backup…** reach them (a restore backs up the notes as they are first, so it can be undone). A vault from 1.5.x is converted only after **Upgrade now** in the question the first start asks; **Undo the 2.0 upgrade** puts those notes and the old settings back and says to install 1.5.8.
 
 ---
 

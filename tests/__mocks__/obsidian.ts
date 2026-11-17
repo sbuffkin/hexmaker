@@ -21,7 +21,7 @@ export class TFolder extends TAbstractFile {
 
 export class App {}
 export class MarkdownView {}
-export class Modal { app: App; contentEl = { empty() {}, addClass() {}, createDiv() { return this; }, createEl() { return this; }, createSpan() { return this; }, setText() { return this; }, style: {} } as any; constructor(app: App) { this.app = app; } }
+export class Modal { app: App; contentEl = { empty() {}, addClass() {}, createDiv() { return this; }, createEl() { return this; }, createSpan() { return this; }, setText() { return this; }, style: {} } as any; constructor(app: App) { this.app = app; } /** Tests read what opened here. */ static opened: unknown[] = []; open() { Modal.opened.push(this); } close() {} }
 export class SuggestModal<T> { constructor(_app: App) {} getSuggestions(_q: string): T[] { return []; } renderSuggestion(_v: T, _el: HTMLElement): void {} onChooseSuggestion(_v: T, _e: MouseEvent | KeyboardEvent): void {} }
 export const Platform = { isMobile: false, isMobileApp: false, isDesktop: true, isDesktopApp: true, isPhone: false, isTablet: false };
 

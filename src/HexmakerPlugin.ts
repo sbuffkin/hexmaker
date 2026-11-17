@@ -29,7 +29,7 @@ import { defaultPaletteFor } from "./palettes/paletteOptions";
 import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries";
 import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
 import { registry } from "./modules";
-import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
+import { isDebugMode, onDebugModeChange } from "./ui/debugMode";
 import {
   getPreset,
   presetToPalette,
@@ -66,6 +66,8 @@ import { HexPropsSync } from "./maps/hexPropsSync";
 import { registerVaultEvents } from "./plugin/vaultEvents";
 import { bindPorts } from "./ports";
 import { migrateHexFilesToDefaultRegion, startOnLayoutReady } from "./plugin/startup";
+import { holdForUpgrade } from "./upgrade/hold";
+import { syncDebugStatus } from "./ui/debugStatus";
 import { registerCommands, registerEditorMenu } from "./plugin/commands";
 import { registerProtocolHandlers } from "./plugin/protocolHandlers";
 import { type NotePickPurpose } from "./templateNotes";
@@ -153,7 +155,17 @@ export default class HexmakerPlugin extends Plugin {
   /** Let the stores start writing now (the world folder is confirmed, or setup was put off). */
   releaseStartupWrites: () => void = () => {};
 
+  /** Start-up has run: false while a vault 1.5.x wrote waits for the upgrade to be allowed (src/upgrade/hold.ts). */
+  started = false;
+
   async onload() {
+    if (await holdForUpgrade(this)) return;
+    await this.start();
+  }
+
+  /** The whole start-up; for a vault 1.5.x wrote, only after "Upgrade now". */
+  async start() {
+    this.started = true;
     await this.loadSettings();
     this.tableNotes = TableNotes.register(this);
     this.pathPins.attach();
@@ -183,8 +195,8 @@ export default class HexmakerPlugin extends Plugin {
     // Debug mode (per device, src/ui/debugMode.ts): "Debug" in the status
     // bar while it's on; clicking it turns it off. Pages with a Debug
     // subsection re-render themselves when it changes.
-    this.syncDebugStatus(isDebugMode(this.app));
-    this.register(onDebugModeChange((on) => this.syncDebugStatus(on)));
+    syncDebugStatus(this, isDebugMode(this.app));
+    this.register(onDebugModeChange((on) => syncDebugStatus(this, on)));
 
     // Register the embedded roller code block processor
     registerRollerBlock(this);
@@ -201,6 +213,7 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   onunload() {
+    if (!this.started) return;
     runModuleUnload(this);
     closeNoticeBatch();
     this.pathPins.detach();
@@ -255,24 +268,6 @@ export default class HexmakerPlugin extends Plugin {
   refreshPaletteEditors(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PALETTE_EDITOR)) {
       if (leaf.view instanceof PaletteEditorView) leaf.view.refreshFromStore();
-    }
-  }
-
-  /** The status-bar "Debug" item, while debug mode is on. */
-  private debugStatusEl: HTMLElement | null = null;
-
-  private syncDebugStatus(on: boolean): void {
-    if (on && !this.debugStatusEl) {
-      const el = this.addStatusBarItem();
-      el.addClass("mod-clickable", "duckmage-debug-status");
-      el.setText("Debug");
-      el.setAttr("aria-label", "Hexmaker debug mode is on. Click to turn it off.");
-      el.setAttr("data-tooltip-position", "top");
-      el.addEventListener("click", () => setDebugMode(this.app, false));
-      this.debugStatusEl = el;
-    } else if (!on && this.debugStatusEl) {
-      this.debugStatusEl.remove();
-      this.debugStatusEl = null;
     }
   }
 
