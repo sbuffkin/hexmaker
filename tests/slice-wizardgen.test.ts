@@ -27,10 +27,10 @@ describeWith("wizardgen", "wizardgen on: the wizard lists generators and starts 
 		expect(r.selected).toBe("procedural:overland");
 	});
 
-	it("the step builds the list, the preview and Reroll after the flag's early return", () => {
+	it("the step builds the list, the preview and Reroll inside the flag's block", () => {
 		const src = readSource("src", "SetupWizardView.ts");
-		expect(src).toContain("if (!__SLICE_WIZARDGEN__) return;");
-		expect(src.indexOf("Reroll", src.indexOf("if (!__SLICE_WIZARDGEN__) return;"))).toBeGreaterThan(0);
+		expect(src).toContain("if (__SLICE_WIZARDGEN__) {");
+		expect(src.indexOf("Reroll", src.indexOf("if (__SLICE_WIZARDGEN__) {"))).toBeGreaterThan(0);
 	});
 
 });
@@ -50,9 +50,9 @@ describeWithout("wizardgen", "wizardgen off: the wizard's first map is Blank onl
 });
 
 describe("wizardgen, whichever way the build is made", () => {
-	it("everything that builds the list sits after the flag's return; the progress line Next writes to sits before it", () => {
+	it("everything that builds the list sits inside the flag's block; the progress line Next writes to sits before it", () => {
 		const src = readSource("src", "SetupWizardView.ts");
-		const gate = src.indexOf("if (!__SLICE_WIZARDGEN__) return;");
+		const gate = src.indexOf("if (__SLICE_WIZARDGEN__) {");
 		expect(gate).toBeGreaterThan(0);
 		expect(src.indexOf("duckmage-wizard-gen-progress")).toBeLessThan(gate);
 		for (const part of ["listGeneratorKinds(plugin).then", "🎲 Reroll", "duckmage-setup-generators", "drawPreview(canvas"]) {

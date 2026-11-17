@@ -356,8 +356,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			});
 
 			// Set below when the build has the generator list (slice wizardgen); no-ops without it.
-			let renderGenerators = (): void => {};
-			let refresh = (): void => {};
+			let renderGenerators = (): void => {}, refresh = (): void => {};
 			// What are you mapping? (owner 2026-10-12): the scale picks the
 			// size, palette and generator list below; each module brings its
 			// own (src/mapScales.ts). Only the map types that are on.
@@ -550,143 +549,143 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				attr: { id: "duckmage-wizard-gen-progress" },
 			});
 			// Held back from 2.0 (slice wizardgen, R22): no generator list, preview or Reroll; the first map is Blank.
-			if (!__SLICE_WIZARDGEN__) return;
-
-			// Terrain: generator choice + small live preview. The same
-			// generators as Maps → New map… (src/worldgen/registry.ts).
-			const genField = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-generator" });
-			genField.createEl("label", { text: "Generator", cls: "duckmage-wizard-label" });
-			const genBody = genField.createDiv({ cls: "duckmage-wizard-generator-body" });
-			const genSide = genBody.createDiv({ cls: "duckmage-wizard-generator-choices" });
-			const genList = genSide.createDiv({ cls: "duckmage-setup-generators", text: "Loading generators…" });
-			const optsBox = genSide.createDiv({ cls: "duckmage-wizard-generator-options" });
-			const previewBox = genBody.createDiv({ cls: "duckmage-wizard-generator-preview" });
-			const canvas = previewBox.createEl("canvas", { cls: "duckmage-setup-canvas" });
-			const rerollBtn = previewBox.createEl("button", { text: "🎲 Reroll", attr: { title: "Generate again with a new random seed" } });
-			const status = previewBox.createDiv({ cls: "duckmage-setup-status" });
-			const exactNote = previewBox.createDiv({
-				cls: "duckmage-wizard-preview-exact",
-				text: "Next creates exactly this map. Reroll for another.",
-			});
-			rerollBtn.addEventListener("click", () => { ctx.seed = randomSeed(); refresh(); });
-			/** Overland's "One side (random)": say which side this seed picked. */
-			let seaRandomOption: HTMLOptionElement | undefined;
-			const syncSeaLabel = () => {
-				if (!seaRandomOption) return;
-				const side = resolveSeaSide("random", ctx.seed);
-				seaRandomOption.text = `One side (random: ${side})`;
-			};
-
-			let kinds: TerrainGeneratorKind[] = [];
-			const terrains = () => plugin.getPaletteOrPresetTerrains(ctx.paletteName);
-
-			renderGenerators = () => {
-				if (!kinds.length) return;
-				const { fitting, selected } = wizardKinds(kinds, ctx, terrains());
-				if (selected !== ctx.generatorId) {
-					ctx.generatorId = selected;
-					ctx.generatorOptions = {};
-				}
-				genList.empty();
-				for (const k of fitting) {
-					const card = genList.createEl("button", { cls: `duckmage-setup-gen${k.id === ctx.generatorId ? " is-active" : ""}` });
-					card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
-					card.createDiv({ cls: "duckmage-setup-gen-desc", text: describeKind(k, terrains()) });
-					card.addEventListener("click", () => {
-						ctx.generatorId = k.id;
-						ctx.generatorOptions = {};
-						// A generator that wants its own palette (Orbits: Space - System).
-						const s = wizardScale(ctx);
-						if (s) usePalette(scalePalette(s, k.id));
-						// The page stays where it was, the picked card in view (C8).
-						keepScroll(genList, () => {
-							renderGenerators();
-							refresh();
-						}, () => genList.querySelector<HTMLElement>(".duckmage-setup-gen.is-active"));
-					});
-				}
-				optsBox.empty();
-				seaRandomOption = undefined;
-				const kind = kinds.find((k) => k.id === ctx.generatorId);
-				// The generator's options sit in an Advanced dropdown under the
-				// cards (placement: Wizard.genOpt<Key>); the defaults make a good map.
-				const optsDisclosure = new Disclosure(plugin.app, "Wizard.map", () => optsBox);
-				for (const opt of kind ? kindOptions(kind, terrains(), plugin.getPathTypes(ctx.paletteName)) : []) {
-					const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
-					optsDisclosure.place(wizardOptionId(opt.key, newMapOptionId(kind?.id ?? "", opt.key)), row);
-					row.createSpan({ text: opt.label });
-					const sel = row.createEl("select");
-					for (const c of opt.choices) {
-						const o = sel.createEl("option", { value: c.value, text: c.label });
-						if (kind?.id === OVERLAND_ID && opt.key === "sea" && c.value === "random") seaRandomOption = o;
-					}
-					sel.value = ctx.generatorOptions[opt.key] ?? opt.default;
-					if (sel.selectedIndex < 0) sel.value = opt.default;
-					sel.addEventListener("change", () => { ctx.generatorOptions[opt.key] = sel.value; refresh(); });
-				}
-				// Advanced: a few engine sliders that most change the layout
-				// (owner 2026-10-12), each with its default and a reset
-				// (src/ui/mapScaleForm.ts, shared with New map).
-				renderTuningSliders(optsBox, kind?.tuning, ctx.generatorOptions, optsDisclosure, WIZARD_TUNING_ID, () => {
-					window.clearTimeout(tuneTimer);
-					tuneTimer = window.setTimeout(refresh, LIVE_PREVIEW_DELAY_MS);
+			if (__SLICE_WIZARDGEN__) {
+				// Terrain: generator choice + small live preview. The same
+				// generators as Maps → New map… (src/worldgen/registry.ts).
+				const genField = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-generator" });
+				genField.createEl("label", { text: "Generator", cls: "duckmage-wizard-label" });
+				const genBody = genField.createDiv({ cls: "duckmage-wizard-generator-body" });
+				const genSide = genBody.createDiv({ cls: "duckmage-wizard-generator-choices" });
+				const genList = genSide.createDiv({ cls: "duckmage-setup-generators", text: "Loading generators…" });
+				const optsBox = genSide.createDiv({ cls: "duckmage-wizard-generator-options" });
+				const previewBox = genBody.createDiv({ cls: "duckmage-wizard-generator-preview" });
+				const canvas = previewBox.createEl("canvas", { cls: "duckmage-setup-canvas" });
+				const rerollBtn = previewBox.createEl("button", { text: "🎲 Reroll", attr: { title: "Generate again with a new random seed" } });
+				const status = previewBox.createDiv({ cls: "duckmage-setup-status" });
+				const exactNote = previewBox.createDiv({
+					cls: "duckmage-wizard-preview-exact",
+					text: "Next creates exactly this map. Reroll for another.",
 				});
-				// The scale's own choices (Biomes: Make every region now).
-				renderScaleChoices(optsBox, moduleScaleChoices(ctx.scaleId, ctx.generatorId), ctx.scaleChoices, optsDisclosure, "Wizard");
-				syncSeaLabel();
-			};
+				rerollBtn.addEventListener("click", () => { ctx.seed = randomSeed(); refresh(); });
+				/** Overland's "One side (random)": say which side this seed picked. */
+				let seaRandomOption: HTMLOptionElement | undefined;
+				const syncSeaLabel = () => {
+					if (!seaRandomOption) return;
+					const side = resolveSeaSide("random", ctx.seed);
+					seaRandomOption.text = `One side (random: ${side})`;
+				};
 
-			let tuneTimer: number | undefined;
+				let kinds: TerrainGeneratorKind[] = [];
+				const terrains = () => plugin.getPaletteOrPresetTerrains(ctx.paletteName);
 
-			refresh = () => {
-				const kind = kinds.find((k) => k.id === ctx.generatorId);
-				const pal = terrains();
-				const grid = wizardGrid(plugin, ctx);
-				status.empty();
-				status.removeClass("mod-warning");
-				let cells = new Map<string, string>();
-				let paths: { type: string; route?: string; hexes: string[] }[] = [];
-				let featureCells: Set<string> | undefined;
-				syncSeaLabel();
-				exactNote.hide();
-				if (kind && kind.id !== BLANK_ID) {
-					if (ctx.mapCols * ctx.mapRows > PREVIEW_AUTO_LIMIT) {
-						status.setText("Large map — no preview; terrain is generated when you continue.");
-					} else {
-						const outcome = runGenerator(plugin, ctx, kind, pal);
-						ctx.preview = { key: wizardRunKey(plugin, ctx, kind), outcome };
-						if (outcome.ok) exactNote.show();
-						if (!outcome.ok) {
-							status.setText(outcome.message);
-							status.addClass("mod-warning");
-						} else {
-							cells = outcome.cells;
-							paths = outcome.paths;
-							featureCells = outcome.featureCells;
-							if (outcome.warnings.length) status.setText(outcome.warnings.join(" "));
-						}
+				renderGenerators = () => {
+					if (!kinds.length) return;
+					const { fitting, selected } = wizardKinds(kinds, ctx, terrains());
+					if (selected !== ctx.generatorId) {
+						ctx.generatorId = selected;
+						ctx.generatorOptions = {};
 					}
-				} else if (kind) {
-					status.setText("A blank map to paint by hand.");
-				}
-				const base = suggestBaseTerrain(pal);
-				if (base) {
-					for (let i = 0; i < ctx.mapCols; i++)
-						for (let j = 0; j < ctx.mapRows; j++) {
-							const k = `${i}_${j}`;
-							if (!cells.has(k)) cells.set(k, base);
+					genList.empty();
+					for (const k of fitting) {
+						const card = genList.createEl("button", { cls: `duckmage-setup-gen${k.id === ctx.generatorId ? " is-active" : ""}` });
+						card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
+						card.createDiv({ cls: "duckmage-setup-gen-desc", text: describeKind(k, terrains()) });
+						card.addEventListener("click", () => {
+							ctx.generatorId = k.id;
+							ctx.generatorOptions = {};
+							// A generator that wants its own palette (Orbits: Space - System).
+							const s = wizardScale(ctx);
+							if (s) usePalette(scalePalette(s, k.id));
+							// The page stays where it was, the picked card in view (C8).
+							keepScroll(genList, () => {
+								renderGenerators();
+								refresh();
+							}, () => genList.querySelector<HTMLElement>(".duckmage-setup-gen.is-active"));
+						});
+					}
+					optsBox.empty();
+					seaRandomOption = undefined;
+					const kind = kinds.find((k) => k.id === ctx.generatorId);
+					// The generator's options sit in an Advanced dropdown under the
+					// cards (placement: Wizard.genOpt<Key>); the defaults make a good map.
+					const optsDisclosure = new Disclosure(plugin.app, "Wizard.map", () => optsBox);
+					for (const opt of kind ? kindOptions(kind, terrains(), plugin.getPathTypes(ctx.paletteName)) : []) {
+						const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
+						optsDisclosure.place(wizardOptionId(opt.key, newMapOptionId(kind?.id ?? "", opt.key)), row);
+						row.createSpan({ text: opt.label });
+						const sel = row.createEl("select");
+						for (const c of opt.choices) {
+							const o = sel.createEl("option", { value: c.value, text: c.label });
+							if (kind?.id === OVERLAND_ID && opt.key === "sea" && c.value === "random") seaRandomOption = o;
 						}
-				}
-				rerollBtn.toggle(!!kind && kind.id !== BLANK_ID);
-				drawPreview(canvas, cells, grid, ctx.hexOrientation, new Map(pal.map((t) => [t.name, t.color])),
-					featureCells, paths, pathColors(plugin, ctx.paletteName), 240, 12);
-			};
+						sel.value = ctx.generatorOptions[opt.key] ?? opt.default;
+						if (sel.selectedIndex < 0) sel.value = opt.default;
+						sel.addEventListener("change", () => { ctx.generatorOptions[opt.key] = sel.value; refresh(); });
+					}
+					// Advanced: a few engine sliders that most change the layout
+					// (owner 2026-10-12), each with its default and a reset
+					// (src/ui/mapScaleForm.ts, shared with New map).
+					renderTuningSliders(optsBox, kind?.tuning, ctx.generatorOptions, optsDisclosure, WIZARD_TUNING_ID, () => {
+						window.clearTimeout(tuneTimer);
+						tuneTimer = window.setTimeout(refresh, LIVE_PREVIEW_DELAY_MS);
+					});
+					// The scale's own choices (Biomes: Make every region now).
+					renderScaleChoices(optsBox, moduleScaleChoices(ctx.scaleId, ctx.generatorId), ctx.scaleChoices, optsDisclosure, "Wizard");
+					syncSeaLabel();
+				};
 
-			void listGeneratorKinds(plugin).then((k) => {
-				kinds = k;
-				renderGenerators();
-				refresh();
-			});
+				let tuneTimer: number | undefined;
+
+				refresh = () => {
+					const kind = kinds.find((k) => k.id === ctx.generatorId);
+					const pal = terrains();
+					const grid = wizardGrid(plugin, ctx);
+					status.empty();
+					status.removeClass("mod-warning");
+					let cells = new Map<string, string>();
+					let paths: { type: string; route?: string; hexes: string[] }[] = [];
+					let featureCells: Set<string> | undefined;
+					syncSeaLabel();
+					exactNote.hide();
+					if (kind && kind.id !== BLANK_ID) {
+						if (ctx.mapCols * ctx.mapRows > PREVIEW_AUTO_LIMIT) {
+							status.setText("Large map — no preview; terrain is generated when you continue.");
+						} else {
+							const outcome = runGenerator(plugin, ctx, kind, pal);
+							ctx.preview = { key: wizardRunKey(plugin, ctx, kind), outcome };
+							if (outcome.ok) exactNote.show();
+							if (!outcome.ok) {
+								status.setText(outcome.message);
+								status.addClass("mod-warning");
+							} else {
+								cells = outcome.cells;
+								paths = outcome.paths;
+								featureCells = outcome.featureCells;
+								if (outcome.warnings.length) status.setText(outcome.warnings.join(" "));
+							}
+						}
+					} else if (kind) {
+						status.setText("A blank map to paint by hand.");
+					}
+					const base = suggestBaseTerrain(pal);
+					if (base) {
+						for (let i = 0; i < ctx.mapCols; i++)
+							for (let j = 0; j < ctx.mapRows; j++) {
+								const k = `${i}_${j}`;
+								if (!cells.has(k)) cells.set(k, base);
+							}
+					}
+					rerollBtn.toggle(!!kind && kind.id !== BLANK_ID);
+					drawPreview(canvas, cells, grid, ctx.hexOrientation, new Map(pal.map((t) => [t.name, t.color])),
+						featureCells, paths, pathColors(plugin, ctx.paletteName), 240, 12);
+				};
+
+				void listGeneratorKinds(plugin).then((k) => {
+					kinds = k;
+					renderGenerators();
+					refresh();
+				});
+			}
 		},
 		canProceed(ctx) {
 			return slugify(ctx.mapName).length > 0;
