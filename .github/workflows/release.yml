@@ -4,9 +4,16 @@ on:
   push:
     branches:
       - master
+    # A pre-release tag (2.0.0-rc.2, 1.6.0-beta.1) pushed from a release candidate
+    # branch publishes a GitHub pre-release for BRAT (the `prerelease` job below).
+    # master and the community store are not involved.
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+-*"
 
 jobs:
   release:
+    # master pushes only: the store release.
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -92,6 +99,98 @@ jobs:
             --title="$version" \
             --generate-notes \
             main.js manifest.json styles.css
+
+  # A tag like 2.0.0-rc.2: the same tests and the same Obsidian review gate as a
+  # master release, then the RELEASE build of that commit as a GitHub pre-release,
+  # its manifest.json carrying the tag as its version (BRAT reads it). Nothing is
+  # pushed or merged anywhere else, and the directory's own release scan (the
+  # `obsidian-review` job) doesn't apply: the directory lists no pre-releases.
+  prerelease:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag is a pre-release
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$'; then
+            echo "::error::Tag '$TAG' is not a pre-release version like 2.0.0-rc.2 (x.y.z-alpha|beta|rc.n); nothing was published."
+            exit 1
+          fi
+
+      - name: Check if the pre-release already exists
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG" &>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Use Node.js
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "npm"
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'false'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.check.outputs.exists == 'false'
+        run: npm test
+
+      - name: Check the release build hides every slice that is off
+        if: steps.check.outputs.exists == 'false'
+        run: npm run check:release
+
+      # The same scan master releases are gated on (.github/OBSIDIAN_REVIEW.md).
+      - name: Obsidian review gate (preview scan)
+        if: steps.check.outputs.exists == 'false'
+        env:
+          OBSIDIAN_COMMUNITY_COOKIE: ${{ secrets.OBSIDIAN_COMMUNITY_COOKIE }}
+        run: node dev/obsidian-review.mjs preview "$GITHUB_SHA"
+
+      - name: Type-check
+        if: steps.check.outputs.exists == 'false'
+        run: npx tsc -noEmit -skipLibCheck
+
+      - name: Build the release candidate
+        if: steps.check.outputs.exists == 'false'
+        run: node dev/release/build-rc.mjs --out "$RUNNER_TEMP/rc" --version "$TAG"
+
+      - name: Attest build provenance
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/rc/main.js
+            ${{ runner.temp }}/rc/styles.css
+
+      - name: Create the pre-release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TAG" \
+            --prerelease \
+            --verify-tag \
+            --title="$TAG" \
+            --notes "Pre-release for BRAT testing, not in the community store. Back up your vault before installing: a vault from 1.5.x is only converted after you choose Upgrade now, and the command Undo the 2.0 upgrade puts it back." \
+            "$RUNNER_TEMP/rc/main.js" "$RUNNER_TEMP/rc/manifest.json" "$RUNNER_TEMP/rc/styles.css"
 
   # Waits for the directory to pick up the new release and reports its scan.
   # A failure means the published version gets delisted unless it's fixed, so
