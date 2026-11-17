@@ -37,6 +37,8 @@ export function wizardKinds(
 	terrains: TerrainColor[],
 ): { fitting: TerrainGeneratorKind[]; selected: string } {
 	const scale = wizardScale(ctx);
+	// Held back from 2.0 (slice wizardgen): the wizard's first map is Blank, whatever the scale lists.
+	if (!__SLICE_WIZARDGEN__) return { fitting: kinds.filter((k) => k.id === BLANK_ID), selected: BLANK_ID };
 	const pool = scale ? scaleGenerators(scale, kinds) : kinds;
 	const fitting = kindsForPalette(visibleKinds(pool, { mapKinds: ctx.mapKinds }, new Set([kindOfTerrains(terrains)]), ctx.generatorId), terrains);
 	const starter = scale

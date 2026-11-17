@@ -448,6 +448,8 @@ export class MapsService {
 
   /** "When you arrive somewhere new" for `mapName`: its own setting, else the nearest map above it's, else off. */
   arrivalModeFor(mapName: string): { mode: ArrivalMode; from?: string } {
+    // Held back from 2.0 (slice arrivaltables): a stored setting stays in the note but does nothing.
+    if (!__SLICE_ARRIVALTABLES__) return { mode: "off" };
     return effectiveArrivalMode(mapName, (m) => this.plugin.getMap(m)?.arrivalMode, (m) => this.plugin.parentOf(m)?.map);
   }
 

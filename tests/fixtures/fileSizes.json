@@ -13,7 +13,7 @@
 		"src/random-tables/randomTable.ts": 1293,
 		"src/export/mapPngRenderer.ts": 1241,
 		"src/worldgen/NewMapSetupModal.ts": 1121,
-		"src/SetupWizardView.ts": 1077,
+		"src/SetupWizardView.ts": 1029,
 		"src/hex-table/HexTableView.ts": 1034,
 		"src/space/worldTypes.ts": 1075,
 		"src/HexmakerSettingTab.ts": 1048,

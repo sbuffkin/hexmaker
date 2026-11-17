@@ -70,7 +70,9 @@ describe("release-slices.json and the modules agree", () => {
 		for (const [id, s] of Object.entries(slices)) {
 			if (!s.define) continue;
 			expect({ id, decl: decl.includes(`declare const ${s.define}: boolean;`) }).toEqual({ id, decl: true });
-			for (const src of [index, runtime]) expect(src).toMatch(new RegExp(`if \\(${s.define}\\) compiled\\.push\\(`));
+			// A module-less slice (a part of the core held back: wizardgen, arrivaltables) is read where that code is, not by the module lists.
+			if (s.modules.length) for (const src of [index, runtime]) expect(src).toMatch(new RegExp(`if \\(${s.define}\\) compiled\\.push\\(`));
+			else for (const src of [index, runtime]) expect(src).not.toContain(s.define);
 		}
 	});
 

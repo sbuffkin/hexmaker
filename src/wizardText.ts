@@ -46,3 +46,10 @@ export const NEW_MAP_TUNING_ID = "NewMap.tuning";
 export function tuningText(n: number): string {
 	return String(Math.round(n * 100) / 100);
 }
+
+/** The welcome step's second line: what the next steps do (a build without the generator list makes a Blank first map). */
+export function welcomeStepsText(): string {
+	return __SLICE_WIZARDGEN__
+		? "In the next few steps we'll set up your world folders, pick a layout for your first map, and generate its terrain. It takes about a minute."
+		: "In the next few steps we'll set up your world folders and a blank first map to paint. It takes about a minute.";
+}

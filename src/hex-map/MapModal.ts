@@ -457,8 +457,8 @@ export class MapModal extends HexmakerModal {
     if (currentMap) this.renderNeighbourBlock(el, currentMap);
 
     if (currentMap) {
-      renderArrivalSetting(el, this.plugin, currentMap, () => this.render());
-      renderRoleTables(el, this.plugin, currentMap, () => this.render());
+      if (__SLICE_ARRIVALTABLES__) renderArrivalSetting(el, this.plugin, currentMap, () => this.render()); // held back from 2.0
+      if (__SLICE_ARRIVALTABLES__) renderRoleTables(el, this.plugin, currentMap, () => this.render());
       // Modules' sections (Space: Convert world types to tables).
       for (const section of moduleMapProperties()) section.render(el, this.plugin, currentMap, () => this.render());
     }

@@ -10,6 +10,8 @@
     "fog": { "docs": true, "define": "__SLICE_FOG__", "modules": ["fog"], "released": false, "requires": ["play"], "mapMarks": ["explore-reveal", "explore-peek", "explore-fog", "explore-seen", "explore-with", "explore-grow", "explore-realms", "explore-blend"] },
     "hexflower": { "docs": true, "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false, "requires": ["genpage", "play", "fog"], "mapMarks": ["hex-flower-at"] },
     "packs": { "docs": true, "define": "__SLICE_PACKS__", "modules": ["packs"], "released": false, "requires": [] },
-    "fields": { "docs": true, "define": "__SLICE_FIELDS__", "modules": ["fields"], "released": false, "requires": [] }
+    "fields": { "docs": true, "define": "__SLICE_FIELDS__", "modules": ["fields"], "released": false, "requires": [] },
+    "wizardgen": { "docs": true, "define": "__SLICE_WIZARDGEN__", "modules": [], "released": false, "requires": [] },
+    "arrivaltables": { "docs": true, "define": "__SLICE_ARRIVALTABLES__", "modules": [], "released": false, "requires": [] }
   }
 }

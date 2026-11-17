@@ -1,7 +1,6 @@
 import { ItemView, Notice, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import type { HexMapView } from "./hex-map/HexMapView";
-import type { TerrainColor } from "./types";
 import { linkLabel, normalizeFolder, slugify } from "./utils";
 import { ensureFolder } from "./vault/ensureFolder";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
@@ -14,10 +13,8 @@ import { markFreshMap } from "./worldgen/freshMap";
 import {
 	BLANK_ID,
 	describeKind,
-	generationKey,
 	kindOptions,
 	listGeneratorKinds,
-	optionsWithTuning,
 	suggestBaseTerrain,
 	type GenerateOutcome,
 	type TerrainGeneratorKind,
@@ -26,11 +23,12 @@ import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
 import { LIVE_PREVIEW_DELAY_MS, sizeForScalePick, sizeFromInput, wheelStep } from "./sizeInput";
 import { keepScroll } from "./ui/keepScroll";
+import { resolvedOptions, runGenerator, wizardGrid, wizardRunKey } from "./wizardRun";
 import { scalePalette, scalesFor, type MapScaleDef } from "./mapScales";
 import { wizardKinds, wizardScale } from "./wizardKinds";
 import { moduleScaleChoices, moduleWizardOffers, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "./modules/runtime";
 import { folderKeys, type FolderKey } from "./wizardFolders";
-import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, wizardOptionId } from "./wizardText";
+import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, welcomeStepsText, wizardOptionId } from "./wizardText";
 import { newMapOptionId } from "./worldgen/newMapOptionIds";
 import { Disclosure } from "./ui/disclosure";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "./ui/mapScaleForm";
@@ -86,57 +84,6 @@ interface WizardStep {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function wizardGrid(plugin: HexmakerPlugin, ctx: WizardContext) {
-	return {
-		cols: ctx.mapCols,
-		rows: ctx.mapRows,
-		offset: { x: 0, y: 0 },
-		stagger: plugin.settings.staggerOffset ?? "odd",
-	};
-}
-
-function resolvedOptions(kind: TerrainGeneratorKind, ctx: WizardContext): Record<string, string> {
-	return optionsWithTuning(kind, ctx.generatorOptions);
-}
-
-/** generationKey of the wizard's current choices (see WizardContext.preview). */
-function wizardRunKey(plugin: HexmakerPlugin, ctx: WizardContext, kind: TerrainGeneratorKind): string {
-	const grid = wizardGrid(plugin, ctx);
-	return generationKey({
-		generatorId: kind.id,
-		options: resolvedOptions(kind, ctx),
-		seed: ctx.seed,
-		cols: grid.cols,
-		rows: grid.rows,
-		orientation: ctx.hexOrientation,
-		stagger: grid.stagger,
-		palette: ctx.paletteName,
-	});
-}
-
-/**
- * Run the chosen generator for the wizard's map. Generators read the hex
- * orientation from settings, which the wizard only saves on Next, so the
- * picked orientation is applied for the (synchronous) run.
- */
-function runGenerator(
-	plugin: HexmakerPlugin,
-	ctx: WizardContext,
-	kind: TerrainGeneratorKind,
-	terrains: TerrainColor[],
-): GenerateOutcome {
-	const saved = plugin.settings.hexOrientation;
-	plugin.settings.hexOrientation = ctx.hexOrientation;
-	try {
-		return kind.generate({
-			terrains, grid: wizardGrid(plugin, ctx), seed: ctx.seed, options: resolvedOptions(kind, ctx),
-			pathTypes: plugin.getPathTypes(ctx.paletteName),
-		});
-	} finally {
-		plugin.settings.hexOrientation = saved;
-	}
-}
-
 /**
  * Remove the shipped "default" map once the user has their own, if it was
  * never used (see setupPlaceholder.ts). Settings are saved by the caller.
@@ -179,7 +126,7 @@ function makeWelcomeStep(): WizardStep {
 				cls: "duckmage-wizard-text",
 			});
 			container.createEl("p", {
-				text: "In the next few steps we'll set up your world folders, pick a layout for your first map, and generate its terrain. It takes about a minute.",
+				text: welcomeStepsText(),
 				cls: "duckmage-wizard-text",
 			});
 			container.createEl("p", {
@@ -408,6 +355,9 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				cb.onUpdate();
 			});
 
+			// Set below when the build has the generator list (slice wizardgen); no-ops without it.
+			let renderGenerators = (): void => {};
+			let refresh = (): void => {};
 			// What are you mapping? (owner 2026-10-12): the scale picks the
 			// size, palette and generator list below; each module brings its
 			// own (src/mapScales.ts). Only the map types that are on.
@@ -594,6 +544,14 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				refresh();
 			});
 
+			// Progress display (populated by onNext)
+			container.createDiv({
+				cls: "duckmage-wizard-progress-msg",
+				attr: { id: "duckmage-wizard-gen-progress" },
+			});
+			// Held back from 2.0 (slice wizardgen, R22): no generator list, preview or Reroll; the first map is Blank.
+			if (!__SLICE_WIZARDGEN__) return;
+
 			// Terrain: generator choice + small live preview. The same
 			// generators as Maps → New map… (src/worldgen/registry.ts).
 			const genField = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-generator" });
@@ -622,7 +580,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			let kinds: TerrainGeneratorKind[] = [];
 			const terrains = () => plugin.getPaletteOrPresetTerrains(ctx.paletteName);
 
-			const renderGenerators = () => {
+			renderGenerators = () => {
 				if (!kinds.length) return;
 				const { fitting, selected } = wizardKinds(kinds, ctx, terrains());
 				if (selected !== ctx.generatorId) {
@@ -680,7 +638,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 
 			let tuneTimer: number | undefined;
 
-			const refresh = () => {
+			refresh = () => {
 				const kind = kinds.find((k) => k.id === ctx.generatorId);
 				const pal = terrains();
 				const grid = wizardGrid(plugin, ctx);
@@ -728,12 +686,6 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				kinds = k;
 				renderGenerators();
 				refresh();
-			});
-
-			// Progress display (populated by onNext)
-			container.createDiv({
-				cls: "duckmage-wizard-progress-msg",
-				attr: { id: "duckmage-wizard-gen-progress" },
 			});
 		},
 		canProceed(ctx) {
