@@ -24,4 +24,4 @@ export const UPGRADE_DETAIL =
 export const UPGRADE_LATER_NOTE =
   "Until you upgrade, Hexmaker does nothing: it shows no maps, adds no menus and changes no files. Run \"Upgrade to 2.0…\" from the command palette when you're ready.";
 /** The notice shown after "Not now", and on later loads while the vault is not upgraded. */
-export const UPGRADE_WAITING_NOTICE = "Hexmaker 2.0 is installed but idle: your vault isn't converted yet. Run \"Hexmaker: Upgrade to 2.0…\" when you're ready.";
+export const UPGRADE_WAITING_NOTICE = "Hexmaker 2.0 is installed but idle: your vault isn't converted yet. Run \"Hexmap World Creator: Upgrade to 2.0…\" when you're ready.";
