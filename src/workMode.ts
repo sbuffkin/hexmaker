@@ -240,6 +240,9 @@ export const CORE_COMMAND_ACTIONS: Readonly<Record<string, ModeAction>> = {
   // Backups (MG2): opening the folder changes nothing; a restore is recovery, never locked.
   "open-backups-folder": "view",
   "restore-from-upgrade-backup": "settings",
+  // The 2.0 upgrade (release plan B1, B2): converting and undoing are recovery, never locked by a mode.
+  "upgrade-to-2": "settings",
+  "undo-2-0-upgrade": "settings",
   "export-current-note-pdf": "export",
   "export-current-note-markdown": "export",
   "export-current-hex": "export",
